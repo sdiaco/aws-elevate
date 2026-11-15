@@ -37,8 +37,16 @@ class Role(StrEnum):
 
 
 @dataclass(frozen=True)
-class NamedRef:
-    """An Identity Center group or an AWS account: id plus display name."""
+class Group:
+    """An Identity Center group."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class Account:
+    """An AWS account of the organization."""
 
     id: str
     name: str
@@ -59,13 +67,13 @@ class Principal:
 @dataclass(frozen=True)
 class Rule:
     id: str
-    group: NamedRef
+    group: Group
     permission_set: PermissionSetRef
-    accounts: tuple[NamedRef, ...]
+    accounts: tuple[Account, ...]
     default_seconds: int
     max_seconds: int
     approval: Approval
-    approver_group: NamedRef | None
+    approver_group: Group | None
     privileged: bool
 
 
@@ -76,7 +84,7 @@ class Grant:
     rule_id: str
     config_version: int
     requester: Principal
-    approver_group: NamedRef | None
+    approver_group: Group | None
     source_ps: PermissionSetRef
     account: str
     duration_seconds: int

@@ -3,11 +3,12 @@ import dataclasses
 import pytest
 
 from aws_elevate.core.models import (
+    Account,
     Approval,
     CloseReason,
     Grant,
+    Group,
     Identity,
-    NamedRef,
     PermissionSetRef,
     Principal,
     Rule,
@@ -21,9 +22,9 @@ PS = PermissionSetRef(arn="arn:aws:sso:::permissionSet/ssoins-1/ps-1", name="ssm
 def make_rule(**overrides):
     fields = dict(
         id="backend-ssm-prod",
-        group=NamedRef(id="g-1", name="backend-devs"),
+        group=Group(id="g-1", name="backend-devs"),
         permission_set=PS,
-        accounts=(NamedRef(id="111111111111", name="prod"),),
+        accounts=(Account(id="111111111111", name="prod"),),
         default_seconds=3600,
         max_seconds=14400,
         approval=Approval.AUTO,
@@ -53,7 +54,7 @@ def test_grant_optional_fields_default_to_none():
         rule_id="backend-ssm-prod",
         config_version=3,
         requester=Principal(user_id="u-1", user_name="user@example.com"),
-        approver_group=NamedRef(id="g-2", name="leads"),
+        approver_group=Group(id="g-2", name="leads"),
         source_ps=PS,
         account="111111111111",
         duration_seconds=3600,
