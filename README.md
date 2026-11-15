@@ -4,7 +4,6 @@ Temporary elevated access (just-in-time) for AWS IAM Identity Center: a user req
 
 **Status:** in development, not yet usable. First version: 0.0.1.
 
-- Design (Italian): [`docs/2026-11-14-aws-elevate-design-v2.md`](docs/2026-11-14-aws-elevate-design-v2.md)
 - License: Apache-2.0
 
 ## Branches
