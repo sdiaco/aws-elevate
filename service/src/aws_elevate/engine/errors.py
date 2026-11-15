@@ -8,3 +8,7 @@ class Retryable(Exception):
 
 class ActivationFailed(Exception):
     """Activation cannot succeed; the reason is saved in the grant record."""
+
+
+class InvalidState(Exception):
+    """The grant is in a state from which this action cannot proceed."""

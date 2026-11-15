@@ -12,7 +12,7 @@ from ..adapters.sso_admin import SsoOperationFailed, SsoTimeout
 from ..adapters.sso_read import PsNotFound
 from ..core.events import snapshot
 from ..core.ids import ps_name
-from ..core.models import Grant, State
+from ..core.models import CloseReason, Grant, State
 from ..core.policy import (
     build_inline,
     check_limits,
@@ -22,7 +22,7 @@ from ..core.policy import (
 )
 from ..core.rules import coherence_errors, find_rule
 from ..core.times import iso, parse_iso
-from .errors import ActivationFailed, Retryable
+from .errors import ActivationFailed, InvalidState, Retryable
 
 # AWS errors that no retry can fix: the activation fails with AWS's message.
 _PERMANENT = {
@@ -60,6 +60,31 @@ class Engine:
 
     def snapshot(self, grant_id: str) -> dict:
         return {"grant": snapshot(self._get(grant_id))}
+
+    # ---------- waits (design §6.2) ----------
+
+    def store_token(self, grant_id: str, token: str) -> dict:
+        """Save the token of the current wait. A closed grant needs none."""
+        self._table.set_token(grant_id, token)
+        return {"grant": snapshot(self._get(grant_id))}
+
+    def resolve_wait(self, grant_id: str) -> dict:
+        """The approval wait timed out. Whoever moved the record first wins: if an
+        approval, rejection or cancellation got there before us, follow it."""
+        try:
+            self._table.transition(
+                grant_id, State.PENDING, State.CLOSED, close_reason=CloseReason.TIMED_OUT
+            )
+        except StateConflict:
+            pass  # someone else decided first; the record below says what
+        grant = self._get(grant_id)
+        if grant.state == State.CLOSED:
+            decision = grant.close_reason.value
+        elif grant.state == State.ACTIVATING:
+            decision = "approved"
+        else:
+            raise InvalidState(f"grant {grant_id} is {grant.state} after the approval wait")
+        return {"grant": snapshot(grant), "decision": decision}
 
     # ---------- activation (design §6.3) ----------
 
@@ -142,6 +167,79 @@ class Engine:
             self._table.set_attrs(grant.id, State.ACTIVATING, error=message)
         except StateConflict:
             pass  # the grant moved on; the revocation path closes it with its own state
+
+    # ---------- revocation (design §6.4) ----------
+
+    def revoke(self, grant_id: str) -> dict:
+        """End access and clean up: expiry, early revocation, failed activation and
+        redrive all come here. Each step tolerates having been done already."""
+        grant = self._get(grant_id)
+        if grant.state == State.CLOSED:
+            return self._closed(grant)
+        grant = self._enter_revoking(grant)
+        arn = grant.ephemeral_ps_arn
+        if arn is None and grant.expires_at is None:
+            # Activation may have created JIT-<id> without recording it.
+            arn = self._read.find_by_name(ps_name(grant.id))
+        try:
+            if arn is not None:
+                # Expiry = now, reprovisioned, so open sessions are denied at once.
+                self._admin.rewrite_inline(arn, grant.account, build_inline(None, self._now()))
+                self._admin.unassign(arn, grant.account, grant.requester.user_id)
+                self._admin.delete(arn)
+        except (SsoTimeout, SsoOperationFailed, ClientError) as err:
+            raise Retryable(f"revocation of {grant_id}: {err}") from err
+
+        reason, attrs = self._close_reason(grant)
+        try:
+            self._table.transition(
+                grant_id, State.REVOKING, State.CLOSED, close_reason=reason, **attrs
+            )
+        except StateConflict:
+            pass  # closed by an earlier run of this step
+        return self._closed(self._get(grant_id))
+
+    def _enter_revoking(self, grant: Grant) -> Grant:
+        if grant.state == State.REVOKING:
+            return grant
+        if grant.state not in (State.ACTIVE, State.ACTIVATING, State.REVOKE_FAILED):
+            raise InvalidState(f"grant {grant.id} is {grant.state}, nothing to revoke")
+        try:
+            self._table.transition(grant.id, grant.state, State.REVOKING)
+        except StateConflict:
+            pass  # api started an early revocation meanwhile; the record says so
+        grant = self._get(grant.id)
+        if grant.state != State.REVOKING:
+            raise InvalidState(f"grant {grant.id} is {grant.state}, expected revoking")
+        return grant
+
+    @staticmethod
+    def _close_reason(grant: Grant) -> tuple[CloseReason, dict]:
+        if grant.expires_at is None:  # never became active
+            return CloseReason.FAILED, {"error": grant.error or "activation did not complete"}
+        if grant.revoked_by is not None:
+            return CloseReason.REVOKED, {}
+        return CloseReason.EXPIRED, {}
+
+    @staticmethod
+    def _closed(grant: Grant) -> dict:
+        if grant.state != State.CLOSED:
+            raise InvalidState(f"grant {grant.id} is {grant.state}, expected closed")
+        return {"grant": snapshot(grant), "closeReason": grant.close_reason.value}
+
+    def mark_revoke_failed(self, grant_id: str) -> dict:
+        """Revocation kept failing: the grant needs an operator (design §6.5)."""
+        grant = self._get(grant_id)
+        if grant.state == State.REVOKING:
+            error = grant.error or "revocation failed after retries; see the execution history"
+            try:
+                self._table.transition(grant_id, State.REVOKING, State.REVOKE_FAILED, error=error)
+            except StateConflict:
+                pass  # an earlier run of this step already marked it
+            grant = self._get(grant_id)
+        if grant.state != State.REVOKE_FAILED:
+            raise InvalidState(f"grant {grant_id} is {grant.state}, expected revoking")
+        return {"grant": snapshot(grant)}
 
     def _activated(self, grant: Grant) -> dict:
         remaining = parse_iso(grant.expires_at) - self._now()
