@@ -8,3 +8,4 @@ dist/
 client/dist/
 service/.venv/
 build/
+.ruff_cache/

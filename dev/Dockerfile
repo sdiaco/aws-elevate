@@ -33,9 +33,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.8 /uv /uvx /usr/local/bin/
 RUN groupadd -g "$GID" dev && useradd -m -u "$UID" -g "$GID" dev \
     && mkdir -p /home/dev/.cache /home/dev/.aws && chown -R dev:dev /home/dev
 USER dev
+# The service virtualenv lives in the cache volume, not in service/.venv: a host venv
+# points at host interpreters and would be rebuilt on every switch.
 ENV PATH=/usr/local/go/bin:/home/dev/go/bin:$PATH \
     GOPATH=/home/dev/go \
     GOMODCACHE=/home/dev/.cache/go-mod \
     GOCACHE=/home/dev/.cache/go-build \
-    UV_CACHE_DIR=/home/dev/.cache/uv
+    UV_CACHE_DIR=/home/dev/.cache/uv \
+    UV_PROJECT_ENVIRONMENT=/home/dev/.cache/service-venv
 WORKDIR /work

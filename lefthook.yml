@@ -1,0 +1,19 @@
+# Install once per clone: lefthook install
+# Hooks run on the host when the tools are installed, otherwise in the development container.
+commit-msg:
+  commands:
+    conventional-commit:
+      run: >-
+        if command -v uv >/dev/null;
+        then uv run --project service cz --config service/pyproject.toml check --commit-msg-file {1};
+        else make -s dev-run CMD="uv run --project service cz --config service/pyproject.toml check --commit-msg-file {1}";
+        fi
+
+pre-push:
+  commands:
+    check:
+      run: >-
+        if command -v go >/dev/null && command -v uv >/dev/null;
+        then make check;
+        else make dev-run CMD="make check";
+        fi
