@@ -192,3 +192,68 @@ def test_summarize_marks_not_action_statements():
             "conditions": None,
         }
     ]
+
+
+def _grant(**changes):
+    from aws_elevate.core.models import (
+        Approval,
+        Grant,
+        Group,
+        PermissionSetRef,
+        Principal,
+        State,
+    )
+
+    base = Grant(
+        id="abcde23456",
+        state=State.ACTIVATING,
+        rule_id="backend-ssm-prod",
+        approval=Approval.MANUAL,
+        config_version=3,
+        requester=Principal(user_id="u-1", user_name="user@example.com"),
+        approver_group=Group(id="g-2", name="leads"),
+        source_ps=PermissionSetRef(
+            arn="arn:aws:sso:::permissionSet/ssoins-1/ps-1", name="ssm-write"
+        ),
+        account="111111111111",
+        duration_seconds=3600,
+        reason="incident",
+        privileged=True,
+        created_at="2026-11-15T09:59:00Z",
+        approver=Principal(user_id="u-2", user_name="lead@example.com"),
+    )
+    import dataclasses
+
+    return dataclasses.replace(base, **changes)
+
+
+def test_ephemeral_tags_follow_design():
+    from aws_elevate.core.policy import ephemeral_tags
+
+    assert ephemeral_tags(_grant()) == {
+        "jit": "true",
+        "jit:grantId": "abcde23456",
+        "jit:requester": "user@example.com",
+        "jit:approver": "lead@example.com",
+        "jit:rule": "backend-ssm-prod",
+        "jit:source": "ssm-write",
+        "jit:account": "111111111111",
+        "jit:configVersion": "3",
+        "jit:privileged": "true",
+    }
+
+
+def test_ephemeral_tags_auto_approval():
+    from aws_elevate.core.policy import ephemeral_tags
+
+    tags = ephemeral_tags(_grant(approver=None, privileged=False))
+    assert tags["jit:approver"] == "auto"
+    assert tags["jit:privileged"] == "false"
+
+
+def test_tag_values_drop_characters_identity_center_rejects():
+    from aws_elevate.core.models import Principal
+    from aws_elevate.core.policy import ephemeral_tags
+
+    tags = ephemeral_tags(_grant(requester=Principal(user_id="u-1", user_name="o'brien#1 x")))
+    assert tags["jit:requester"] == "obrien1 x"

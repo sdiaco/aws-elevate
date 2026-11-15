@@ -177,7 +177,9 @@ TAGS = {"jit": "true", "jit:grantId": "abcde23456"}
 
 
 def create(a):
-    return a.create_ephemeral("JIT-abcde23456", "incident 42", "PT1H", TAGS, INLINE, SOURCE)
+    arn = a.create_ephemeral("JIT-abcde23456", "incident 42", "PT1H", TAGS)
+    a.configure(arn, INLINE, SOURCE)
+    return arn
 
 
 def test_create_ephemeral_copies_source(admin):
@@ -192,7 +194,7 @@ def test_create_ephemeral_omits_empty_description(admin):
     params = {k: v for k, v in CREATE.items() if k != "Description"}
     s.add_response("create_permission_set", {"PermissionSet": {"PermissionSetArn": JIT}}, params)
     stub_configure(s)
-    a.create_ephemeral("JIT-abcde23456", "", "PT1H", TAGS, INLINE, SOURCE)
+    a.configure(a.create_ephemeral("JIT-abcde23456", "", "PT1H", TAGS), INLINE, SOURCE)
 
 
 def test_create_ephemeral_rerun_reuses_existing_and_skips_attached(admin):
@@ -240,6 +242,23 @@ def test_retries_stop_at_budget():
         with pytest.raises(Exception) as info:
             a.delete(JIT)
         assert "Throttling" in str(info.value)
+
+
+def test_configure_without_boundary_or_policies(admin):
+    a, s = admin
+    bare = SourcePs(arn=SRC, name="x", managed=(), customer_managed=(), boundary=None, inline=None)
+    s.add_response(
+        "put_inline_policy_to_permission_set",
+        {},
+        {**JKW, "InlinePolicy": json.dumps(INLINE, separators=(",", ":"))},
+    )
+    s.add_response("list_managed_policies_in_permission_set", {"AttachedManagedPolicies": []}, JKW)
+    s.add_response(
+        "list_customer_managed_policy_references_in_permission_set",
+        {"CustomerManagedPolicyReferences": []},
+        JKW,
+    )
+    a.configure(JIT, INLINE, bare)
 
 
 def test_validation_errors_are_not_retried(admin):

@@ -283,3 +283,30 @@ def test_other_errors_propagate(table):
     with pytest.raises(Exception) as info:
         gt.put_new(GRANT)
     assert not isinstance(info.value, Duplicate | StateConflict)
+
+
+def test_set_attrs_is_conditional_and_writes_no_timeline(table):
+    gt, stub = table
+    stub.add_response(
+        "update_item",
+        {},
+        {
+            "TableName": TABLE,
+            "Key": GRANT_KEY,
+            "UpdateExpression": "SET #activatedAt = :a0",
+            "ConditionExpression": "#state = :state",
+            "ExpressionAttributeNames": {"#state": "state", "#activatedAt": "activatedAt"},
+            "ExpressionAttributeValues": {
+                ":state": {"S": "activating"},
+                ":a0": {"S": "2026-11-15T10:00:00Z"},
+            },
+        },
+    )
+    gt.set_attrs("abcde23456", State.ACTIVATING, activated_at="2026-11-15T10:00:00Z")
+
+
+def test_set_attrs_in_other_state_raises_state_conflict(table):
+    gt, stub = table
+    stub.add_client_error("update_item", service_error_code="ConditionalCheckFailedException")
+    with pytest.raises(StateConflict):
+        gt.set_attrs("abcde23456", State.ACTIVATING, error="boom")

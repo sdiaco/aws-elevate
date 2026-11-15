@@ -20,6 +20,7 @@ from ..core.models import (
     Principal,
     State,
 )
+from ..core.times import iso
 
 RETENTION_MONTHS = 13  # design §11.3
 
@@ -67,10 +68,6 @@ _NESTED = {
     "source_ps": (PermissionSetRef, {"arn": "arn", "name": "name"}),
 }
 _ENUMS = {"state": State, "close_reason": CloseReason, "approval": Approval}
-
-
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _value(field: str, value) -> dict:
@@ -131,7 +128,7 @@ def from_item(item: dict) -> Grant:
 def timeline_item(grant_id: str, state: State, at: datetime, attrs: dict) -> dict:
     row = {
         "pk": {"S": f"GRANT#{grant_id}"},
-        "sk": {"S": f"EV#{_iso(at)}#{state.value}"},
+        "sk": {"S": f"EV#{iso(at)}#{state.value}"},
         "state": {"S": state.value},
     }
     for field, value in attrs.items():
@@ -218,7 +215,7 @@ class GrantsTable:
             if grant is None:
                 raise StateConflict(f"grant {grant_id} does not exist")
             names.update({"#closedAt": "closedAt", "#ttl": "ttl"})
-            values[":closedAt"] = {"S": _iso(now)}
+            values[":closedAt"] = {"S": iso(now)}
             values[":ttl"] = {"N": str(_retention_ttl(now))}
             sets += ["#closedAt = :closedAt", "#ttl = :ttl"]
             extra = [{"Delete": {"TableName": self._table, "Key": _lock_key(grant)}}]
@@ -251,6 +248,31 @@ class GrantsTable:
             codes = _cancellation_codes(err)
             if codes and codes[0] == "ConditionalCheckFailed":
                 raise StateConflict(f"grant {grant_id} is not {src}") from err
+            raise
+
+    def set_attrs(self, grant_id: str, state: State, **attrs) -> None:
+        """Record Grant fields without a state change, only while the grant is in
+        `state`. Used for progress the engine must not lose on a rerun."""
+        names = {"#state": "state"}
+        values = {":state": {"S": state.value}}
+        sets = []
+        for i, (field, value) in enumerate(attrs.items()):
+            attr = _FIELDS[field]
+            names[f"#{attr}"] = attr
+            values[f":a{i}"] = _value(field, value)
+            sets.append(f"#{attr} = :a{i}")
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key=_grant_key(grant_id),
+                UpdateExpression="SET " + ", ".join(sets),
+                ConditionExpression="#state = :state",
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as err:
+            if err.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise StateConflict(f"grant {grant_id} is not {state}") from err
             raise
 
     def set_token(self, grant_id: str, token: str) -> bool:
