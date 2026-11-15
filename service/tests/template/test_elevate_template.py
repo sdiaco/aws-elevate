@@ -324,6 +324,16 @@ def test_api_reads_permission_sets_of_this_instance_only():
     assert not [s for s in statements("ApiRole") if "sso:" in text(s) and s is not stmt]
 
 
+def test_api_reads_this_identity_store_whatever_account_owns_it():
+    # Measured 2026-11-15: the store ARN carries the account that owns the Identity
+    # Center instance (the management account), not the delegated admin running the stack.
+    stmt = api_statement("ReadUsersAndGroups")
+    store, *rest = as_list(stmt["Resource"])
+    sub = "arn:${AWS::Partition}:identitystore::*:identitystore/${Precheck.IdentityStoreId}"
+    assert store == {"Fn::Sub": sub}
+    assert "${AWS::AccountId}" not in text(rest)
+
+
 def test_api_never_scans_the_table():
     assert "dynamodb:Scan" not in api_actions()
     table = api_statement("GrantsTable")

@@ -1284,7 +1284,8 @@ Resources:
                   - identitystore:GetUserId
                   - identitystore:ListGroupMembershipsForMember
                 Resource:
-                  - !Sub arn:${AWS::Partition}:identitystore::${AWS::AccountId}:identitystore/${Precheck.IdentityStoreId}
+                  # The store ARN has the account owning the instance, not this one.
+                  - !Sub arn:${AWS::Partition}:identitystore::*:identitystore/${Precheck.IdentityStoreId}
                   - !Sub arn:${AWS::Partition}:identitystore:::user/*
                   - !Sub arn:${AWS::Partition}:identitystore:::membership/*
               # Reads only: the limits checked before publishing (§5.4) and "what you
