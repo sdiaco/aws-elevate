@@ -109,8 +109,12 @@ class FakeRules:
 
 
 class FakeRead:
-    def __init__(self, source=SOURCE):
+    def __init__(self, source=SOURCE, existing=None):
         self.source = source
+        self.existing = existing  # ARN returned by find_by_name
+
+    def find_by_name(self, name):
+        return self.existing
 
     def read_source(self, arn):
         if self.source is None:
@@ -178,12 +182,12 @@ def admin():
 def build(clock, admin):
     """build(*grants, rules=..., source=...) -> (engine, table)."""
 
-    def _build(*grants, rules=None, source=SOURCE):
+    def _build(*grants, rules=None, source=SOURCE, existing=None):
         table = FakeTable(*grants)
         engine = Engine(
             table=table,
             rules=rules or FakeRules(),
-            sso_read=FakeRead(source),
+            sso_read=FakeRead(source, existing),
             sso_admin=admin,
             clock=clock,
         )

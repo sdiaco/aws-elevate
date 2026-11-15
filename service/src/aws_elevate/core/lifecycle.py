@@ -5,7 +5,8 @@ from .models import State
 
 TRANSITIONS: dict[State, frozenset[State]] = {
     State.PENDING: frozenset({State.ACTIVATING, State.CLOSED}),
-    State.ACTIVATING: frozenset({State.ACTIVE, State.CLOSED}),
+    # A failed activation is cleaned up through revoking, like a revocation.
+    State.ACTIVATING: frozenset({State.ACTIVE, State.REVOKING}),
     State.ACTIVE: frozenset({State.REVOKING}),
     State.REVOKING: frozenset({State.CLOSED, State.REVOKE_FAILED}),
     # Redrive after a failed revocation.

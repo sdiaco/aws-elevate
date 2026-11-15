@@ -7,7 +7,9 @@ ALLOWED = {
     (State.PENDING, State.ACTIVATING),
     (State.PENDING, State.CLOSED),
     (State.ACTIVATING, State.ACTIVE),
-    (State.ACTIVATING, State.CLOSED),
+    # A failed activation is cleaned up like a revocation, so a failed cleanup ends in
+    # revoke_failed and can be redriven.
+    (State.ACTIVATING, State.REVOKING),
     (State.ACTIVE, State.REVOKING),
     (State.REVOKING, State.CLOSED),
     (State.REVOKING, State.REVOKE_FAILED),
