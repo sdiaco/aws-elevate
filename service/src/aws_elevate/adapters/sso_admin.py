@@ -89,17 +89,41 @@ class SsoAdmin:
     # ---------- operations ----------
 
     def create_ephemeral(
-        self,
-        name: str,
-        description: str,
-        session_duration: str,
-        tags: dict[str, str],
-        inline: dict,
-        source: SourcePs,
+        self, name: str, description: str, session_duration: str, tags: dict[str, str]
     ) -> str:
-        """Create (or find, on a rerun) the ephemeral permission set and copy into it the
-        source's managed and customer managed policies and boundary, plus `inline`."""
-        arn = self._create_or_find(name, description, session_duration, tags)
+        """Create the ephemeral permission set, or find it if an earlier attempt did.
+        An empty description is omitted (the API requires at least one character)."""
+        params = {
+            "InstanceArn": self._instance,
+            "Name": name,
+            "SessionDuration": session_duration,
+            "Tags": [{"Key": k, "Value": v} for k, v in tags.items()],
+        }
+        if description:
+            params["Description"] = description
+        start = self._clock()
+        while True:
+            try:
+                resp = self._retry(
+                    lambda: self._sso.create_permission_set(**params),
+                    retry_on=RETRYABLE - {"ConflictException"},
+                )
+                return resp["PermissionSet"]["PermissionSetArn"]
+            except ClientError as err:
+                if _code(err) != "ConflictException":
+                    raise
+                # Either the name exists (an earlier attempt created it) or a concurrent
+                # change is in progress: look before trying again.
+                existing = self._reader.find_by_name(name)
+                if existing:
+                    return existing
+                if self._clock() - start > self._budget:
+                    raise
+                self._sleep(2)
+
+    def configure(self, arn: str, inline: dict, source: SourcePs) -> None:
+        """Copy into the ephemeral permission set the source's managed and customer
+        managed policies and boundary, plus `inline`. Safe to repeat."""
         kw = self._kw(arn)
         self._retry(
             lambda: self._sso.put_inline_policy_to_permission_set(
@@ -130,38 +154,6 @@ class SsoAdmin:
                     PermissionsBoundary=source.boundary, **kw
                 )
             )
-        return arn
-
-    def _create_or_find(
-        self, name: str, description: str, session_duration: str, tags: dict[str, str]
-    ) -> str:
-        params = {
-            "InstanceArn": self._instance,
-            "Name": name,
-            "SessionDuration": session_duration,
-            "Tags": [{"Key": k, "Value": v} for k, v in tags.items()],
-        }
-        if description:
-            params["Description"] = description
-        start = self._clock()
-        while True:
-            try:
-                resp = self._retry(
-                    lambda: self._sso.create_permission_set(**params),
-                    retry_on=RETRYABLE - {"ConflictException"},
-                )
-                return resp["PermissionSet"]["PermissionSetArn"]
-            except ClientError as err:
-                if _code(err) != "ConflictException":
-                    raise
-                # Either the name exists (an earlier attempt created it) or a concurrent
-                # change is in progress: look before trying again.
-                existing = self._reader.find_by_name(name)
-                if existing:
-                    return existing
-                if self._clock() - start > self._budget:
-                    raise
-                self._sleep(2)
 
     def assign(self, ps_arn: str, account: str, user_id: str) -> None:
         req = self._retry(

@@ -3,7 +3,11 @@
 import json
 import math
 import re
-from datetime import UTC, datetime
+import unicodedata
+from datetime import datetime
+
+from .models import Grant
+from .times import iso
 
 EXPIRY_SID = "JitExpiry"
 POLICY_VERSION = "2012-10-17"
@@ -23,9 +27,7 @@ _MAX_DESCRIPTION = 700
 
 
 def expiry_statement(expires_at: datetime) -> dict:
-    if expires_at.tzinfo is None:
-        raise ValueError("expires_at must be timezone-aware")
-    stamp = expires_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = iso(expires_at)
     return {
         "Sid": EXPIRY_SID,
         "Effect": "Deny",
@@ -118,3 +120,32 @@ def summarize(inline: dict | None) -> list[dict]:
             entry["notResources"] = _as_list(stmt["NotResource"])
         summary.append(entry)
     return summary
+
+
+# Tag values accept letters, separators, digits and _.:/=+-@ (botocore model, shape
+# TagValue), up to 256 characters.
+_TAG_PUNCTUATION = set("_.:/=+-@")
+_MAX_TAG_VALUE = 256
+
+
+def _tag_value(value: str) -> str:
+    kept = "".join(
+        c for c in value if c in _TAG_PUNCTUATION or unicodedata.category(c)[0] in ("L", "Z", "N")
+    )
+    return kept[:_MAX_TAG_VALUE]
+
+
+def ephemeral_tags(grant: Grant) -> dict[str, str]:
+    """Tags of JIT-<id> (design §5.3). `jit=true` is what the engine role is scoped on."""
+    tags = {
+        "jit": "true",
+        "jit:grantId": grant.id,
+        "jit:requester": grant.requester.user_name,
+        "jit:approver": grant.approver.user_name if grant.approver else "auto",
+        "jit:rule": grant.rule_id,
+        "jit:source": grant.source_ps.name,
+        "jit:account": grant.account,
+        "jit:configVersion": str(grant.config_version),
+        "jit:privileged": "true" if grant.privileged else "false",
+    }
+    return {key: _tag_value(value) for key, value in tags.items()}
