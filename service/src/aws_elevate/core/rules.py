@@ -191,6 +191,19 @@ def coherence_errors(grant: Grant, rule: Rule | None) -> list[str]:
         errors.append(f"duration {grant.duration_seconds}s exceeds the maximum {rule.max_seconds}s")
     if grant.approval != rule.approval:
         errors.append(f"approval {grant.approval} differs from rule approval {rule.approval}")
+    if _group_id(grant.approver_group) != _group_id(rule.approver_group):
+        errors.append(
+            f"approver group {_group_name(grant.approver_group)} differs from the rule "
+            f"approver group {_group_name(rule.approver_group)}"
+        )
     if grant.privileged != rule.privileged:
         errors.append(f"privileged {grant.privileged} differs from rule {rule.privileged}")
     return errors
+
+
+def _group_id(group: Group | None) -> str | None:
+    return group.id if group else None
+
+
+def _group_name(group: Group | None) -> str:
+    return group.name if group else "none"

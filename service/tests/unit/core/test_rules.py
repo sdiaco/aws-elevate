@@ -110,6 +110,14 @@ def test_each_mismatch_is_reported():
     assert any("privileged" in e for e in errors)
 
 
+def test_a_different_approver_group_is_reported():
+    # An approver of the old group must not approve under a rule that changed hands.
+    grant = dataclasses.replace(GRANT, approver_group=Group(id="g-9", name="others"))
+    assert coherence_errors(grant, RULE) == [
+        "approver group others differs from the rule approver group leads"
+    ]
+
+
 # ---------- parse (design §3.1, §7.1) ----------
 
 

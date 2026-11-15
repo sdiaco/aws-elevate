@@ -44,6 +44,12 @@ GRANT = Grant(
 )
 LOCK_KEY = {"pk": {"S": f"LOCK#u-1#{PS_ARN}#111111111111"}, "sk": {"S": "LOCK"}}
 GRANT_KEY = {"pk": {"S": "GRANT#abcde23456"}, "sk": {"S": "META"}}
+# The first timeline row is dated createdAt, so its key is known without reading it.
+FIRST_ROW = {
+    "pk": {"S": "GRANT#abcde23456"},
+    "sk": {"S": "EV#2026-11-15T09:59:00Z#pending"},
+    "state": {"S": "pending"},
+}
 
 
 @pytest.fixture
@@ -122,7 +128,7 @@ def test_put_new_writes_grant_lock_and_timeline(table):
                         "ConditionExpression": "attribute_not_exists(pk)",
                     }
                 },
-                {"Put": {"TableName": TABLE, "Item": ANY}},
+                {"Put": {"TableName": TABLE, "Item": FIRST_ROW}},
             ]
         },
     )
@@ -431,3 +437,199 @@ def test_release_rejected_event(table):
         },
     )
     t.release_rejected_event(7)
+
+
+# ---------- reads by index (design §11.3: never a Scan) ----------
+
+
+def _query(stub, params, items, last=None):
+    resp = {"Items": items}
+    if last:
+        resp["LastEvaluatedKey"] = last
+    stub.add_response("query", resp, {"TableName": TABLE, **params})
+
+
+def test_by_user_queries_the_user_index_newest_first(table):
+    gt, stub = table
+    last = {"pk": {"S": "x"}}
+    _query(
+        stub,
+        {
+            "IndexName": "byUser",
+            "KeyConditionExpression": "gsi1pk = :pk AND gsi1sk BETWEEN :from AND :to",
+            "ExpressionAttributeValues": {
+                ":pk": {"S": "USER#u-1"},
+                ":from": {"S": "2026-10-16T00:00:00Z"},
+                ":to": {"S": "2026-11-15T10:00:00Z"},
+            },
+            "ScanIndexForward": False,
+            "Limit": 50,
+        },
+        [to_item(GRANT)],
+        last,
+    )
+    grants, nxt = gt.by_user("u-1", "2026-10-16T00:00:00Z", "2026-11-15T10:00:00Z", 50, None)
+    assert grants == [GRANT]
+    assert nxt == last
+
+
+def test_by_user_open_only_filters_closed_grants_and_continues_from_a_key(table):
+    gt, stub = table
+    after = {"pk": {"S": "x"}}
+    _query(
+        stub,
+        {
+            "IndexName": "byUser",
+            "KeyConditionExpression": "gsi1pk = :pk AND gsi1sk BETWEEN :from AND :to",
+            "FilterExpression": "#state <> :closed",
+            "ExpressionAttributeNames": {"#state": "state"},
+            "ExpressionAttributeValues": {
+                ":pk": {"S": "USER#u-1"},
+                ":from": {"S": "a"},
+                ":to": {"S": "b"},
+                ":closed": {"S": "closed"},
+            },
+            "ScanIndexForward": False,
+            "Limit": 10,
+            "ExclusiveStartKey": after,
+        },
+        [],
+    )
+    assert gt.by_user("u-1", "a", "b", 10, after, open_only=True) == ([], None)
+
+
+def test_by_month_queries_one_month_partition(table):
+    gt, stub = table
+    _query(
+        stub,
+        {
+            "IndexName": "byMonth",
+            "KeyConditionExpression": "gsi2pk = :pk AND gsi2sk BETWEEN :from AND :to",
+            "ExpressionAttributeValues": {
+                ":pk": {"S": "MONTH#2026-11"},
+                ":from": {"S": "2026-11-01T00:00:00Z"},
+                # The sort key is <createdAt>#<id>: '~' sorts after every id character.
+                ":to": {"S": "2026-11-15T10:00:00Z#~"},
+            },
+            "ScanIndexForward": False,
+            "Limit": 50,
+        },
+        [to_item(GRANT)],
+    )
+    grants, nxt = gt.by_month("2026-11", "2026-11-01T00:00:00Z", "2026-11-15T10:00:00Z", 50, None)
+    assert grants == [GRANT] and nxt is None
+
+
+def test_open_grants_reads_the_sparse_open_index(table):
+    gt, stub = table
+    _query(
+        stub,
+        {
+            "IndexName": "open",
+            "KeyConditionExpression": "gsi3pk = :pk",
+            "ExpressionAttributeValues": {":pk": {"S": "OPEN"}},
+            "ScanIndexForward": False,
+            "Limit": 50,
+        },
+        [to_item(GRANT)],
+    )
+    assert gt.open_grants(50, None) == ([GRANT], None)
+
+
+def test_count_open_counts_the_user_grants_on_every_page_of_the_open_index(table):
+    gt, stub = table
+    params = {
+        "IndexName": "open",
+        "KeyConditionExpression": "gsi3pk = :pk",
+        "FilterExpression": "requester.userId = :u",
+        "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": "u-1"}},
+        "Select": "COUNT",
+    }
+    last = {"pk": {"S": "x"}}
+    stub.add_response(
+        "query", {"Count": 2, "LastEvaluatedKey": last}, {"TableName": TABLE, **params}
+    )
+    stub.add_response(
+        "query", {"Count": 1}, {"TableName": TABLE, **params, "ExclusiveStartKey": last}
+    )
+    assert gt.count_open("u-1") == 3
+
+
+def test_timeline_returns_rows_oldest_first_without_the_token(table):
+    gt, stub = table
+    approver = Principal(user_id="u-2", user_name="lead@example.com")
+    rows = [
+        FIRST_ROW,
+        timeline_item(
+            "abcde23456",
+            State.ACTIVATING,
+            NOW,
+            {"approver": approver, "task_token": "secret"},
+        ),
+    ]
+    stub.add_response(
+        "query",
+        {"Items": rows, "LastEvaluatedKey": {"pk": {"S": "x"}}},
+        {
+            "TableName": TABLE,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :ev)",
+            "ExpressionAttributeValues": {":pk": {"S": "GRANT#abcde23456"}, ":ev": {"S": "EV#"}},
+            "ConsistentRead": True,
+        },
+    )
+    stub.add_response(
+        "query",
+        {"Items": []},
+        {
+            "TableName": TABLE,
+            **{},
+            "KeyConditionExpression": ANY,
+            "ExpressionAttributeValues": ANY,
+            "ConsistentRead": True,
+            "ExclusiveStartKey": {"pk": {"S": "x"}},
+        },
+    )
+    assert gt.timeline("abcde23456") == [
+        {"at": "2026-11-15T09:59:00Z", "state": "pending"},
+        {
+            "at": "2026-11-15T10:00:00Z",
+            "state": "activating",
+            "approver": {"userId": "u-2", "userName": "lead@example.com"},
+        },
+    ]
+
+
+def test_discard_new_removes_grant_lock_and_first_row_while_untouched(table):
+    gt, stub = table
+    stub.add_response(
+        "transact_write_items",
+        {},
+        {
+            "TransactItems": [
+                {
+                    "Delete": {
+                        "TableName": TABLE,
+                        "Key": GRANT_KEY,
+                        "ConditionExpression": "#state = :state",
+                        "ExpressionAttributeNames": {"#state": "state"},
+                        "ExpressionAttributeValues": {":state": {"S": "pending"}},
+                    }
+                },
+                {"Delete": {"TableName": TABLE, "Key": LOCK_KEY}},
+                {
+                    "Delete": {
+                        "TableName": TABLE,
+                        "Key": {"pk": FIRST_ROW["pk"], "sk": FIRST_ROW["sk"]},
+                    }
+                },
+            ]
+        },
+    )
+    gt.discard_new(GRANT)
+
+
+def test_discard_new_raises_state_conflict_once_the_grant_moved(table):
+    gt, stub = table
+    add_error(stub, "transact_write_items", cancelled("ConditionalCheckFailed", "None", "None"))
+    with pytest.raises(StateConflict):
+        gt.discard_new(GRANT)
