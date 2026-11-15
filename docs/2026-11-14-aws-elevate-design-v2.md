@@ -6,7 +6,7 @@
 | **Data** | 2026-11-14, aggiornato il 2026-11-15 |
 | **Ambito** | Accesso elevato temporaneo (JIT) per AWS IAM Identity Center |
 | **Design precedente** | v1 del 2026-11-08, documento interno non pubblicato. I rimandi "v1 §…" si riferiscono a quello |
-| **Nome** | Progetto e comando: `aws-elevate` (prima `sso-elevate`). Pacchetto: `aws-elevate-cli`. Nel testo, "elevate" per brevità. Le risorse AWS tengono il prefisso `elevate` (stack `elevate`, `ElevateAdmin`, eventi `elevate.*`) |
+| **Nome** | Progetto, comando ed eseguibile del client: `aws-elevate` (prima `sso-elevate`). Nel testo, "elevate" per brevità. Le risorse AWS tengono il prefisso `elevate` (stack `elevate`, `ElevateAdmin`, eventi `elevate.*`) |
 | **Evidenze** | Spike fasi A, B1, B2 e C, eseguiti in un'organizzazione AWS di test. Codice e report sono documentazione interna, non pubblicata |
 
 Come leggere questo documento: le sezioni 1–13 contengono solo scelte discusse e approvate. Non ci sono proposte in sospeso (§14). La §15 elenca le ipotesi dello spike C; gli esiti sono nel report interno della fase C e le conseguenze sono già riportate nelle sezioni interessate.
@@ -195,6 +195,8 @@ Dal delegated admin elevate assegna accessi su tutti gli account membri; il mana
 | **PS di servizio** | `ElevateRequester` e `ElevateAdmin`, creati dallo stack e assegnati ai gruppi indicati come parametri |
 | **Modulo Slack** (opzionale) | Notifiche e bottoni Approva / Rifiuta. Senza, tutto funziona da CLI e UI |
 
+**Linguaggi.** Le Lambda (`api`, `engine`) sono in Python: il codice si legge direttamente dalla console AWS, senza dipendenze oltre all'SDK già nel runtime. Il client (CLI e UI locale) è in Go: un solo file eseguibile, senza prerequisiti sul computer dell'utente. Per non duplicare logica tra i due linguaggi il client non decide nulla: validazione delle regole, limiti, autorizzazioni e stati stanno solo nel servizio. Il formato di richieste, risposte, regole ed eventi è fissato da un insieme di esempi usato dai test di entrambe le parti.
+
 Il confine di sicurezza che resta dalla v1: chi legge input non fidato (`api`) non può toccare Identity Center; chi può toccarlo (`engine`) non legge input esterno.
 
 ## 5. Modello di accesso: permission set effimero
@@ -250,7 +252,7 @@ Conseguenza voluta: se un admin cambia il PS di origine in AWS, i grant successi
 
 ### 5.4 Limiti verificati al salvataggio di una regola
 
-Li controllano UI e CLI, perché dipendono dal contenuto del PS e non possono stare nello schema della config (§7.1).
+Dipendono dal contenuto del PS e non possono stare nello schema della config (§7.1). Li controlla `api`, che legge il PS di origine: UI e CLI glielo chiedono prima di pubblicare, così il controllo esiste in un solo posto.
 
 - Inline finale (origine + scadenza, circa 150 caratteri) entro 10.240 caratteri esclusi gli spazi, e 32.768 byte in totale: se sfora, il salvataggio è bloccato con il messaggio di quanto. Sono i limiti documentati da AWS per un permission set, non aumentabili.
 - Massimo 10 policy managed per ruolo (quota IAM, aumentabile dall'organizzazione): stesso blocco.
@@ -268,7 +270,7 @@ Da scrivere nella documentazione per gli admin:
 
 ### 6.1 Richiesta
 1. `aws elevate request` oppure vista Richiedi: regola, account, durata, motivo (obbligatorio).
-2. `api` ricava l'identità dalla firma (§8.1), legge le regole correnti e registra il numero di versione, verifica che l'utente sia nel gruppo della regola, valida account e durata, controlla unicità (un solo grant in corso per utente, PS e account) e rate limit.
+2. `api` ricava l'identità dalla firma (§8.1), legge le regole correnti e registra il numero di versione, verifica che l'utente sia nel gruppo della regola, valida account e durata, controlla unicità (un solo grant in corso per utente, PS e account) e il numero massimo di grant aperti per utente (parametro dello stack, predefinito 5).
 3. `api` scrive il grant e avvia l'execution con **nome = `grantId`**. Due protezioni contro i doppioni: il controllo di unicità ferma una seconda richiesta uguale dello stesso utente; il nome dell'execution impedisce che un nuovo tentativo di `api` avvii due volte lo stesso grant.
 4. Approvazione automatica → attivazione. Manuale → stato `pending`.
 
@@ -326,7 +328,7 @@ Per chiuderli prima basta la revoca normale: la vista Attivi con selezione multi
 - Ogni versione contiene **tutte** le regole: aggiungere, modificare o eliminare una regola crea una versione nuova completa. Questo dà salvataggio atomico, confronto tra versioni e ritorno a una versione precedente ripubblicandola.
 - Vale sempre **l'ultima versione**. Non si usano i deployment di AppConfig.
 - `api` tiene le regole in memoria e le rinfresca ogni 30 secondi circa: una regola salvata vale per tutti entro quel tempo, e una regola eliminata può ricevere richieste per lo stesso tempo.
-- **Schema:** al documento è agganciato uno schema AppConfig: campi obbligatori, durata entro 12h, "privileged ⇒ approvazione manuale". AppConfig **non** lo applica alla creazione di una versione (spike C4: accetta anche contenuto non valido), ma lo applica su richiesta con `ValidateConfiguration`. Quindi: UI e CLI validano prima di pubblicare; `api` valida ogni versione nuova che legge e, se non è valida, la scarta, continua a usare l'ultima valida ed emette un avviso. Una versione valida scritta fuori da elevate (anche dalla console AWS) compare nella UI come le altre, con il suo autore.
+- **Schema:** al documento è agganciato uno schema AppConfig: campi obbligatori, durata entro 12h, "privileged ⇒ approvazione manuale". AppConfig **non** lo applica alla creazione di una versione (spike C4: accetta anche contenuto non valido), ma lo applica su richiesta con `ValidateConfiguration`. Quindi: prima di pubblicare, UI e CLI chiedono ad `api` di controllare il documento (stesse regole dello schema, più i limiti di §5.4); `api` valida ogni versione nuova che legge e, se non è valida, la scarta, continua a usare l'ultima valida ed emette un avviso. Una versione valida scritta fuori da elevate (anche dalla console AWS) compare nella UI come le altre, con il suo autore.
 - **Contenuto identico:** se il contenuto è uguale all'ultima versione, AppConfig non ne crea una nuova (spike C4).
 - **Salvataggi concorrenti:** ogni salvataggio dichiara da quale versione parte e AppConfig lo rifiuta se nel frattempo ne è uscita un'altra. In quel caso la UI dice chi ha pubblicato e offre "Ricarica e riprova": il modulo resta compilato e si pubblica di nuovo. Se l'altra versione ha toccato la stessa regola, un avviso in più ("il tuo salvataggio sostituirà la sua modifica") con conferma. Nessuna fusione e nessun confronto affiancato.
 - Non esistono bozze: "Salva" mostra il riepilogo di cosa cambia, chiede conferma e pubblica.
@@ -349,7 +351,7 @@ Chi ha il PS `ElevateAdmin`, dalla UI o dalla CLI, **direttamente su AppConfig**
 - Letti da Identity Center e da Organizations con le credenziali dell'admin. Le letture sono gratuite.
 - L'elenco dei PS (solo nomi e ARN) sta in una cache locale sul computer dell'admin, `~/.cache/aws-elevate/`, una per profilo, valida 10 minuti e con pulsante "aggiorna".
 - Il contenuto di un PS ("Cosa contiene") si legge da AWS quando si espande il riquadro.
-- Chi fa richieste non legge mai l'elenco: vede le regole, che contengono già nome e ARN.
+- Chi fa richieste non legge mai l'elenco: vede le regole, che contengono già nome e ARN. Il contenuto del PS di una sua regola ("Cosa otterrai") lo riceve da `api`, perché `ElevateRequester` non può leggere Identity Center.
 - Una regola il cui PS non è più nell'elenco (cancellato in AWS) prende l'etichetta "PS non trovato" nella vista Regole e in `doctor`, senza chiamate in più. Un grant su quella regola fallisce con il motivo.
 
 ## 8. Sicurezza
@@ -365,12 +367,12 @@ Chi ha il PS `ElevateAdmin`, dalla UI o dalla CLI, **direttamente su AppConfig**
 
 | Ruolo | Può | Non può |
 |---|---|---|
-| `api` | DynamoDB `grants`; lettura AppConfig e `ValidateConfiguration`; ricerca in CloudTrail (autore delle versioni); `StartExecution`, `SendTask*`, redrive; lettura Identity Store (utenti, gruppi) | Qualsiasi scrittura `sso` |
+| `api` | DynamoDB `grants`; lettura AppConfig e `ValidateConfiguration`; ricerca in CloudTrail (autore delle versioni); `StartExecution`, `SendTask*`, redrive; lettura Identity Store (utenti, gruppi); `PutEvents` sul bus (solo `elevate.config.rejected`); lettura dei PS (limiti di §5.4 e "Cosa otterrai" per chi fa richieste) | Qualsiasi scrittura `sso` |
 | `engine` | Lettura dei PS (per copiare l'origine); creazione, scrittura, assegnazione e cancellazione **solo su PS con tag `jit=true`**; DynamoDB `grants`; lettura AppConfig | Scrivere o assegnare PS senza tag `jit`; rimuovere il tag |
 | State machine | Invocare `engine`; `PutEvents` sul bus | Tutto il resto |
 | PS `ElevateAdmin` | Chiamare l'API e leggere il parametro con il suo indirizzo; pubblicare versioni di config su AppConfig; leggere PS, account, gruppi; leggere la history di CloudTrail; creare e leggere anteprime di aggiornamento dello stack (§12.3) | Applicare aggiornamenti dello stack; modificare IAM o Lambda; scrivere PS |
 
-Lo scoping per tag è quello validato nello spike (S1, policy di riferimento `spike/policies/scoped-role.json`): `TagResource` condizionato, `UntagResource` negato, chiavi di tag ammesse elencate.
+Lo scoping per tag è quello validato nello spike (S1; la policy di riferimento è nel materiale interno dello spike): `TagResource` condizionato, `UntagResource` negato, chiavi di tag ammesse elencate.
 
 ### 8.3 Prerequisito dichiarato
 
@@ -414,11 +416,12 @@ Ogni transizione del grant è un evento sul bus `elevate-events`, `source = elev
 | `elevate.grant.activated` | Accesso utilizzabile |
 | `elevate.grant.closed` | Fine grant, con motivo (`expired`, `revoked`, `failed`) e, per `revoked`, chi e perché |
 | `elevate.grant.error` | Errore gestito; `reason = revoke_failed` per la revoca fallita |
+| `elevate.config.rejected` | `api` ha scartato una versione di regole non valida (§7.1). Lo emette `api`, una volta per versione |
 
 Payload versionato (`schemaVersion`), con `eventId` deterministico (`<grantId>:<transizione>`), richiedente, approvatore, regola, gruppo che approva, PS di origine, account, inizio, fine, versione della config, motivo. Consegna *at-least-once*; idempotenza e ordinamento a carico del consumer. Campi nuovi solo in aggiunta. Consumer di altri account tramite resource policy del bus (spike S19); gli account ammessi si elencano in un parametro facoltativo dello stack.
 
 ### 9.2 Avvisi
-Una regola EventBridge inoltra i soli eventi critici (`elevate.grant.error`) al topic SNS `elevate-alerts`, con testo leggibile prodotto dal trasformatore della regola. Nessun codice. L'oggetto dell'email non è impostabile in questo modo e resta quello predefinito di SNS (spike C7). L'email è un parametro dello stack; chiunque altro può iscriversi al topic.
+Una regola EventBridge inoltra i soli eventi critici (`elevate.grant.error`, `elevate.config.rejected`) al topic SNS `elevate-alerts`, con testo leggibile prodotto dal trasformatore della regola. Nessun codice. L'oggetto dell'email non è impostabile in questo modo e resta quello predefinito di SNS (spike C7). L'email è un parametro dello stack; chiunque altro può iscriversi al topic.
 
 **Richieste da approvare.** Un secondo topic, `elevate-approvals`, creato dallo stack senza iscritti, riceve le richieste manuali in attesa: chi vuole l'email si iscrive. Non distingue per regola, quindi chi è iscritto le riceve tutte; il testo indica chi chiede, cosa e quale gruppo deve approvare. Chi non si iscrive vede le richieste nella UI e in `aws elevate status`.
 
@@ -430,12 +433,15 @@ Notifiche delle richieste e bottoni Approva / Rifiuta. È un consumer degli even
 ## 10. CLI
 
 ### 10.1 Installazione
+Il client è un solo file eseguibile (Linux e macOS, Intel e ARM), senza prerequisiti: né Python né altri strumenti.
+
 ```bash
-uv tool install aws-elevate-cli && aws-elevate setup
+curl -fsSL https://raw.githubusercontent.com/sdiaco/aws-elevate/main/install.sh | sh
+aws-elevate setup
 ```
 `aws-elevate setup` non chiede parametri: usa la sessione SSO già aperta per trovare l'account in cui l'utente ha `ElevateRequester` o `ElevateAdmin`, legge l'indirizzo dell'API da un parametro SSM a nome fisso, crea l'alias `aws elevate` e il profilo. Con più sessioni SSO si indica `--profile`, come nella AWS CLI. `--profile` vale per tutti i comandi.
 
-`uv` scarica da solo il Python che serve (la AWS CLI v2 non ne installa uno utilizzabile). In alternativa `pipx`.
+Lo script di installazione scarica l'eseguibile dalla release di GitHub e ne verifica il checksum. Su macOS un eseguibile scaricato dal browser viene bloccato da Gatekeeper perché non è firmato: con lo script non succede.
 
 ### 10.2 Comandi
 
@@ -450,6 +456,7 @@ Pochi, con nomi semplici da ricordare. Tutti hanno `--help` e `--profile`.
 | `aws elevate approve <id>` / `--reject` | Per gli approvatori |
 | `aws elevate ui` | UI locale |
 | `aws-elevate setup` / `aws-elevate install` | Configurazione del client (§10.1) e installazione guidata dell'infrastruttura (§12.1) |
+| `aws-elevate update` | Aggiorna il client (§12.3) |
 | `aws elevate admin export` / `import` | Regole da e verso file |
 | `aws elevate admin doctor` | Controlla stack, permessi, config, avvisi e versioni; dice cosa manca |
 
@@ -468,7 +475,7 @@ Un utente SSO entra in un account sempre attraverso un ruolo, e un profilo della
 - **Coerenza:** un nome e un colore per stato, uguali in ogni vista. Ogni lista ha la stessa struttura: ricerca, filtri rapidi, tabella, barra di selezione in basso.
 - **Azioni distruttive:** conferma con elenco degli id e motivo obbligatorio. Dopo l'azione ogni riga mostra il proprio esito, mai un "fatto" generico.
 - **Tempi relativi** ("38 min") con l'orario esatto al passaggio del mouse. **Id copiabili** con un clic.
-- **Leggerezza:** pagine HTML generate dal server locale Python, pochissimo JavaScript, nessun framework, nessuna build con Node, nessuna risorsa esterna. Tutto dentro il pacchetto della CLI.
+- **Leggerezza:** pagine HTML generate dal server locale, pochissimo JavaScript, nessun framework, nessuna build con Node, nessuna risorsa esterna. Pagine e stili sono dentro l'eseguibile del client.
 - **Liste:** 50 righe per pagina; la pagina nuova sostituisce la precedente; il dettaglio si carica solo all'apertura; un solo timer per tutti i countdown.
 
 ### 11.2 Viste
@@ -485,7 +492,7 @@ Un utente SSO entra in un account sempre attraverso un ruolo, e un profilo della
 | **Aggiornamenti** | Admin | §12 |
 | **Primo avvio** | Admin, solo finché non esiste nessuna regola | A tutto schermo, saltabile: procedura guidata per la prima regola (cosa, dove, chi, come) |
 
-I mockup usati nella discussione sono bozze a bassa fedeltà in `.superpowers/brainstorm/` (non versionati).
+I mockup usati nella discussione sono bozze a bassa fedeltà, non versionate.
 
 ### 11.3 Storico: peso e costo
 - Si legge solo da DynamoDB, mai da log o CloudTrail.
@@ -501,9 +508,9 @@ I mockup usati nella discussione sono bozze a bassa fedeltà in `.superpowers/br
 
 | Passo | Cosa | Tempo stimato |
 |---|---|---|
-| 1 | "Launch Stack" nel delegated admin. Parametri: gruppo admin, gruppo che può fare richieste, email per gli avvisi; facoltativo il gruppo auditor | ~10 min di attesa |
+| 1 | "Launch Stack" nel delegated admin. Parametri: gruppo admin, gruppo che può fare richieste, email per gli avvisi; facoltativi il gruppo auditor e il massimo di grant aperti per utente | ~10 min di attesa |
 | 2 | Conferma nell'email di SNS | 1 min |
-| 3 | `uv tool install aws-elevate-cli && aws-elevate setup` | 2 min |
+| 3 | Installazione del client (§10.1) e `aws-elevate setup` | 2 min |
 | 4 | `aws elevate ui` → procedura guidata per la prima regola → Salva | 5 min |
 
 Lo stack trova da solo l'istanza di Identity Center. Come primo passo verifica region e account, e si ferma con un messaggio chiaro se la region non è quella di Identity Center o se l'account non è il delegated admin (spike C15: circa 40 s, create solo due risorse). Il controllo ha un timeout di 60 s: senza, se non risponde lo stack resta bloccato fino a un'ora. Misurato nello spike: stack in circa 150 s. Gli altri tempi sono stime.
@@ -515,7 +522,7 @@ Due modi di installare, entrambi documentati:
 
 In entrambi i casi serve solo CloudFormation, già presente in AWS: nessun Terraform né altro strumento da installare.
 
-**Distribuzione.** Il client si installa da PyPI (o dal repo Git). Template e codice delle Lambda stanno in bucket S3 pubblici delle release, uno per region supportata, perché CloudFormation vuole il pacchetto nella stessa region dello stack; li pubblica uno script a ogni release. Le letture di CloudFormation e Lambda dalla stessa region non costano. Da decidere alla prima release: come limitare il costo dei download da internet sul bucket pubblico (come minimo un allarme di budget).
+**Distribuzione.** Il client si scarica dalle release di GitHub: un eseguibile per sistema e architettura, con checksum; lo script di installazione prende da lì. Template e codice delle Lambda stanno in bucket S3 pubblici delle release, uno per region supportata, perché CloudFormation vuole il pacchetto nella stessa region dello stack; li pubblica uno script a ogni release. Le letture di CloudFormation e Lambda dalla stessa region non costano. Da decidere alla prima release: come limitare il costo dei download da internet sul bucket pubblico (come minimo un allarme di budget).
 
 ### 12.2 Versioni
 Client e infrastruttura hanno ciascuno la propria versione (`major.minor.patch`) e possono avanzare separatamente. Ognuno dichiara cosa gli serve dall'altro, come costante della release:
@@ -531,7 +538,7 @@ Le release minori non introducono regressioni; quelle maggiori hanno note di mig
 
 ### 12.3 Aggiornamenti
 - **Controllo:** client e UI leggono le release dal repo pubblico e mostrano le novità, per client e infrastruttura, con tipo (sicurezza, correzione, novità) e descrizione. Disattivabile. Sono proposte solo le versioni del client compatibili con l'infrastruttura a cui si è collegati.
-- **Client:** si aggiorna dalla UI o con `uv tool upgrade`.
+- **Client:** si aggiorna dalla UI o con `aws-elevate update`, che scarica la release compatibile, ne verifica il checksum e sostituisce l'eseguibile.
 - **Infrastruttura:** la UI **non** la aggiorna.
   - Pulsante "Verifica anteprima modifiche": crea un change set di CloudFormation, che non modifica nulla, e mostra l'elenco delle risorse che cambierebbero. `ElevateAdmin` può solo creare e leggere anteprime sul solo stack `elevate`, con template presi dal bucket ufficiale delle release.
   - Accanto, "mostra comando equivalente".
