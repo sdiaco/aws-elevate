@@ -64,9 +64,14 @@ class Engine:
     # ---------- waits (design §6.2) ----------
 
     def store_token(self, grant_id: str, token: str) -> dict:
-        """Save the token of the current wait. A closed grant needs none."""
-        self._table.set_token(grant_id, token)
-        return {"grant": snapshot(self._get(grant_id))}
+        """Save the token of the current wait (approval or active). A closed grant needs
+        none. Any other state means the grant moved on before the wait began, typically
+        an early revocation: refusing sends the execution straight to its Catch."""
+        stored = self._table.set_token(grant_id, token)
+        grant = self._get(grant_id)
+        if not stored and grant.state != State.CLOSED:
+            raise InvalidState(f"grant {grant_id} is {grant.state}, no wait to join")
+        return {"grant": snapshot(grant)}
 
     def resolve_wait(self, grant_id: str) -> dict:
         """The approval wait timed out. Whoever moved the record first wins: if an
@@ -245,5 +250,6 @@ class Engine:
         remaining = parse_iso(grant.expires_at) - self._now()
         return {
             "grant": snapshot(grant),
-            "waitSeconds": max(0, int(remaining.total_seconds())),
+            # At least 1: a zero timeout is a States.Runtime error, which no Catch handles.
+            "waitSeconds": max(1, int(remaining.total_seconds())),
         }
