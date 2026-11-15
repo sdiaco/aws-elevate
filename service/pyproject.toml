@@ -1,0 +1,46 @@
+# Development and test configuration only. The service is not published as a package:
+# the Lambdas ship src/aws_elevate as a zip and use the boto3 bundled in the runtime.
+[project]
+name = "aws-elevate-service"
+version = "0.0.1"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "boto3>=1.40",
+    "cfn-lint>=1.60",
+    "commitizen>=4.10",
+    "jsonschema>=4.25",
+    "pytest>=8.4",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["src/aws_elevate"]
+branch = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+# Conventional Commits with the types and scopes of AGENTS.md, checked by the lefthook
+# commit-msg hook: "<type>(<scope>): <subject>", lower case, no trailing period.
+[tool.commitizen]
+name = "cz_customize"
+
+[tool.commitizen.customize]
+schema = "<type>(<scope>): <subject>"
+schema_pattern = '^(feat|fix|docs|test|refactor|chore|build)\((service|client|infra|contract|docs|dev)\)!?: [a-z][^\n]*[^.\s](\n\n(?s:.*))?$'
