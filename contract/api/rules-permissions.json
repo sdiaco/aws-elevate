@@ -1,0 +1,43 @@
+{
+  "method": "GET",
+  "path": "/v1/rules/ssm-dev/permissions",
+  "query": null,
+  "request": null,
+  "status": 200,
+  "response": {
+    "managed": [
+      "arn:aws:iam::aws:policy/ReadOnlyAccess"
+    ],
+    "customerManaged": [
+      {
+        "name": "team-boundary",
+        "path": "/"
+      }
+    ],
+    "boundary": {
+      "managedPolicyArn": "arn:aws:iam::aws:policy/PowerUserAccess"
+    },
+    "inline": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": "ssm:*",
+          "Resource": "*"
+        }
+      ]
+    },
+    "inlineSummary": [
+      {
+        "effect": "Allow",
+        "actions": [
+          "ssm:*"
+        ],
+        "resources": [
+          "*"
+        ],
+        "conditions": null
+      }
+    ]
+  }
+}

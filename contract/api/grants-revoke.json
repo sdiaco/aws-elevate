@@ -1,0 +1,51 @@
+{
+  "method": "POST",
+  "path": "/v1/grants/abcde23456/revoke",
+  "query": null,
+  "request": {
+    "reason": "incident closed"
+  },
+  "status": 200,
+  "response": {
+    "grant": {
+      "id": "abcde23456",
+      "state": "revoking",
+      "closeReason": null,
+      "ruleId": "ssm-prod",
+      "approval": "manual",
+      "configVersion": 3,
+      "requester": {
+        "userId": "u-1",
+        "userName": "user@example.com"
+      },
+      "approver": {
+        "userId": "u-2",
+        "userName": "lead@example.com"
+      },
+      "approverGroup": {
+        "id": "g-lead",
+        "name": "leads"
+      },
+      "sourcePs": {
+        "arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-1",
+        "name": "ssm-write"
+      },
+      "account": "222222222222",
+      "durationSeconds": 3600,
+      "reason": "incident 42",
+      "privileged": true,
+      "createdAt": "2026-11-15T09:59:00Z",
+      "activatedAt": "2026-11-15T10:01:00Z",
+      "expiresAt": "2026-11-15T11:01:00Z",
+      "closedAt": null,
+      "revokedBy": {
+        "userId": "u-3",
+        "userName": "admin@example.com"
+      },
+      "revokeReason": "incident closed",
+      "error": null,
+      "ruleRemoved": false,
+      "actions": []
+    }
+  }
+}

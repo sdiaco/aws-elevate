@@ -1,0 +1,50 @@
+{
+  "method": "POST",
+  "path": "/v1/rules/check",
+  "query": null,
+  "request": {
+    "doc": {
+      "schemaVersion": 1,
+      "rules": [
+        {
+          "id": "db-admin-prod",
+          "group": {
+            "id": "g-req",
+            "name": "backend-devs"
+          },
+          "permissionSet": {
+            "arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-2",
+            "name": "db-admin"
+          },
+          "accounts": [
+            {
+              "id": "222222222222",
+              "name": "prod"
+            }
+          ],
+          "duration": {
+            "defaultSeconds": 3600,
+            "maxSeconds": 7200
+          },
+          "approval": "manual",
+          "approverGroup": {
+            "id": "g-lead",
+            "name": "leads"
+          },
+          "privileged": true
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "response": {
+    "valid": false,
+    "errors": [
+      {
+        "ruleId": "db-admin-prod",
+        "code": "ps_not_found",
+        "message": "permission set db-admin (arn:aws:sso:::permissionSet/ssoins-1/ps-2) does not exist in Identity Center"
+      }
+    ]
+  }
+}
