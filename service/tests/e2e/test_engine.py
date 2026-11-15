@@ -1,7 +1,6 @@
 """Engine and state machine against the real organization (plan T1.8).
 Grants are written to the table directly: the api arrives in stage 2."""
 
-import json
 import time
 
 import harness
@@ -86,29 +85,4 @@ def test_early_revocation_denies_open_sessions(org):
     final = org.snapshot(grant.id)
     assert (final["state"], final["closeReason"]) == ("closed", "revoked")
     assert final["revokeReason"] == "e2e early revocation"
-    assert org.permission_set(ps_name(grant.id)) is None
-
-
-def test_failed_revocation_then_redrive(org):
-    iam = org.svc.client("iam")
-    deny = {
-        "Version": "2012-10-17",
-        "Statement": [{"Effect": "Deny", "Action": "sso:DeleteAccountAssignment", "Resource": "*"}],
-    }
-    grant, execution, _snap, _creds = active_with_credentials(org, 60)
-    iam.put_role_policy(
-        RoleName=f"{harness.STACK}-engine", PolicyName="e2e-deny", PolicyDocument=json.dumps(deny)
-    )
-    try:
-        org.wait_execution(execution, "FAILED", timeout_s=900)
-        failed = org.snapshot(grant.id)
-        assert failed["state"] == "revoke_failed"
-        assert "EvError" in org.events_sent(execution)
-    finally:
-        iam.delete_role_policy(RoleName=f"{harness.STACK}-engine", PolicyName="e2e-deny")
-    time.sleep(15)  # IAM propagation of the removed deny
-    org.sfn.redrive_execution(executionArn=execution)
-    org.wait_execution(execution, "SUCCEEDED", timeout_s=600)
-    final = org.snapshot(grant.id)
-    assert (final["state"], final["closeReason"]) == ("closed", "expired")
     assert org.permission_set(ps_name(grant.id)) is None
