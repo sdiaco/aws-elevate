@@ -6,7 +6,7 @@ Rules for anyone, human or AI agent, who changes this repository. Read this file
 
 aws-elevate grants temporary elevated access (just-in-time) on AWS IAM Identity Center. It is a security tool: a bug can hand out permissions. Prefer the boring, obvious, reviewable solution every time.
 
-- Design (source of truth, Italian): `docs/2026-11-14-aws-elevate-design-v2.md`
+- Design (source of truth, Italian): internal document kept by the maintainer, not in the repository. Ask the maintainer when a behavior is unclear
 - Service: Python Lambdas in `service/`
 - Client: Go CLI and local UI in `client/`
 - Shared format examples: `contract/`
