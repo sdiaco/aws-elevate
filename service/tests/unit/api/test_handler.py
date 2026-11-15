@@ -64,11 +64,13 @@ def event(method, proxy, body=None, query=None, version=INFRA_VERSION, headers=N
 
 @pytest.fixture
 def api(fx):
-    def build(identity=None, grants=None, config=None, resolver=None):
+    def build(identity=None, grants=None, config=None, resolver=None, rules=None, versions=None):
         return Api(
             resolver or FakeResolver(identity or fx.REQUESTER),
             grants or RecordingGrants(),
             config or FakeConfig([fx.AUTO_RULE, fx.MANUAL_RULE]),
+            rules or RecordingGrants(),
+            versions or RecordingGrants(),
         )
 
     return build
@@ -109,6 +111,25 @@ def test_routes_reach_the_grant_methods(api, method, proxy, body, query, call):
     assert body_of(resp) == {"grant": {"id": "abcde23456"}}
 
 
+@pytest.mark.parametrize(
+    ("target", "method", "proxy", "body", "call"),
+    [
+        ("rules", "GET", "rules", None, ("list",)),
+        ("rules", "GET", "rules/ssm-dev/permissions", None, ("permissions", "ssm-dev")),
+        ("rules", "POST", "rules/check", {"doc": {}}, ("check", {"doc": {}})),
+        ("versions", "GET", "config/versions", None, ("list",)),
+        ("versions", "GET", "config/versions/12", None, ("get", "12")),
+    ],
+)
+def test_routes_reach_the_rule_and_config_methods(api, target, method, proxy, body, call):
+    grants, recorder = RecordingGrants(), RecordingGrants(result={"ok": True})
+    resp = api(grants=grants, **{target: recorder}).handle(event(method, proxy, body))
+    assert resp["statusCode"] == 200
+    assert recorder.calls == [call]
+    assert grants.calls == []
+    assert body_of(resp) == {"ok": True}
+
+
 def test_routes_pass_the_resolved_identity(api, fx):
     seen = []
 
@@ -130,6 +151,11 @@ def test_routes_pass_the_resolved_identity(api, fx):
         ("GET", "grants/NOT-AN-ID"),
         ("GET", "grants/abcde23456/approve"),
         ("GET", None),
+        ("POST", "rules"),
+        ("GET", "rules/check"),
+        ("GET", "rules/a/b/permissions"),
+        ("GET", "config/versions/abc"),
+        ("DELETE", "config/versions/1"),
     ],
 )
 def test_unknown_route_is_not_found(api, method, proxy):
@@ -269,6 +295,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "ADMIN_PS_NAME": "ElevateAdmin",
         "AUDITOR_GROUP_ID": "",
         "MAX_OPEN_GRANTS_PER_USER": "5",
+        "SSO_INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
     }
     for name, value in env.items():
         monkeypatch.setenv(name, value)

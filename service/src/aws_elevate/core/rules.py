@@ -170,6 +170,24 @@ def rule_from_dict(data: dict) -> Rule:
     )
 
 
+def _ref(ref: Group | Account) -> dict:
+    return {"id": ref.id, "name": ref.name}
+
+
+def rule_to_dict(rule: Rule) -> dict:
+    """The rule as it is written in the rules document."""
+    return {
+        "id": rule.id,
+        "group": _ref(rule.group),
+        "permissionSet": {"arn": rule.permission_set.arn, "name": rule.permission_set.name},
+        "accounts": [_ref(a) for a in rule.accounts],
+        "duration": {"defaultSeconds": rule.default_seconds, "maxSeconds": rule.max_seconds},
+        "approval": rule.approval.value,
+        "approverGroup": _ref(rule.approver_group) if rule.approver_group else None,
+        "privileged": rule.privileged,
+    }
+
+
 def find_rule(doc: dict, rule_id: str) -> Rule | None:
     for data in doc.get("rules", []):
         if data.get("id") == rule_id:

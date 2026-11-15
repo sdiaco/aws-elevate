@@ -15,5 +15,6 @@
     "client_too_old",
     "config_unavailable",
     "internal"
-  ]
+  ],
+  "checkCodes": ["invalid", "ps_not_found", "limits"]
 }

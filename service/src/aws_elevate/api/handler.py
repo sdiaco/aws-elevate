@@ -17,16 +17,22 @@ from .config_cache import ConfigUnavailable
 from .errors import ApiError
 
 _ID = r"([a-z2-7]{10})"
-# (method, path under /v1, route method on GrantRoutes, takes the body, success status)
-_GRANT_ROUTES = [
-    ("POST", re.compile(r"grants"), "create", True, 201),
-    ("GET", re.compile(r"grants"), "list", False, 200),
-    ("GET", re.compile(rf"grants/{_ID}"), "get", False, 200),
-    ("POST", re.compile(rf"grants/{_ID}/approve"), "approve", False, 200),
-    ("POST", re.compile(rf"grants/{_ID}/reject"), "reject", False, 200),
-    ("POST", re.compile(rf"grants/{_ID}/cancel"), "cancel", False, 200),
-    ("POST", re.compile(rf"grants/{_ID}/revoke"), "revoke", True, 200),
-    ("POST", re.compile(rf"grants/{_ID}/redrive"), "redrive", False, 200),
+# (method, path under /v1, route object, its method, extra argument, success status).
+# The extra argument is the query string ("query"), the JSON body ("body") or nothing.
+_ROUTES = [
+    ("POST", re.compile(r"grants"), "grants", "create", "body", 201),
+    ("GET", re.compile(r"grants"), "grants", "list", "query", 200),
+    ("GET", re.compile(rf"grants/{_ID}"), "grants", "get", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/approve"), "grants", "approve", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/reject"), "grants", "reject", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/cancel"), "grants", "cancel", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/revoke"), "grants", "revoke", "body", 200),
+    ("POST", re.compile(rf"grants/{_ID}/redrive"), "grants", "redrive", None, 200),
+    ("GET", re.compile(r"rules"), "rules", "list", None, 200),
+    ("GET", re.compile(r"rules/([^/]+)/permissions"), "rules", "permissions", None, 200),
+    ("POST", re.compile(r"rules/check"), "rules", "check", "body", 200),
+    ("GET", re.compile(r"config/versions"), "versions", "list", None, 200),
+    ("GET", re.compile(r"config/versions/([0-9]{1,8})"), "versions", "get", None, 200),
 ]
 
 log = logging.getLogger(__name__)
@@ -68,10 +74,10 @@ def _check_client(event: dict) -> None:
 
 
 class Api:
-    def __init__(self, identity, grants, config):
+    def __init__(self, identity, grants, config, rules, versions):
         self._identity = identity
-        self._grants = grants
         self._config = config
+        self._targets = {"grants": grants, "rules": rules, "versions": versions}
 
     def handle(self, event: dict) -> dict:
         try:
@@ -106,16 +112,16 @@ class Api:
         path = (event.get("pathParameters") or {}).get("proxy") or ""
         if method == "GET" and path == "me":
             return 200, self._me(identity)
-        for verb, pattern, name, takes_body, status in _GRANT_ROUTES:
+        for verb, pattern, target, name, extra, status in _ROUTES:
             match = pattern.fullmatch(path)
             if verb != method or not match:
                 continue
             args = list(match.groups())
-            if name == "list":
+            if extra == "query":
                 args.append(event.get("queryStringParameters") or {})
-            if takes_body:
+            elif extra == "body":
                 args.append(_body(event))
-            return status, getattr(self._grants, name)(identity, *args)
+            return status, getattr(self._targets[target], name)(identity, *args)
         raise ApiError(404, "not_found", f"no route {method} /v1/{path}")
 
     def _me(self, identity: Identity) -> dict:
@@ -152,10 +158,13 @@ def _build_api() -> Api:
     from ..adapters.grants_table import GrantsTable
     from ..adapters.iam_roles import IamRoles
     from ..adapters.identity_store import IdentityStore
+    from ..adapters.sso_read import SsoRead
     from ..adapters.stepfunctions import StepFunctions
     from .config_cache import ConfigCache
     from .identity import IdentityResolver
+    from .routes_config import ConfigRoutes
     from .routes_grants import GrantRoutes
+    from .routes_rules import RuleRoutes
 
     app, profile = os.environ["APPCONFIG_APPLICATION_ID"], os.environ["APPCONFIG_PROFILE_ID"]
     table = GrantsTable(boto3.client("dynamodb"), os.environ["TABLE_NAME"])
@@ -180,7 +189,10 @@ def _build_api() -> Api:
         store=store,
         max_open=int(os.environ["MAX_OPEN_GRANTS_PER_USER"]),
     )
-    return Api(identity, grants, config)
+    rules = RuleRoutes(
+        config=config, sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"])
+    )
+    return Api(identity, grants, config, rules, ConfigRoutes(config))
 
 
 def _get_api() -> Api:

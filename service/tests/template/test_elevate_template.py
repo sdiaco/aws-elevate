@@ -264,6 +264,16 @@ def test_sns_topic_policy_statements_name_one_topic_each():
 SCHEMA_PATH = TEMPLATE_PATH.parent / "rules.schema.json"
 
 
+# What adapters.sso_read.read_source calls (design §5.4 limits, "Cosa otterrai").
+API_PS_READS = (
+    "sso:DescribePermissionSet",
+    "sso:GetInlinePolicyForPermissionSet",
+    "sso:ListManagedPoliciesInPermissionSet",
+    "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+    "sso:GetPermissionsBoundaryForPermissionSet",
+)
+
+
 def api_actions() -> set[str]:
     return {
         a for s in statements("ApiRole") if s["Effect"] == "Allow" for a in as_list(s["Action"])
@@ -297,10 +307,21 @@ def test_api_actions_are_exactly_the_design_ones():
         "identitystore:GetUserId",
         "identitystore:ListGroupMembershipsForMember",
         "iam:GetRole",
+        *API_PS_READS,
         "events:PutEvents",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
     }
+
+
+def test_api_reads_permission_sets_of_this_instance_only():
+    stmt = api_statement("ReadPermissionSets")
+    assert sorted(as_list(stmt["Action"])) == sorted(API_PS_READS)
+    assert as_list(stmt["Resource"]) == [
+        {"Fn::GetAtt": ["Precheck", "InstanceArn"]},
+        {"Fn::Sub": "arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*"},
+    ]
+    assert not [s for s in statements("ApiRole") if "sso:" in text(s) and s is not stmt]
 
 
 def test_api_never_scans_the_table():
@@ -440,6 +461,7 @@ def test_api_function_gets_the_permission_set_names_and_parameters():
     assert env["ADMIN_PS_NAME"] == RESOURCES["AdminPs"]["Properties"]["Name"]
     assert env["MAX_OPEN_GRANTS_PER_USER"] == {"Ref": "MaxOpenGrantsPerUser"}
     assert env["AUDITOR_GROUP_ID"] == {"Ref": "AuditorGroupId"}
+    assert env["SSO_INSTANCE_ARN"] == {"Fn::GetAtt": ["Precheck", "InstanceArn"]}
 
 
 def test_install_parameters():

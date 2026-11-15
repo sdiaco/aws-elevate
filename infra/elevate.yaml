@@ -1287,6 +1287,19 @@ Resources:
                   - !Sub arn:${AWS::Partition}:identitystore::${AWS::AccountId}:identitystore/${Precheck.IdentityStoreId}
                   - !Sub arn:${AWS::Partition}:identitystore:::user/*
                   - !Sub arn:${AWS::Partition}:identitystore:::membership/*
+              # Reads only: the limits checked before publishing (§5.4) and "what you
+              # will get" for requesters, who cannot read Identity Center (§7.5).
+              - Sid: ReadPermissionSets
+                Effect: Allow
+                Action:
+                  - sso:DescribePermissionSet
+                  - sso:GetInlinePolicyForPermissionSet
+                  - sso:ListManagedPoliciesInPermissionSet
+                  - sso:ListCustomerManagedPolicyReferencesInPermissionSet
+                  - sso:GetPermissionsBoundaryForPermissionSet
+                Resource:
+                  - !GetAtt Precheck.InstanceArn
+                  - !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
               # The real RoleId of the two service roles, to refuse look-alikes (§8.1).
               - Sid: CompareRoleId
                 Effect: Allow
@@ -1340,6 +1353,7 @@ Resources:
           ADMIN_PS_NAME: ElevateAdmin
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
+          SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
 
   RestApi:
     Type: AWS::ApiGateway::RestApi

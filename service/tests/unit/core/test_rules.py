@@ -1,5 +1,7 @@
 import copy
 import dataclasses
+import json
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,7 @@ from aws_elevate.core.rules import (
     parse,
     requestable,
     rule_from_dict,
+    rule_to_dict,
     validate_request,
 )
 
@@ -248,3 +251,14 @@ def test_invalid_request(account, duration, fragment):
     with pytest.raises(InvalidRequest) as caught:
         validate_request(RULE, account, duration)
     assert fragment in str(caught.value)
+
+
+# ---------- rule_to_dict (GET /rules) ----------
+
+EXAMPLES = Path(__file__).resolve().parents[4] / "contract" / "rules"
+
+
+@pytest.mark.parametrize("name", ["valid-auto-and-manual.json", "valid-empty.json"])
+def test_rule_to_dict_gives_back_the_document_form(name):
+    doc = json.loads((EXAMPLES / name).read_text())
+    assert [rule_to_dict(r) for r in parse(doc)] == doc["rules"]
