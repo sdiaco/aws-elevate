@@ -5,3 +5,6 @@ __pycache__/
 htmlcov/
 dist/
 *.egg-info/
+client/dist/
+service/.venv/
+build/
