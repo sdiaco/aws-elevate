@@ -1,0 +1,18 @@
+{
+  "states": ["pending", "activating", "active", "revoking", "revoke_failed", "closed"],
+  "closeReasons": ["expired", "revoked", "rejected", "timed_out", "cancelled", "invalidated", "failed"],
+  "approvals": ["auto", "manual"],
+  "roles": ["requester", "approver", "admin", "auditor"],
+  "errorCodes": [
+    "forbidden",
+    "not_found",
+    "invalid_request",
+    "duplicate",
+    "rate_limited",
+    "state_conflict",
+    "activating",
+    "not_ready",
+    "client_too_old",
+    "config_unavailable"
+  ]
+}
