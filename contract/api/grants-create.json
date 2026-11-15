@@ -1,0 +1,50 @@
+{
+  "method": "POST",
+  "path": "/v1/grants",
+  "query": null,
+  "request": {
+    "ruleId": "ssm-prod",
+    "account": "222222222222",
+    "durationSeconds": 3600,
+    "reason": "incident 42"
+  },
+  "status": 201,
+  "response": {
+    "grant": {
+      "id": "m66gt2uszz",
+      "state": "pending",
+      "closeReason": null,
+      "ruleId": "ssm-prod",
+      "approval": "manual",
+      "configVersion": 3,
+      "requester": {
+        "userId": "u-1",
+        "userName": "user@example.com"
+      },
+      "approver": null,
+      "approverGroup": {
+        "id": "g-lead",
+        "name": "leads"
+      },
+      "sourcePs": {
+        "arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-1",
+        "name": "ssm-write"
+      },
+      "account": "222222222222",
+      "durationSeconds": 3600,
+      "reason": "incident 42",
+      "privileged": true,
+      "createdAt": "2026-11-15T10:00:00Z",
+      "activatedAt": null,
+      "expiresAt": null,
+      "closedAt": null,
+      "revokedBy": null,
+      "revokeReason": null,
+      "error": null,
+      "ruleRemoved": false,
+      "actions": [
+        "cancel"
+      ]
+    }
+  }
+}

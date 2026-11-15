@@ -1,0 +1,13 @@
+{
+  "source": "elevate",
+  "detailType": "elevate.config.rejected",
+  "detail": {
+    "schemaVersion": 1,
+    "eventId": "config:4:rejected",
+    "configVersion": 4,
+    "author": "arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_x/user@example.com",
+    "errors": [
+      "rules[0].approval: must be auto or manual"
+    ]
+  }
+}

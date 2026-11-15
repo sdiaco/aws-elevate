@@ -1,0 +1,34 @@
+{
+  "source": "elevate",
+  "detailType": "elevate.request.created",
+  "detail": {
+    "schemaVersion": 1,
+    "eventId": "abcde23456:created",
+    "grantId": "abcde23456",
+    "requester": {
+      "userId": "u-1",
+      "userName": "user@example.com"
+    },
+    "approver": null,
+    "approverGroup": {
+      "id": "g-lead",
+      "name": "leads"
+    },
+    "rule": "ssm-prod",
+    "sourcePs": {
+      "arn": "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-1111111111111111",
+      "name": "ssm-write"
+    },
+    "account": "222222222222",
+    "approval": "manual",
+    "privileged": true,
+    "startsAt": null,
+    "expiresAt": null,
+    "configVersion": 3,
+    "reason": "incident 42",
+    "closeReason": null,
+    "revokedBy": null,
+    "revokeReason": null,
+    "error": null
+  }
+}

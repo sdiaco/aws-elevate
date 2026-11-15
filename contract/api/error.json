@@ -1,0 +1,11 @@
+{
+  "method": "GET",
+  "path": "/v1/grants/zzzzzzzzzz",
+  "query": null,
+  "request": null,
+  "status": 404,
+  "response": {
+    "error": "not_found",
+    "message": "grant zzzzzzzzzz does not exist"
+  }
+}

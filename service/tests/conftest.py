@@ -1,5 +1,6 @@
-"""In-memory fakes behind the grant routes. The table keeps the real lifecycle rules and
-offers only the reads the real adapter has, so a route cannot pass with a Scan."""
+"""In-memory fakes behind the api routes, shared by the unit and the contract tests.
+The table keeps the real lifecycle rules and offers only the reads the real adapter has,
+so a route cannot pass with a Scan."""
 
 import dataclasses
 import sys
@@ -244,6 +245,26 @@ class FakeStore:
 
     def group_ids(self, user_id):
         return self.groups.get(user_id, frozenset())
+
+
+def assert_same_shape(example, actual, where="$"):
+    """Same keys at every level and same JSON types; null on either side matches any
+    type, because the example shows a nullable field filled in."""
+    if example is None or actual is None:
+        return
+    if isinstance(example, dict):
+        assert isinstance(actual, dict), where
+        assert set(actual) == set(example), (where, sorted(set(actual) ^ set(example)))
+        for key, value in example.items():
+            assert_same_shape(value, actual[key], f"{where}.{key}")
+    elif isinstance(example, list):
+        assert isinstance(actual, list), where
+        for i, item in enumerate(actual):
+            # Items are matched by position, the last example item standing for the rest.
+            assert example, f"{where}: the example list is empty"
+            assert_same_shape(example[min(i, len(example) - 1)], item, f"{where}[{i}]")
+    else:
+        assert type(actual) is type(example), (where, type(example), type(actual))
 
 
 @pytest.fixture
