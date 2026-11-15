@@ -6,12 +6,19 @@
 Environment: PROFILE (SSO profile of the test user, able to assume
 OrganizationAccountAccessRole), SERVICE_ACCOUNT (Identity Center delegated admin),
 TARGET_ACCOUNT (member account receiving grants), TEST_USER (Identity Center user name of
-the profile's user). Optional: ALERT_EMAIL (default user@example.com).
+the profile's user), APPROVER_PROFILE (SSO profile logged in as elevate-e2e-approver, with
+its own sso-session). Optional: ALERT_EMAIL (default user@example.com).
 
 Creates only elevate-e2e* resources: stack, code bucket, a source permission set, the
 seeder Lambda (records written as the engine role, because the table policy admits no one
-else), and JIT-e2e* permission sets made by the engine. `down` removes all of them,
-including the resources the stack retains on deletion (table, AppConfig application)."""
+else), the groups elevate-e2e-admins and elevate-e2e-requesters with the test user in
+both, the user elevate-e2e-approver in the admin group (a request cannot be approved by
+its requester; its first login is done by hand: one-time password from the console),
+and the JIT-* permission sets the engine makes for e2e grants. The stack also
+creates the service permission sets ElevateRequester and ElevateAdmin, under their real
+names (the client looks them up by name; the maintainer approved it for the test
+organization). `down` removes all of them, including the resources the stack retains on
+deletion (table, AppConfig application)."""
 
 import hashlib
 import io
@@ -19,11 +26,15 @@ import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.request
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 
 STACK = "elevate-e2e"
@@ -31,7 +42,14 @@ SERVICE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATE = SERVICE_DIR.parent / "infra" / "elevate.yaml"
 SOURCE_PS = "elevate-e2e-source"
 SEEDER = "elevate-e2e-seeder"
-GRANT_PREFIX = "e2e"  # e2e grant ids start with it, so cleanup never touches real grants
+GRANT_PREFIX = "e2e"  # grant ids written by the engine tests start with it
+RULE_PREFIX = "e2e-"  # every e2e rule id: cleanup finds the JIT-* of api grants by tag
+RULE_ID = "e2e-probe"  # auto, the test user's requester group
+MANUAL_RULE_ID = "e2e-manual"  # manual, approved by the admin group the test user is in
+OTHER_RULE_ID = "e2e-other"  # a group the test user is not in
+ADMIN_GROUP = "elevate-e2e-admins"
+APPROVER_USER = "elevate-e2e-approver"
+REQUESTER_GROUP = "elevate-e2e-requesters"
 PROBE_ACTION = "iam:GetAccountSummary"
 
 SEEDER_CODE = """
@@ -77,6 +95,130 @@ def service_session(human: boto3.Session | None = None) -> boto3.Session:
         aws_session_token=creds["SessionToken"],
         region_name=human.region_name,
     )
+
+
+# ---------- groups ----------
+
+
+def _store(session: boto3.Session) -> tuple[object, str]:
+    store_id = session.client("sso-admin").list_instances()["Instances"][0]["IdentityStoreId"]
+    return session.client("identitystore"), store_id
+
+
+def find_user(session: boto3.Session, name: str) -> str | None:
+    ids, store_id = _store(session)
+    try:
+        return ids.get_user_id(
+            IdentityStoreId=store_id,
+            AlternateIdentifier={
+                "UniqueAttribute": {"AttributePath": "userName", "AttributeValue": name}
+            },
+        )["UserId"]
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise
+        return None
+
+
+def e2e_user_id(session: boto3.Session) -> str:
+    user = find_user(session, env("TEST_USER"))
+    if user is None:
+        raise SystemExit(f"Identity Center user {env('TEST_USER')} not found")
+    return user
+
+
+def _add_member(session: boto3.Session, group: str, user: str) -> None:
+    ids, store_id = _store(session)
+    try:
+        ids.create_group_membership(
+            IdentityStoreId=store_id, GroupId=group, MemberId={"UserId": user}
+        )
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "ConflictException":
+            raise
+
+
+def ensure_approver(session: boto3.Session, admin_group: str) -> None:
+    ids, store_id = _store(session)
+    user = find_user(session, APPROVER_USER)
+    if user is None:
+        user = ids.create_user(
+            IdentityStoreId=store_id,
+            UserName=APPROVER_USER,
+            DisplayName="elevate e2e approver",
+            Name={"GivenName": "elevate", "FamilyName": "e2e-approver"},
+            Emails=[{"Value": f"{APPROVER_USER}@example.com", "Type": "work", "Primary": True}],
+        )["UserId"]
+        log(f"created user {APPROVER_USER}: set its password in the console and log in")
+    _add_member(session, admin_group, user)
+
+
+def delete_approver(session: boto3.Session, failures: list) -> None:
+    ids, store_id = _store(session)
+    user = find_user(session, APPROVER_USER)
+    if user is None:
+        return
+    _try(f"user {APPROVER_USER}", lambda: ids.delete_user(
+        IdentityStoreId=store_id, UserId=user), failures)  # fmt: skip
+    log(f"deleted user {APPROVER_USER}")
+
+
+def find_group(session: boto3.Session, name: str) -> str | None:
+    ids, store_id = _store(session)
+    try:
+        return ids.get_group_id(
+            IdentityStoreId=store_id,
+            AlternateIdentifier={
+                "UniqueAttribute": {"AttributePath": "displayName", "AttributeValue": name}
+            },
+        )["GroupId"]
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise
+        return None
+
+
+def ensure_groups(session: boto3.Session) -> tuple[str, str]:
+    """(admin group id, requester group id), each with the test user as a member."""
+    ids, store_id = _store(session)
+    user = e2e_user_id(session)
+    found = []
+    for name in (ADMIN_GROUP, REQUESTER_GROUP):
+        group = find_group(session, name)
+        if group is None:
+            group = ids.create_group(
+                IdentityStoreId=store_id, DisplayName=name, Description="aws-elevate e2e"
+            )["GroupId"]
+            log(f"created group {name}")
+        _add_member(session, group, user)
+        found.append(group)
+    ensure_approver(session, found[0])
+    return found[0], found[1]
+
+
+def delete_groups(session: boto3.Session, failures: list) -> None:
+    ids, store_id = _store(session)
+    for name in (ADMIN_GROUP, REQUESTER_GROUP):
+        group = find_group(session, name)
+        if group is None:
+            continue
+        for page in ids.get_paginator("list_group_memberships").paginate(
+            IdentityStoreId=store_id, GroupId=group
+        ):
+            for m in page["GroupMemberships"]:
+                _try(
+                    f"membership in {name}",
+                    lambda m=m: ids.delete_group_membership(
+                        IdentityStoreId=store_id, MembershipId=m["MembershipId"]
+                    ),
+                    failures,
+                )
+        _try(
+            f"group {name}",
+            lambda g=group: ids.delete_group(IdentityStoreId=store_id, GroupId=g),
+            failures,
+        )
+        log(f"deleted group {name}")
 
 
 # ---------- package and stack ----------
@@ -135,14 +277,14 @@ def _stack_exists(cfn) -> bool:
 
 def stack_up(session: boto3.Session) -> dict:
     bucket, key = upload(session)
+    admin_group, requester_group = ensure_groups(session)
     cfn = session.client("cloudformation")
     params = [
         {"ParameterKey": "AlertEmail", "ParameterValue": env("ALERT_EMAIL", "user@example.com")},
         {"ParameterKey": "CodeBucket", "ParameterValue": bucket},
         {"ParameterKey": "CodeKey", "ParameterValue": key},
-        # Real group ids come from the environment, never from the repository.
-        {"ParameterKey": "AdminGroupId", "ParameterValue": env("ADMIN_GROUP_ID")},
-        {"ParameterKey": "RequesterGroupId", "ParameterValue": env("REQUESTER_GROUP_ID")},
+        {"ParameterKey": "AdminGroupId", "ParameterValue": admin_group},
+        {"ParameterKey": "RequesterGroupId", "ParameterValue": requester_group},
     ]
     args = {
         "StackName": STACK,
@@ -255,26 +397,29 @@ def sso_token(human: boto3.Session) -> str:
     from botocore.utils import JSONFileCache, SSOTokenLoader
 
     config = human._session.full_config
-    profile = config["profiles"][env("PROFILE")]
+    profile = config["profiles"][human.profile_name]
     session_name = profile["sso_session"]
     start_url = config["sso_sessions"][session_name]["sso_start_url"]
     cache = JSONFileCache(os.path.expanduser("~/.aws/sso/cache"))
     token = SSOTokenLoader(cache=cache)(start_url, session_name=session_name)
     expires = datetime.fromisoformat(token["expiresAt"].replace("Z", "+00:00"))
     if expires <= datetime.now(UTC):
-        raise SystemExit(f"SSO token expired: run `aws sso login --profile {env('PROFILE')}`")
+        raise SystemExit(f"SSO token expired: run `aws sso login --profile {human.profile_name}`")
     return token["accessToken"]
 
 
-def role_credentials(human: boto3.Session, role: str, timeout_s: float = 120) -> dict:
-    """Credentials of the ephemeral role from the access portal. Right after the
-    assignment the portal refuses for a few seconds (spike C12): retry."""
+def role_credentials(
+    human: boto3.Session, role: str, timeout_s: float = 120, account: str | None = None
+) -> dict:
+    """Credentials of a role of the test user from the access portal, by default in the
+    target account. Right after the assignment the portal refuses for a few seconds
+    (spike C12): retry."""
     portal, token = human.client("sso"), sso_token(human)
     started = time.monotonic()
     while True:
         try:
             return portal.get_role_credentials(
-                roleName=role, accountId=env("TARGET_ACCOUNT"), accessToken=token
+                roleName=role, accountId=account or env("TARGET_ACCOUNT"), accessToken=token
             )["roleCredentials"]
         except ClientError as err:
             if time.monotonic() - started > timeout_s:
@@ -304,6 +449,34 @@ def probe(creds: dict) -> str:
         if code in ("InvalidClientTokenId", "ExpiredToken"):
             return "invalid"
         raise
+
+
+# ---------- signed api calls ----------
+
+
+def call_api(
+    url: str, creds, method: str, path: str, body=None, region: str = "eu-west-1"
+) -> tuple[int, dict]:
+    """(status, JSON body) of a SigV4-signed call, as the client makes it. `creds` is a
+    botocore Credentials object."""
+    from aws_elevate.version import INFRA_VERSION
+
+    data = json.dumps(body).encode() if body is not None else None
+    request = AWSRequest(
+        method=method,
+        url=f"{url}/v1/{path}",
+        data=data,
+        headers={"Content-Type": "application/json", "X-Elevate-Client-Version": INFRA_VERSION},
+    )
+    SigV4Auth(creds, "execute-api", region).add_auth(request)
+    prepared = urllib.request.Request(
+        request.url, data=data, method=method, headers=dict(request.headers.items())
+    )
+    try:
+        with urllib.request.urlopen(prepared, timeout=30) as resp:
+            return resp.status, json.loads(resp.read() or b"null")
+    except urllib.error.HTTPError as err:
+        return err.code, json.loads(err.read() or b"null")
 
 
 # ---------- teardown ----------
@@ -390,22 +563,29 @@ def _remove_permission_set(
     failures.append(f"permission set {name}: still in use")
 
 
+def _e2e_api_grant(sso, instance: str, arn: str, name: str) -> bool:
+    """JIT-* of a grant made through api in an e2e test: random id, e2e rule tag."""
+    if not name.startswith("JIT-"):
+        return False
+    tags = sso.list_tags_for_resource(InstanceArn=instance, ResourceArn=arn)["Tags"]
+    return any(t["Key"] == "jit:rule" and t["Value"].startswith(RULE_PREFIX) for t in tags)
+
+
 def cleanup_permission_sets(session: boto3.Session, failures: list) -> None:
     sso = sso_admin(session)
     found = sso.list_instances()["Instances"][0]
     instance = found["InstanceArn"]
-    user_id = session.client("identitystore").get_user_id(
-        IdentityStoreId=found["IdentityStoreId"],
-        AlternateIdentifier={
-            "UniqueAttribute": {"AttributePath": "userName", "AttributeValue": env("TEST_USER")}
-        },
-    )["UserId"]
+    user_id = e2e_user_id(session)
     for page in sso.get_paginator("list_permission_sets").paginate(InstanceArn=instance):
         for arn in page["PermissionSets"]:
             name = sso.describe_permission_set(InstanceArn=instance, PermissionSetArn=arn)[
                 "PermissionSet"
             ]["Name"]
-            if name.startswith(f"JIT-{GRANT_PREFIX}") or name == SOURCE_PS:
+            if (
+                name.startswith(f"JIT-{GRANT_PREFIX}")
+                or name == SOURCE_PS
+                or _e2e_api_grant(sso, instance, arn, name)
+            ):
                 _remove_permission_set(sso, instance, arn, name, user_id, failures)
 
 
@@ -426,6 +606,9 @@ def stack_down(session: boto3.Session) -> None:
         cfn.get_waiter("stack_delete_complete").wait(
             StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 90}
         )
+    # The stack's group assignments are gone with it: the groups can go now.
+    delete_approver(session, failures)
+    delete_groups(session, failures)
     # Retained by the stack on purpose (design §12.3): remove them for the test stack.
     ddb = session.client("dynamodb")
     _try("table", lambda: ddb.delete_table(TableName=f"{STACK}-grants") and log(
