@@ -96,6 +96,22 @@ def test_engine_cannot_touch_iam_lambda_or_states():
             assert action.split(":")[0] in ("sso", "dynamodb", "appconfig", "logs"), action
 
 
+def test_engine_reads_rules_of_this_application_only():
+    # AWS authorizes GetHostedConfigurationVersion against the application and the
+    # configuration profile ARNs (service authorization reference); a hosted
+    # version has no ARN of its own.
+    read = [s for s in engine_allows() if s.get("Sid") == "ReadRules"][0]
+    assert as_list(read["Action"]) == ["appconfig:GetHostedConfigurationVersion"]
+    resources = [text(r) for r in as_list(read["Resource"])]
+    assert len(resources) == 2
+    assert all("application/${RulesApplication}" in r for r in resources)
+    assert any(r.endswith('application/${RulesApplication}"}') for r in resources)
+    assert any(
+        r.endswith('configurationprofile/${RulesProfile.ConfigurationProfileId}"}')
+        for r in resources
+    )
+
+
 # ---------- other roles ----------
 
 
@@ -213,7 +229,8 @@ def test_lambda_runtime_and_handler(name, handler):
 
 def test_state_machine_definition_is_the_python_one():
     props = RESOURCES["GrantStateMachine"]["Properties"]
-    assert props["Definition"] == definition("${EngineArn}", "${BusName}")
+    # A string, not a mapping: CloudFormation rejects null values (ResultPath: null).
+    assert json.loads(props["DefinitionString"]) == definition("${EngineArn}", "${BusName}")
     assert set(props["DefinitionSubstitutions"]) == {"EngineArn", "BusName"}
 
 
@@ -227,3 +244,14 @@ def test_alert_and_approval_rules():
     assert patterns["ManualRequestRule"]["detail"] == {"approval": ["manual"]}
     approvals = RESOURCES["ApprovalsTopic"]["Properties"]
     assert "Subscription" not in approvals
+
+
+def test_sns_topic_policy_statements_name_one_topic_each():
+    # SNS refuses a statement covering several topics (seen deploying the e2e stack).
+    for name, resource in RESOURCES.items():
+        if resource["Type"] != "AWS::SNS::TopicPolicy":
+            continue
+        props = resource["Properties"]
+        assert len(props["Topics"]) == 1, name
+        for stmt in props["PolicyDocument"]["Statement"]:
+            assert not isinstance(stmt["Resource"], list), name

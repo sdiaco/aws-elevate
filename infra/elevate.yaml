@@ -289,10 +289,14 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:ConditionCheckItem
                 Resource: !GetAtt GrantsTable.Arn
+              # AppConfig checks this action against both the application and the
+              # profile ARN; a hosted version has no ARN of its own.
               - Sid: ReadRules
                 Effect: Allow
                 Action: appconfig:GetHostedConfigurationVersion
-                Resource: !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}/hostedconfigurationversion/*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}
               - Sid: Logs
                 Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
@@ -373,24 +377,37 @@ Resources:
     Properties:
       TopicName: !Sub ${AWS::StackName}-approvals
 
-  TopicsPolicy:
+  AlertsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties:
-      Topics: [!Ref AlertsTopic, !Ref ApprovalsTopic]
+      Topics: [!Ref AlertsTopic]
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: EventBridgeRulesOfThisStack
+          - Sid: AlertRulesOfThisStack
             Effect: Allow
             Principal: {Service: events.amazonaws.com}
             Action: sns:Publish
-            Resource: [!Ref AlertsTopic, !Ref ApprovalsTopic]
+            Resource: !Ref AlertsTopic
             Condition:
               ArnEquals:
-                aws:SourceArn:
-                  - !GetAtt GrantErrorRule.Arn
-                  - !GetAtt ConfigRejectedRule.Arn
-                  - !GetAtt ManualRequestRule.Arn
+                aws:SourceArn: [!GetAtt GrantErrorRule.Arn, !GetAtt ConfigRejectedRule.Arn]
+
+  ApprovalsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref ApprovalsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ApprovalRuleOfThisStack
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref ApprovalsTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt ManualRequestRule.Arn
 
   GrantErrorRule:
     Type: AWS::Events::Rule
@@ -499,7 +516,8 @@ Resources:
       DefinitionSubstitutions:
         EngineArn: !GetAtt EngineFunction.Arn
         BusName: !Ref EventBus
-      Definition:
+      # A string: CloudFormation rejects the null values the definition needs.
+      DefinitionString: |
         {
           "Comment": "aws-elevate grant lifecycle",
           "StartAt": "Snapshot",

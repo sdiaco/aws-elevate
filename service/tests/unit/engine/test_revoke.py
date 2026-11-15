@@ -155,6 +155,15 @@ def test_redrive_from_revoke_failed(build, grant, const):
     assert table.get("abcde23456").state == State.CLOSED
 
 
+def test_redrive_that_fails_again_stays_revoke_failed(build, grant, admin, const):
+    # While waiting for a redrive the record must say revoke_failed (design §6.5).
+    admin.fail["unassign"] = SsoTimeout("unassignment still in progress")
+    engine, table = build(active(grant, const, state=State.REVOKE_FAILED, error="timeout"))
+    with pytest.raises(Retryable):
+        engine.revoke("abcde23456")
+    assert table.get("abcde23456").state == State.REVOKE_FAILED
+
+
 def test_revoke_rerun_on_closed_grant_does_nothing(build, grant, admin, const):
     engine, _ = build(active(grant, const, state=State.CLOSED, close_reason=CloseReason.EXPIRED))
     assert engine.revoke("abcde23456")["closeReason"] == "expired"
