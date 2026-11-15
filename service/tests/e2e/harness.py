@@ -112,6 +112,9 @@ def upload(session: boto3.Session) -> tuple[str, str]:
     key = f"e2e/lambda-{hashlib.sha256(body).hexdigest()[:12]}.zip"
     s3.put_object(Bucket=bucket, Key=key, Body=body)
     log(f"uploaded s3://{bucket}/{key} ({len(body)} bytes)")
+    # The template is over the 51,200-byte limit of TemplateBody; from S3 it may be 1 MB,
+    # as in a release.
+    s3.put_object(Bucket=bucket, Key="e2e/elevate.yaml", Body=TEMPLATE.read_bytes())
     return bucket, key
 
 
@@ -137,10 +140,13 @@ def stack_up(session: boto3.Session) -> dict:
         {"ParameterKey": "AlertEmail", "ParameterValue": env("ALERT_EMAIL", "user@example.com")},
         {"ParameterKey": "CodeBucket", "ParameterValue": bucket},
         {"ParameterKey": "CodeKey", "ParameterValue": key},
+        # Real group ids come from the environment, never from the repository.
+        {"ParameterKey": "AdminGroupId", "ParameterValue": env("ADMIN_GROUP_ID")},
+        {"ParameterKey": "RequesterGroupId", "ParameterValue": env("REQUESTER_GROUP_ID")},
     ]
     args = {
         "StackName": STACK,
-        "TemplateBody": TEMPLATE.read_text(),
+        "TemplateURL": f"https://{bucket}.s3.{session.region_name}.amazonaws.com/e2e/elevate.yaml",
         "Parameters": params,
         "Capabilities": ["CAPABILITY_NAMED_IAM"],
     }

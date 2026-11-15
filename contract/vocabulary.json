@@ -13,6 +13,7 @@
     "activating",
     "not_ready",
     "client_too_old",
-    "config_unavailable"
+    "config_unavailable",
+    "internal"
   ]
 }
