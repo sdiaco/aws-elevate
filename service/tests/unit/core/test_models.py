@@ -52,6 +52,7 @@ def test_grant_optional_fields_default_to_none():
         id="abcde23456",
         state=State.PENDING,
         rule_id="backend-ssm-prod",
+        approval=Approval.MANUAL,
         config_version=3,
         requester=Principal(user_id="u-1", user_name="user@example.com"),
         approver_group=Group(id="g-2", name="leads"),
@@ -65,6 +66,7 @@ def test_grant_optional_fields_default_to_none():
     assert grant.close_reason is None
     assert grant.expires_at is None
     assert grant.task_token is None
+    assert grant.ephemeral_ps_arn is None
 
 
 def test_identity_and_source_ps_hold_their_fields():

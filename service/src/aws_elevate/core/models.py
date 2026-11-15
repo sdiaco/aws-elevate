@@ -82,6 +82,7 @@ class Grant:
     id: str
     state: State
     rule_id: str
+    approval: Approval
     config_version: int
     requester: Principal
     approver_group: Group | None
@@ -100,6 +101,8 @@ class Grant:
     revoke_reason: str | None = None
     task_token: str | None = None
     error: str | None = None
+    # ARN of JIT-<id>, recorded as soon as it exists so revocation never has to search.
+    ephemeral_ps_arn: str | None = None
 
 
 @dataclass(frozen=True)
