@@ -11,3 +11,12 @@ Accesso elevato temporaneo (just-in-time) per AWS IAM Identity Center: un utente
 
 - `main`: versioni rilasciate.
 - `develop`: base per i branch di lavoro; arriva su `main` tramite pull request.
+
+## Development
+
+Everything runs in a container; only Docker is needed on the host.
+
+```bash
+make dev                          # shell with Go, Python, uv and the AWS CLI
+make dev-run CMD="go version"     # run one command in the container
+```
