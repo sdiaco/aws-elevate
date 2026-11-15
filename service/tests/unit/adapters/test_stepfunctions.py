@@ -76,27 +76,6 @@ def test_send_success_raises_other_errors(sfn):
         adapter.send_success(TOKEN, {"decision": "approved"})
 
 
-def test_status_reads_the_execution(sfn):
-    adapter, stub = sfn
-    stub.add_response(
-        "describe_execution",
-        {
-            "executionArn": EXEC_ARN,
-            "stateMachineArn": SM_ARN,
-            "status": "FAILED",
-            "startDate": "2026-11-15T10:00:00Z",
-        },
-        {"executionArn": EXEC_ARN},
-    )
-    assert adapter.status("abcde23456") == "FAILED"
-
-
-def test_status_is_none_for_a_missing_execution(sfn):
-    adapter, stub = sfn
-    stub.add_client_error("describe_execution", service_error_code="ExecutionDoesNotExist")
-    assert adapter.status("abcde23456") is None
-
-
 def test_redrive_resumes_the_execution(sfn):
     adapter, stub = sfn
     stub.add_response(

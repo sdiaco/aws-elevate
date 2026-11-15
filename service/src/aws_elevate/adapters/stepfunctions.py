@@ -43,15 +43,6 @@ class StepFunctions:
             raise
         return True
 
-    def status(self, grant_id: str) -> str | None:
-        try:
-            resp = self._sfn.describe_execution(executionArn=self.execution_arn(grant_id))
-        except ClientError as err:
-            if _code(err) == "ExecutionDoesNotExist":
-                return None
-            raise
-        return resp["status"]
-
     def redrive(self, grant_id: str) -> bool:
         """Resume a failed execution from the failed task. False if it cannot be."""
         try:

@@ -335,13 +335,7 @@ def test_admin_redrives_a_failed_revocation(make, fx):
     assert sfn.redriven == ["abcde23456"]
 
 
-def test_admin_redrives_a_revoking_grant_whose_execution_failed(make, fx):
-    routes, _, sfn = make(fx.make_grant(state=State.REVOKING), sfn=fx.FakeSfn(status="FAILED"))
-    routes.redrive(fx.ADMIN, "abcde23456")
-    assert sfn.redriven == ["abcde23456"]
-
-
-def test_redrive_of_a_revocation_still_running_is_a_conflict(make, fx):
+def test_redrive_of_a_revoking_grant_is_a_conflict_even_if_its_execution_failed(make, fx):
     routes, _, sfn = make(fx.make_grant(state=State.REVOKING))
     assert error_of(lambda: routes.redrive(fx.ADMIN, "abcde23456")).code == "state_conflict"
     assert sfn.redriven == []

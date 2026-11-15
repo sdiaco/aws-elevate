@@ -165,12 +165,11 @@ class FakeConfig:
 
 
 class FakeSfn:
-    def __init__(self, delivered=True, status="RUNNING", redrivable=True, start_error=None):
+    def __init__(self, delivered=True, redrivable=True, start_error=None):
         self.started = []
         self.sent = []
         self.redriven = []
         self.delivered = delivered
-        self.execution_status = status
         self.redrivable = redrivable
         self.start_error = start_error
 
@@ -182,9 +181,6 @@ class FakeSfn:
     def send_success(self, token, output):
         self.sent.append((token, output))
         return self.delivered
-
-    def status(self, grant_id):
-        return self.execution_status
 
     def redrive(self, grant_id):
         self.redriven.append(grant_id)
