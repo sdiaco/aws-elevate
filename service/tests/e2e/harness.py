@@ -6,14 +6,17 @@
 Environment: PROFILE (SSO profile of the test user, able to assume
 OrganizationAccountAccessRole), SERVICE_ACCOUNT (Identity Center delegated admin),
 TARGET_ACCOUNT (member account receiving grants), TEST_USER (Identity Center user name of
-the profile's user), APPROVER_PROFILE (SSO profile logged in as elevate-e2e-approver, with
-its own sso-session). Optional: ALERT_EMAIL (default user@example.com).
+the profile's user). Optional: ALERT_EMAIL (default user@example.com); E2E_APPROVAL=1 to
+run the approval by a second user, with APPROVER_PROFILE (SSO profile logged in as
+elevate-e2e-approver, with its own sso-session). The approval run needs a manual first login
+of that user, so it is opt-in: use it only when the approval path changes.
 
 Creates only elevate-e2e* resources: stack, code bucket, a source permission set, the
 seeder Lambda (records written as the engine role, because the table policy admits no one
 else), the groups elevate-e2e-admins and elevate-e2e-requesters with the test user in
-both, the user elevate-e2e-approver in the admin group (a request cannot be approved by
-its requester; its first login is done by hand: one-time password from the console),
+both, with E2E_APPROVAL=1 the user elevate-e2e-approver in the admin group (a request
+cannot be approved by its requester; its first login is done by hand: one-time password
+from the console),
 and the JIT-* permission sets the engine makes for e2e grants. The stack also
 creates the service permission sets ElevateRequester and ElevateAdmin, under their real
 names (the client looks them up by name; the maintainer approved it for the test
@@ -62,6 +65,11 @@ def h(event, context):
         return {}
     return db.get_item(TableName=event["TableName"], Key=event["Key"], ConsistentRead=True)
 """
+
+
+def approval_enabled() -> bool:
+    """The approval by a second user runs only on request: its login is manual."""
+    return os.environ.get("E2E_APPROVAL") == "1"
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -192,7 +200,8 @@ def ensure_groups(session: boto3.Session) -> tuple[str, str]:
             log(f"created group {name}")
         _add_member(session, group, user)
         found.append(group)
-    ensure_approver(session, found[0])
+    if approval_enabled():
+        ensure_approver(session, found[0])
     return found[0], found[1]
 
 

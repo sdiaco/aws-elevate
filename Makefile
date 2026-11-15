@@ -79,6 +79,7 @@ package:
 	@echo "build/lambda.zip"
 
 # End-to-end tests create only elevate-e2e* resources. Always finish with e2e-down.
+# The approval by a second user is opt-in (manual login): E2E_APPROVAL=1 make e2e-up e2e.
 e2e-up:
 	cd service && uv run python tests/e2e/harness.py up
 
