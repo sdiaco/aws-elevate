@@ -13,13 +13,17 @@ DOCKER_RUN = docker run --rm -i $(shell [ -t 0 ] && echo -t) \
 	-v aws-elevate-cache:/home/dev/.cache \
 	$(IMAGE)
 
-.PHONY: help dev-image dev dev-run check check-service check-client test test-service test-client
+.PHONY: help dev-image dev dev-run check check-service check-client test test-service test-client \
+	package e2e-up e2e e2e-down
 
 help:
 	@echo "make dev              open a shell in the development container"
 	@echo "make dev-run CMD=...  run a command in the development container"
 	@echo "make check            lint, template lint and tests with coverage thresholds"
 	@echo "make test             tests only"
+	@echo "make package          build/lambda.zip with the service code"
+	@echo "make e2e-up / e2e / e2e-down   end-to-end tests in a real test organization"
+	@echo "                      (PROFILE, SERVICE_ACCOUNT, TARGET_ACCOUNT, TEST_USER)"
 
 dev-image:
 	docker build --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) -t $(IMAGE) dev
@@ -67,3 +71,19 @@ ifeq ($(wildcard client/go.mod),)
 else
 	cd client && go test ./...
 endif
+
+package:
+	@mkdir -p build
+	cd service && uv run python -c "import sys; sys.path.insert(0, 'tests/e2e'); \
+		import harness, pathlib; pathlib.Path('../build/lambda.zip').write_bytes(harness.package())"
+	@echo "build/lambda.zip"
+
+# End-to-end tests create only elevate-e2e* resources. Always finish with e2e-down.
+e2e-up:
+	cd service && uv run python tests/e2e/harness.py up
+
+e2e:
+	cd service && ELEVATE_E2E=1 uv run pytest tests/e2e -v -s -p no:cacheprovider
+
+e2e-down:
+	cd service && uv run python tests/e2e/harness.py down
