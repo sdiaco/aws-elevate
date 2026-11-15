@@ -258,7 +258,7 @@ def test_timeline_row_records_state_and_attributes():
     assert row["expiresAt"] == {"S": "2026-11-15T11:00:00Z"}
 
 
-def test_set_token_skips_closed_grant(table):
+def test_set_token_only_while_waiting(table):
     gt, stub = table
     stub.add_response(
         "update_item",
@@ -267,9 +267,13 @@ def test_set_token_skips_closed_grant(table):
             "TableName": TABLE,
             "Key": GRANT_KEY,
             "UpdateExpression": "SET taskToken = :t",
-            "ConditionExpression": "attribute_exists(pk) AND #state <> :closed",
+            "ConditionExpression": "#state IN (:pending, :active)",
             "ExpressionAttributeNames": {"#state": "state"},
-            "ExpressionAttributeValues": {":t": {"S": "tok"}, ":closed": {"S": "closed"}},
+            "ExpressionAttributeValues": {
+                ":t": {"S": "tok"},
+                ":pending": {"S": "pending"},
+                ":active": {"S": "active"},
+            },
         },
     )
     stub.add_client_error("update_item", service_error_code="ConditionalCheckFailedException")

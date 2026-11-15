@@ -276,15 +276,20 @@ class GrantsTable:
             raise
 
     def set_token(self, grant_id: str, token: str) -> bool:
-        """Store the current task token. False if the grant is closed or missing."""
+        """Store the current task token, only while the grant waits (pending or active).
+        False otherwise, including when the grant is missing."""
         try:
             self._db.update_item(
                 TableName=self._table,
                 Key=_grant_key(grant_id),
                 UpdateExpression="SET taskToken = :t",
-                ConditionExpression="attribute_exists(pk) AND #state <> :closed",
+                ConditionExpression="#state IN (:pending, :active)",
                 ExpressionAttributeNames={"#state": "state"},
-                ExpressionAttributeValues={":t": {"S": token}, ":closed": {"S": "closed"}},
+                ExpressionAttributeValues={
+                    ":t": {"S": token},
+                    ":pending": {"S": State.PENDING.value},
+                    ":active": {"S": State.ACTIVE.value},
+                },
             )
         except ClientError as err:
             if err.response["Error"]["Code"] == "ConditionalCheckFailedException":

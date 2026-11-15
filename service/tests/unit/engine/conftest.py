@@ -94,7 +94,7 @@ class FakeTable:
 
     def set_token(self, grant_id, token):
         grant = self.grants.get(grant_id)
-        if grant is None or grant.state == State.CLOSED:
+        if grant is None or grant.state not in (State.PENDING, State.ACTIVE):
             return False
         self.grants[grant_id] = dataclasses.replace(grant, task_token=token)
         return True

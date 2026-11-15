@@ -33,6 +33,22 @@ def test_store_token_on_closed_grant_is_a_no_op(build, grant):
     assert result["grant"]["state"] == "closed"
 
 
+@pytest.mark.parametrize("state", [State.REVOKING, State.ACTIVATING, State.REVOKE_FAILED])
+def test_store_token_refuses_a_grant_that_moved_on(build, grant, state):
+    # An early revocation that lands before the Active wait stored its token: refusing
+    # sends the execution to Revoke at once instead of waiting until expiry.
+    engine, table = build(grant(state=state))
+    with pytest.raises(InvalidState):
+        engine.store_token("abcde23456", "tok")
+    assert table.get("abcde23456").task_token is None
+
+
+def test_store_token_on_active_grant(build, grant, const):
+    engine, table = build(active(grant, const))
+    engine.store_token("abcde23456", "tok")
+    assert table.get("abcde23456").task_token == "tok"
+
+
 # ---------- resolve_wait ----------
 
 

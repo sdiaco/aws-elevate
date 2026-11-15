@@ -71,7 +71,8 @@ def test_rerun_when_already_active_does_nothing(build, grant, admin, clock):
     assert result["waitSeconds"] == 3000
 
 
-def test_wait_seconds_never_negative(build, grant, clock):
+def test_wait_seconds_is_at_least_one(build, grant, clock):
+    # Step Functions rejects a zero timeout with an error no Catch can handle.
     engine, _ = build(
         grant(
             state=State.ACTIVE,
@@ -80,7 +81,7 @@ def test_wait_seconds_never_negative(build, grant, clock):
         )
     )
     clock.advance(7200)
-    assert engine.activate("abcde23456")["waitSeconds"] == 0
+    assert engine.activate("abcde23456")["waitSeconds"] == 1
 
 
 def assert_failed(table, admin, fragment, created=False):
