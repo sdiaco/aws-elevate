@@ -47,6 +47,22 @@ class ConfigCache:
             self._checked_at = now
         return self._version.number, self._rules
 
+    def versions(self) -> list[ConfigVersion]:
+        """Every version, newest first, as recorded. A version never seen is evaluated
+        and recorded now. No CloudTrail lookup here: LookupEvents allows 2 calls per
+        second, and the refresh fills the author of every new version anyway."""
+        return [self._record(n) for n in self._appconfig.list_versions()]
+
+    def version(self, number: int) -> tuple[ConfigVersion, dict | None] | None:
+        """Record and content of one version; content None if it is not JSON."""
+        if number not in self._appconfig.list_versions():
+            return None
+        record = self._record(number)
+        try:
+            return record, self._appconfig.get(number)
+        except NotJson:
+            return record, None
+
     def _refresh(self) -> None:
         for number in self._appconfig.list_versions():
             if self._version and number == self._version.number:

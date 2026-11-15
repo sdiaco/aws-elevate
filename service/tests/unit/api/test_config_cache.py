@@ -251,3 +251,54 @@ def test_new_valid_version_replaces_the_cached_one(aws):
     clock.t += 31
     version, rules = cache.current()
     assert (version, [r.id for r in rules]) == (2, ["other"])
+
+
+# ---------- version list and content (design §7.3, GET /config/versions) ----------
+
+
+def test_versions_lists_every_version_newest_first_with_its_record(aws):
+    ac, table, trail, _, _, container = aws
+    ac.docs = {1: VALID, 2: BROKEN}
+    trail.authors[1] = (AUTHOR, "2026-11-15T10:00:00Z")
+    cache = container()
+    cache.current()
+    listed = cache.versions()
+    assert [v.number for v in listed] == [2, 1]
+    assert listed[0].valid is False
+    assert listed[1].author == AUTHOR
+
+
+def test_versions_evaluates_a_version_never_seen_without_asking_cloudtrail(aws):
+    ac, table, trail, _, _, container = aws
+    ac.docs = {1: BROKEN, 2: VALID}
+    cache = container()
+    cache.current()  # stops at 2, never looks at 1
+    calls = trail.calls
+    listed = cache.versions()
+    assert [(v.number, v.valid) for v in listed] == [(2, True), (1, False)]
+    assert table.configs[1].valid is False
+    # Listing never queries CloudTrail: LookupEvents allows 2 calls per second.
+    assert trail.calls == calls
+
+
+def test_version_returns_record_and_content(aws):
+    ac, _, _, _, _, container = aws
+    ac.docs = {1: VALID}
+    record, doc = container().version(1)
+    assert record.number == 1
+    assert record.valid is True
+    assert doc == VALID
+
+
+def test_version_that_is_not_json_has_no_content(aws):
+    ac, _, _, _, _, container = aws
+    ac.docs = {1: "not json"}
+    record, doc = container().version(1)
+    assert record.valid is False
+    assert doc is None
+
+
+def test_unknown_version_is_none(aws):
+    ac, _, _, _, _, container = aws
+    ac.docs = {1: VALID}
+    assert container().version(7) is None

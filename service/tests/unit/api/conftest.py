@@ -8,16 +8,20 @@ from datetime import UTC, datetime
 import pytest
 
 from aws_elevate.adapters.grants_table import Duplicate, StateConflict
+from aws_elevate.adapters.sso_read import PsNotFound
+from aws_elevate.api.config_cache import ConfigUnavailable
 from aws_elevate.core.lifecycle import can_transition
 from aws_elevate.core.models import (
     Account,
     Approval,
+    ConfigVersion,
     Grant,
     Group,
     Identity,
     PermissionSetRef,
     Principal,
     Rule,
+    SourcePs,
     State,
 )
 from aws_elevate.core.times import iso
@@ -156,12 +160,59 @@ class FakeTable:
 
 
 class FakeConfig:
-    def __init__(self, *rules, version=3):
-        self.version = version
+    def __init__(self, *rules, version=3, records=(), docs=None, unavailable=False):
+        self.number = version
         self.rules = list(rules) if rules else [AUTO_RULE, MANUAL_RULE]
+        self.records = list(records)
+        self.docs = docs or {}
+        self.unavailable = unavailable
 
     def current(self):
-        return self.version, self.rules
+        if self.unavailable:
+            raise ConfigUnavailable("no valid rules version")
+        return self.number, self.rules
+
+    def versions(self):
+        return self.records
+
+    def version(self, number):
+        for record in self.records:
+            if record.number == number:
+                return record, self.docs.get(number)
+        return None
+
+
+def config_version(number, **changes) -> ConfigVersion:
+    return dataclasses.replace(ConfigVersion(number=number, valid=True), **changes)
+
+
+def source_ps(arn=PS_ARN, **changes) -> SourcePs:
+    base = SourcePs(
+        arn=arn,
+        name="ssm-write",
+        managed=("arn:aws:iam::aws:policy/ReadOnlyAccess",),
+        customer_managed=({"Name": "team-boundary", "Path": "/"},),
+        boundary={"ManagedPolicyArn": "arn:aws:iam::aws:policy/PowerUserAccess"},
+        inline={
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Allow", "Action": "ssm:*", "Resource": "*"}],
+        },
+    )
+    return dataclasses.replace(base, **changes)
+
+
+class FakeSso:
+    """Read-only permission set reads, like adapters.sso_read."""
+
+    def __init__(self, *sources):
+        self.sources = {s.arn: s for s in (sources or (source_ps(),))}
+        self.reads = []
+
+    def read_source(self, arn):
+        self.reads.append(arn)
+        if arn not in self.sources:
+            raise PsNotFound(arn)
+        return self.sources[arn]
 
 
 class FakeSfn:

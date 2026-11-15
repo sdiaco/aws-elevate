@@ -1,0 +1,229 @@
+"""Rule routes (design §5.4, §7.1, §7.5, §11.2): what a caller may request, what a rule
+grants, and the pre-publication check that only api can run because it reads the PS."""
+
+import copy
+import dataclasses
+import json
+from pathlib import Path
+
+import pytest
+
+from aws_elevate.api.errors import ApiError
+from aws_elevate.api.routes_rules import CHECK_CODES, RuleRoutes
+from aws_elevate.core.policy import MAX_INLINE_CHARS
+
+VOCABULARY = json.loads(
+    (Path(__file__).resolve().parents[4] / "contract" / "vocabulary.json").read_text()
+)
+VALID_DOC = json.loads(
+    (
+        Path(__file__).resolve().parents[4] / "contract" / "rules" / "valid-auto-and-manual.json"
+    ).read_text()
+)
+DOC_ARN = VALID_DOC["rules"][0]["permissionSet"]["arn"]
+
+
+@pytest.fixture
+def make(fx):
+    def build(*sources, config=None):
+        sso = fx.FakeSso(*sources)
+        return RuleRoutes(config=config or fx.FakeConfig(), sso=sso), sso
+
+    return build
+
+
+def error_of(call) -> ApiError:
+    with pytest.raises(ApiError) as caught:
+        call()
+    return caught.value
+
+
+# ---------- GET /rules ----------
+
+
+def test_requester_sees_only_the_rules_of_their_groups(make, fx):
+    other = dataclasses.replace(fx.AUTO_RULE, id="other", group=fx.LEADS)
+    routes, _ = make(config=fx.FakeConfig(fx.AUTO_RULE, other))
+    body = routes.list(fx.REQUESTER)
+    assert body["configVersion"] == 3
+    assert [r["id"] for r in body["rules"]] == ["ssm-dev"]
+
+
+@pytest.mark.parametrize("who", ["ADMIN", "AUDITOR"])
+def test_admin_and_auditor_see_every_rule(make, fx, who):
+    routes, _ = make()
+    body = routes.list(getattr(fx, who))
+    assert [r["id"] for r in body["rules"]] == ["ssm-dev", "ssm-prod"]
+
+
+def test_rules_are_in_the_document_form(make, fx):
+    routes, _ = make()
+    rule = routes.list(fx.REQUESTER)["rules"][1]
+    assert rule == {
+        "id": "ssm-prod",
+        "group": {"id": "g-req", "name": "backend-devs"},
+        "permissionSet": {"arn": fx.PS_ARN, "name": "ssm-write"},
+        "accounts": [{"id": "222222222222", "name": "prod"}],
+        "duration": {"defaultSeconds": 3600, "maxSeconds": 14400},
+        "approval": "manual",
+        "approverGroup": {"id": "g-lead", "name": "leads"},
+        "privileged": True,
+    }
+
+
+def test_caller_in_no_rule_gets_an_empty_list(make, fx):
+    routes, _ = make()
+    assert routes.list(fx.STRANGER)["rules"] == []
+
+
+# ---------- GET /rules/{id}/permissions ("Cosa otterrai") ----------
+
+
+def test_permissions_of_an_own_rule(make, fx):
+    routes, sso = make()
+    body = routes.permissions(fx.REQUESTER, "ssm-dev")
+    assert sso.reads == [fx.PS_ARN]
+    assert body == {
+        "managed": ["arn:aws:iam::aws:policy/ReadOnlyAccess"],
+        "customerManaged": [{"name": "team-boundary", "path": "/"}],
+        "boundary": {"managedPolicyArn": "arn:aws:iam::aws:policy/PowerUserAccess"},
+        "inline": fx.source_ps().inline,
+        "inlineSummary": [
+            {"effect": "Allow", "actions": ["ssm:*"], "resources": ["*"], "conditions": None}
+        ],
+    }
+
+
+def test_permissions_with_customer_managed_boundary_and_no_inline(make, fx):
+    source = fx.source_ps(
+        boundary={"CustomerManagedPolicyReference": {"Name": "limit", "Path": "/team/"}},
+        inline=None,
+        customer_managed=(),
+    )
+    routes, _ = make(source)
+    body = routes.permissions(fx.REQUESTER, "ssm-dev")
+    assert body["boundary"] == {"customerManagedPolicy": {"name": "limit", "path": "/team/"}}
+    assert body["inline"] is None
+    assert body["inlineSummary"] == []
+    assert body["customerManaged"] == []
+
+
+def test_permissions_without_boundary(make, fx):
+    routes, _ = make(fx.source_ps(boundary=None))
+    assert routes.permissions(fx.REQUESTER, "ssm-dev")["boundary"] is None
+
+
+def test_requester_asking_for_a_rule_not_theirs_is_forbidden(make, fx):
+    routes, sso = make()
+    err = error_of(lambda: routes.permissions(fx.STRANGER, "ssm-dev"))
+    assert (err.status, err.code) == (403, "forbidden")
+    assert sso.reads == []
+
+
+@pytest.mark.parametrize("who", ["ADMIN", "AUDITOR"])
+def test_admin_and_auditor_read_the_permissions_of_any_rule(make, fx, who):
+    routes, _ = make()
+    assert routes.permissions(getattr(fx, who), "ssm-prod")["managed"]
+
+
+def test_permissions_of_an_unknown_rule_is_not_found(make, fx):
+    routes, _ = make()
+    err = error_of(lambda: routes.permissions(fx.ADMIN, "nope"))
+    assert (err.status, err.code) == (404, "not_found")
+
+
+def test_permissions_of_a_deleted_permission_set_is_not_found(make, fx):
+    routes, _ = make(fx.source_ps(arn="arn:aws:sso:::permissionSet/ssoins-1/ps-other"))
+    err = error_of(lambda: routes.permissions(fx.REQUESTER, "ssm-dev"))
+    assert (err.status, err.code) == (404, "not_found")
+    assert "ssm-write" in err.message
+
+
+# ---------- POST /rules/check (design §5.4, §7.1) ----------
+
+
+def test_check_codes_are_the_vocabulary():
+    assert list(CHECK_CODES) == VOCABULARY["checkCodes"]
+
+
+def test_valid_document(make, fx):
+    routes, sso = make(fx.source_ps(arn=DOC_ARN))
+    assert routes.check(fx.ADMIN, {"doc": VALID_DOC}) == {"valid": True, "errors": []}
+    # Both rules point to the same permission set: read once.
+    assert sso.reads == [DOC_ARN]
+
+
+def test_check_is_admin_only(make, fx):
+    routes, sso = make(fx.source_ps(arn=DOC_ARN))
+    for who in (fx.REQUESTER, fx.AUDITOR):
+        err = error_of(lambda w=who: routes.check(w, {"doc": VALID_DOC}))
+        assert (err.status, err.code) == (403, "forbidden")
+    assert sso.reads == []
+
+
+@pytest.mark.parametrize("body", [None, [], {}, {"doc": None, "x": 1}])
+def test_check_without_a_doc_is_invalid(make, fx, body):
+    routes, _ = make()
+    err = error_of(lambda: routes.check(fx.ADMIN, body))
+    assert (err.status, err.code) == (400, "invalid_request")
+
+
+def test_invalid_document_lists_parser_errors_with_the_rule_id(make, fx):
+    doc = copy.deepcopy(VALID_DOC)
+    doc["rules"][1]["approval"] = "nope"
+    del doc["rules"][0]["id"]
+    routes, sso = make()
+    body = routes.check(fx.ADMIN, {"doc": doc})
+    assert body["valid"] is False
+    assert {(e["ruleId"], e["code"]) for e in body["errors"]} == {
+        (None, "invalid"),
+        ("db-admin-prod", "invalid"),
+    }
+    assert all(e["message"] for e in body["errors"])
+    # A document that does not parse is not checked against AWS.
+    assert sso.reads == []
+
+
+def test_document_level_error_has_no_rule_id(make, fx):
+    routes, _ = make()
+    body = routes.check(fx.ADMIN, {"doc": {"schemaVersion": 2, "rules": []}})
+    assert body["errors"] == [
+        {"ruleId": None, "code": "invalid", "message": "schemaVersion must be 1"}
+    ]
+
+
+def test_permission_set_that_does_not_exist(make, fx):
+    routes, _ = make()  # knows only fx.PS_ARN
+    body = routes.check(fx.ADMIN, {"doc": VALID_DOC})
+    assert body["valid"] is False
+    assert [(e["ruleId"], e["code"]) for e in body["errors"]] == [
+        ("backend-ssm-prod", "ps_not_found"),
+        ("db-admin-prod", "ps_not_found"),
+    ]
+    assert "ssm-write" in body["errors"][0]["message"]
+
+
+def test_inline_over_the_limit_once_the_expiry_is_added(make, fx):
+    # Fits alone, but not with the expiry statement the grant adds (design §5.4).
+    resource = "x" * (MAX_INLINE_CHARS - 100)
+    inline = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": "s3:GetObject", "Resource": resource}],
+    }
+    routes, _ = make(fx.source_ps(arn=DOC_ARN, inline=inline))
+    body = routes.check(fx.ADMIN, {"doc": VALID_DOC})
+    assert body["valid"] is False
+    assert {e["code"] for e in body["errors"]} == {"limits"}
+    assert "too many" in body["errors"][0]["message"]
+
+
+def test_too_many_managed_policies_counts_customer_managed_too(make, fx):
+    source = fx.source_ps(
+        arn=DOC_ARN,
+        managed=tuple(f"arn:aws:iam::aws:policy/P{i}" for i in range(6)),
+        customer_managed=tuple({"Name": f"c{i}", "Path": "/"} for i in range(5)),
+    )
+    routes, _ = make(source)
+    body = routes.check(fx.ADMIN, {"doc": VALID_DOC})
+    assert body["valid"] is False
+    assert "11 managed policies" in body["errors"][0]["message"]
