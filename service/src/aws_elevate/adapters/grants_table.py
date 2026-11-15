@@ -21,7 +21,7 @@ from ..core.models import (
     Principal,
     State,
 )
-from ..core.times import iso
+from ..core.times import iso, parse_iso
 
 RETENTION_MONTHS = 13  # design §11.3
 
@@ -141,6 +141,29 @@ def timeline_item(grant_id: str, state: State, at: datetime, attrs: dict) -> dic
     return row
 
 
+def _first_row(grant: Grant) -> dict:
+    # Dated createdAt, so discard_new knows its key without reading it.
+    return timeline_item(grant.id, grant.state, parse_iso(grant.created_at), {})
+
+
+def _plain(attr: dict):
+    """DynamoDB attribute value -> JSON value, for rows returned as they are."""
+    if "M" in attr:
+        return {k: _plain(v) for k, v in attr["M"].items()}
+    if "BOOL" in attr:
+        return attr["BOOL"]
+    if "N" in attr:
+        return int(attr["N"])
+    return attr["S"]
+
+
+def _timeline_row(item: dict) -> dict:
+    at = item["sk"]["S"].split("#")[1]
+    row = {"at": at}
+    row.update({k: _plain(v) for k, v in item.items() if k not in ("pk", "sk")})
+    return row
+
+
 def _retention_ttl(closed_at: datetime) -> int:
     month0 = closed_at.month - 1 + RETENTION_MONTHS
     year, month = closed_at.year + month0 // 12, month0 % 12 + 1
@@ -216,7 +239,7 @@ class GrantsTable:
             {
                 "Put": {
                     "TableName": self._table,
-                    "Item": timeline_item(grant.id, grant.state, self._now(), {}),
+                    "Item": _first_row(grant),
                 }
             },
         ]
@@ -226,6 +249,35 @@ class GrantsTable:
             codes = _cancellation_codes(err)
             if codes and len(codes) > 1 and codes[1] == "ConditionalCheckFailed":
                 raise Duplicate(grant.id) from err
+            raise
+
+    def discard_new(self, grant: Grant) -> None:
+        """Undo put_new when the execution could not be started: no access was given and
+        no event was sent, and the lock would otherwise block the user for good."""
+        items = [
+            {
+                "Delete": {
+                    "TableName": self._table,
+                    "Key": _grant_key(grant.id),
+                    "ConditionExpression": "#state = :state",
+                    "ExpressionAttributeNames": {"#state": "state"},
+                    "ExpressionAttributeValues": {":state": {"S": grant.state.value}},
+                }
+            },
+            {"Delete": {"TableName": self._table, "Key": _lock_key(grant)}},
+            {
+                "Delete": {
+                    "TableName": self._table,
+                    "Key": {k: v for k, v in _first_row(grant).items() if k in ("pk", "sk")},
+                }
+            },
+        ]
+        try:
+            self._db.transact_write_items(TransactItems=items)
+        except ClientError as err:
+            codes = _cancellation_codes(err)
+            if codes and codes[0] == "ConditionalCheckFailed":
+                raise StateConflict(f"grant {grant.id} is no longer {grant.state}") from err
             raise
 
     def get(self, grant_id: str) -> Grant | None:
@@ -336,6 +388,78 @@ class GrantsTable:
                 return False
             raise
         return True
+
+    # ---------- reads by index, newest first (design §11.3: never a Scan) ----------
+
+    def by_user(self, user_id, start, end, limit, after, open_only=False):
+        return self._page(
+            "byUser", "gsi1", f"USER#{user_id}", (start, end), limit, after, open_only
+        )
+
+    def by_month(self, month, start, end, limit, after, open_only=False):
+        # The sort key is <createdAt>#<id>: '~' sorts after every id character.
+        span = (start, f"{end}#~")
+        return self._page("byMonth", "gsi2", f"MONTH#{month}", span, limit, after, open_only)
+
+    def open_grants(self, limit, after):
+        return self._page("open", "gsi3", "OPEN", None, limit, after, False)
+
+    def _page(self, index, prefix, pk, span, limit, after, open_only):
+        """One page of grants and the key to continue from, None on the last page."""
+        values = {":pk": {"S": pk}}
+        condition = f"{prefix}pk = :pk"
+        if span:
+            condition += f" AND {prefix}sk BETWEEN :from AND :to"
+            values.update({":from": {"S": span[0]}, ":to": {"S": span[1]}})
+        params = {
+            "TableName": self._table,
+            "IndexName": index,
+            "KeyConditionExpression": condition,
+            "ExpressionAttributeValues": values,
+            "ScanIndexForward": False,
+            "Limit": limit,
+        }
+        if open_only:
+            params["FilterExpression"] = "#state <> :closed"
+            params["ExpressionAttributeNames"] = {"#state": "state"}
+            values[":closed"] = {"S": State.CLOSED.value}
+        if after:
+            params["ExclusiveStartKey"] = after
+        resp = self._db.query(**params)
+        return [from_item(i) for i in resp["Items"]], resp.get("LastEvaluatedKey")
+
+    def count_open(self, user_id: str) -> int:
+        """Grants of the user not yet closed, read from the small open index."""
+        params = {
+            "TableName": self._table,
+            "IndexName": "open",
+            "KeyConditionExpression": "gsi3pk = :pk",
+            "FilterExpression": "requester.userId = :u",
+            "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": user_id}},
+            "Select": "COUNT",
+        }
+        total = 0
+        while True:
+            resp = self._db.query(**params)
+            total += resp["Count"]
+            if "LastEvaluatedKey" not in resp:
+                return total
+            params["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+    def timeline(self, grant_id: str) -> list[dict]:
+        params = {
+            "TableName": self._table,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :ev)",
+            "ExpressionAttributeValues": {":pk": {"S": f"GRANT#{grant_id}"}, ":ev": {"S": "EV#"}},
+            "ConsistentRead": True,
+        }
+        rows = []
+        while True:
+            resp = self._db.query(**params)
+            rows += [_timeline_row(i) for i in resp["Items"]]
+            if "LastEvaluatedKey" not in resp:
+                return rows
+            params["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
     # ---------- config versions (design §7.1, §7.3) ----------
 
