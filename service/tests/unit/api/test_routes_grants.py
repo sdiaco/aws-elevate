@@ -533,3 +533,26 @@ def test_list_never_returns_a_grant_the_caller_cannot_view(make, fx):
     routes, table, _ = make(foreign)
     table.by_user = lambda *args, **kwargs: ([foreign], None)
     assert routes.list(fx.REQUESTER, {"scope": "mine"})["items"] == []
+
+
+# ---------- reason length (approved by the maintainer: 500 characters) ----------
+
+
+def test_request_reason_of_500_characters_is_accepted(make, fx):
+    routes, _, _ = make()
+    assert routes.create(fx.REQUESTER, {**REQUEST, "reason": "r" * 500})["grant"]["reason"]
+
+
+def test_request_reason_over_500_characters_is_refused(make, fx):
+    routes, table, _ = make()
+    err = error_of(lambda: routes.create(fx.REQUESTER, {**REQUEST, "reason": "r" * 501}))
+    assert (err.status, err.code) == (400, "invalid_request")
+    assert "500" in err.message
+    assert table.grants == {}
+
+
+def test_revoke_reason_over_500_characters_is_refused(make, fx):
+    routes, table, _ = make(fx.make_grant(**ACTIVE))
+    err = error_of(lambda: routes.revoke(fx.REQUESTER, "abcde23456", {"reason": "r" * 501}))
+    assert err.code == "invalid_request"
+    assert table.transitions == []

@@ -23,6 +23,8 @@ from .errors import ApiError, forbidden
 
 PAGE_SIZE = 50
 DEFAULT_PERIOD_DAYS = 30  # design §11.3
+# Keeps every grant event well under the 256 KB EventBridge limit (design §6.1, §6.4).
+MAX_REASON_CHARS = 500
 _SCOPES = ("mine", "approvable", "all")
 
 log = logging.getLogger(__name__)
@@ -41,6 +43,13 @@ def _text(body: dict, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise _invalid(f"{key} must be a non-empty string")
     return value.strip()
+
+
+def _reason(body: dict) -> str:
+    reason = _text(body, "reason")
+    if len(reason) > MAX_REASON_CHARS:
+        raise _invalid(f"reason must be at most {MAX_REASON_CHARS} characters")
+    return reason
 
 
 def _principal(p: Principal | None) -> dict | None:
@@ -147,7 +156,7 @@ class GrantRoutes:
             raise _invalid("the request body must be a JSON object")
         rule_id = _text(body, "ruleId")
         account = _text(body, "account")
-        reason = _text(body, "reason")
+        reason = _reason(body)
         version, rules = self._config.current()
         rule = next((r for r in rules if r.id == rule_id), None)
         if rule is None:
@@ -271,7 +280,7 @@ class GrantRoutes:
     # ---------- revoke (design §6.4) ----------
 
     def revoke(self, identity: Identity, grant_id: str, body) -> dict:
-        reason = _text(body if isinstance(body, dict) else {}, "reason")
+        reason = _reason(body if isinstance(body, dict) else {})
         grant = self._visible(identity, grant_id)
         if not can(identity, "revoke", grant):
             if grant.state in (State.ACTIVE, State.ACTIVATING):
