@@ -181,7 +181,11 @@ class Engine:
         grant = self._get(grant_id)
         if grant.state == State.CLOSED:
             return self._closed(grant)
-        grant = self._enter_revoking(grant)
+        # A redrive leaves revoke_failed only once the cleanup succeeds, so the record
+        # never hides a revocation that is still failing (design §6.5).
+        redrive = grant.state == State.REVOKE_FAILED
+        if not redrive:
+            grant = self._enter_revoking(grant)
         arn = grant.ephemeral_ps_arn
         if arn is None and grant.expires_at is None:
             # Activation may have created JIT-<id> without recording it.
@@ -194,6 +198,8 @@ class Engine:
                 self._admin.delete(arn)
         except (SsoTimeout, SsoOperationFailed, ClientError) as err:
             raise Retryable(f"revocation of {grant_id}: {err}") from err
+        if redrive:
+            grant = self._enter_revoking(grant)
 
         reason, attrs = self._close_reason(grant)
         try:
