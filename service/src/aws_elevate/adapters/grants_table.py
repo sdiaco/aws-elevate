@@ -122,7 +122,10 @@ def to_item(grant: Grant) -> dict:
 
 
 def from_item(item: dict) -> Grant:
-    return Grant(**{_ATTRS[a]: _parse(_ATTRS[a], v) for a, v in item.items() if a in _ATTRS})
+    # to_item leaves out None fields, so an absent attribute reads back as None.
+    fields = dict.fromkeys(_FIELDS)
+    fields.update({_ATTRS[a]: _parse(_ATTRS[a], v) for a, v in item.items() if a in _ATTRS})
+    return Grant(**fields)
 
 
 def timeline_item(grant_id: str, state: State, at: datetime, attrs: dict) -> dict:

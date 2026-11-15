@@ -314,3 +314,10 @@ def test_set_attrs_in_other_state_raises_state_conflict(table):
     stub.add_client_error("update_item", service_error_code="ConditionalCheckFailedException")
     with pytest.raises(StateConflict):
         gt.set_attrs("abcde23456", State.ACTIVATING, error="boom")
+
+
+def test_item_round_trip_of_auto_grant_without_approver_group():
+    # Found by the e2e run: absent optional attributes must read back as None.
+    grant = GRANT.__class__(**{**GRANT.__dict__, "approval": Approval.AUTO, "approver_group": None})
+    assert "approverGroup" not in to_item(grant)
+    assert from_item(to_item(grant)) == grant
