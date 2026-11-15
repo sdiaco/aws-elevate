@@ -132,7 +132,7 @@ def test_precheck_role_is_read_only():
 
 
 def test_every_role_is_tested():
-    assert set(roles()) == {"EngineRole", "StateMachineRole", "PrecheckRole"}
+    assert set(roles()) == {"EngineRole", "StateMachineRole", "PrecheckRole", "ApiRole"}
 
 
 # ---------- table (design §8.3, §11.3) ----------
@@ -152,6 +152,7 @@ def test_table_denies_data_access_to_everyone_but_the_service_roles_by_exact_arn
     allowed = deny["Condition"]["ArnNotEquals"]["aws:PrincipalArn"]
     assert "*" not in text(allowed).replace("${AWS::", "")
     assert "role/elevate/${AWS::StackName}-engine" in text(allowed)
+    assert "role/elevate/${AWS::StackName}-api" in text(allowed)
 
 
 def test_engine_role_name_matches_the_table_exception():
@@ -219,6 +220,7 @@ def test_everything_waits_for_the_precheck(name):
     [
         ("EngineFunction", "aws_elevate.engine.handler.handler"),
         ("PrecheckFunction", "aws_elevate.precheck.handler.handler"),
+        ("ApiFunction", "aws_elevate.api.handler.handler"),
     ],
 )
 def test_lambda_runtime_and_handler(name, handler):
@@ -255,3 +257,193 @@ def test_sns_topic_policy_statements_name_one_topic_each():
         assert len(props["Topics"]) == 1, name
         for stmt in props["PolicyDocument"]["Statement"]:
             assert not isinstance(stmt["Resource"], list), name
+
+
+# ---------- api role (design §8.2): reads untrusted input, never writes to sso ----------
+
+SCHEMA_PATH = TEMPLATE_PATH.parent / "rules.schema.json"
+
+
+def api_actions() -> set[str]:
+    return {
+        a for s in statements("ApiRole") if s["Effect"] == "Allow" for a in as_list(s["Action"])
+    }
+
+
+def api_statement(sid: str) -> dict:
+    (stmt,) = [s for s in statements("ApiRole") if s.get("Sid") == sid]
+    return stmt
+
+
+def test_api_has_no_sso_write_action():
+    assert not [a for a in api_actions() if is_sso_write(a) or a in ("sso:*", "*")]
+
+
+def test_api_actions_are_exactly_the_design_ones():
+    assert api_actions() == {
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:Query",
+        "appconfig:GetHostedConfigurationVersion",
+        "appconfig:ListHostedConfigurationVersions",
+        "appconfig:ValidateConfiguration",
+        "cloudtrail:LookupEvents",
+        "states:StartExecution",
+        "states:SendTaskSuccess",
+        "states:RedriveExecution",
+        "identitystore:GetUserId",
+        "identitystore:ListGroupMembershipsForMember",
+        "iam:GetRole",
+        "events:PutEvents",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+    }
+
+
+def test_api_never_scans_the_table():
+    assert "dynamodb:Scan" not in api_actions()
+    table = api_statement("GrantsTable")
+    assert all("GrantsTable" in text(r) for r in as_list(table["Resource"]))
+
+
+def test_api_reads_iam_roles_only_of_identity_center_service_roles():
+    stmt = api_statement("CompareRoleId")
+    assert as_list(stmt["Action"]) == ["iam:GetRole"]
+    for resource in as_list(stmt["Resource"]):
+        assert "role/aws-reserved/sso.amazonaws.com/" in text(resource)
+        assert "AWSReservedSSO_" in text(resource)
+
+
+def test_api_publishes_only_the_config_rejected_event_on_its_bus():
+    stmt = api_statement("ConfigRejectedEvent")
+    assert stmt["Resource"] == {"Fn::GetAtt": ["EventBus", "Arn"]}
+    assert stmt["Condition"] == {"StringEquals": {"events:detail-type": "elevate.config.rejected"}}
+
+
+def test_api_starts_and_redrives_only_this_state_machine():
+    start = api_statement("StartGrant")
+    assert start["Resource"] == {"Ref": "GrantStateMachine"}
+    redrive = api_statement("RedriveGrant")
+    assert "execution:${GrantStateMachine.Name}:*" in text(redrive["Resource"])
+
+
+def test_api_reads_rules_of_this_application_only():
+    stmt = api_statement("ReadRules")
+    assert all("${RulesApplication}" in text(r) for r in as_list(stmt["Resource"]))
+
+
+def test_api_role_name_matches_the_table_exception():
+    props = RESOURCES["ApiRole"]["Properties"]
+    assert props["RoleName"] == {"Fn::Sub": "${AWS::StackName}-api"}
+    assert props["Path"] == "/elevate/"
+
+
+# ---------- API Gateway (design §8.1) ----------
+
+SERVICE_ROLES = [
+    "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
+    "AWSReservedSSO_ElevateRequester_*",
+    "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
+    "AWSReservedSSO_ElevateAdmin_*",
+]
+
+
+def test_resource_policy_allows_the_two_roles_and_denies_everyone_else_explicitly():
+    (allow, deny) = RESOURCES["RestApi"]["Properties"]["Policy"]["Statement"]
+    assert allow["Effect"] == "Allow"
+    assert allow["Condition"] == {
+        "ArnLike": {"aws:PrincipalArn": [{"Fn::Sub": r} for r in SERVICE_ROLES]}
+    }
+    # Same account: an Allow alone refuses nobody (spike S5).
+    assert deny["Effect"] == "Deny" and deny["Principal"] == {"AWS": "*"}
+    assert deny["Action"] == "execute-api:Invoke"
+    assert deny["Resource"] == "execute-api:/*"
+    assert deny["Condition"] == {
+        "ArnNotLike": {"aws:PrincipalArn": [{"Fn::Sub": r} for r in SERVICE_ROLES]}
+    }
+
+
+def test_every_api_method_needs_a_signature():
+    methods = [r for r in RESOURCES.values() if r["Type"] == "AWS::ApiGateway::Method"]
+    assert methods
+    assert all(m["Properties"]["AuthorizationType"] == "AWS_IAM" for m in methods)
+
+
+def test_api_url_is_published_under_the_fixed_parameter_name():
+    assert RESOURCES["ApiUrlParameter"]["Properties"]["Name"] == "/elevate/api-url"
+
+
+# ---------- rules profile (design §7.1) ----------
+
+
+def test_rules_profile_validates_with_the_rules_schema():
+    (validator,) = RESOURCES["RulesProfile"]["Properties"]["Validators"]
+    assert validator["Type"] == "JSON_SCHEMA"
+    assert json.loads(validator["Content"]) == json.loads(SCHEMA_PATH.read_text())
+
+
+# ---------- service permission sets (design §8.1, §8.2) ----------
+
+
+def ps_statements(name: str) -> list[dict]:
+    return RESOURCES[name]["Properties"]["InlinePolicy"]["Statement"]
+
+
+def ps_actions(name: str) -> set[str]:
+    return {a for s in ps_statements(name) for a in as_list(s["Action"])}
+
+
+def test_service_permission_sets_have_fixed_names_and_no_jit_tag():
+    for name, ps_name in (("RequesterPs", "ElevateRequester"), ("AdminPs", "ElevateAdmin")):
+        props = RESOURCES[name]["Properties"]
+        assert props["Name"] == ps_name
+        assert "jit" not in text(props.get("Tags", []))
+
+
+def test_requester_can_only_call_the_api_and_read_its_address():
+    assert ps_actions("RequesterPs") == {"execute-api:Invoke", "ssm:GetParameter"}
+
+
+def test_admin_cannot_write_permission_sets_iam_lambda_or_apply_stack_updates():
+    actions = ps_actions("AdminPs")
+    assert {"execute-api:Invoke", "ssm:GetParameter"} <= actions
+    assert "appconfig:CreateHostedConfigurationVersion" in actions
+    forbidden = [
+        a
+        for a in actions
+        if is_sso_write(a)
+        or a.startswith(("iam:", "lambda:"))
+        or a in ("cloudformation:ExecuteChangeSet", "cloudformation:UpdateStack")
+        or a.endswith(":*")
+    ]
+    assert forbidden == []
+
+
+def test_service_permission_sets_are_assigned_to_the_groups_by_id_in_this_account():
+    for assignment, ps, group in (
+        ("RequesterAssignment", "RequesterPs", "RequesterGroupId"),
+        ("AdminAssignment", "AdminPs", "AdminGroupId"),
+    ):
+        props = RESOURCES[assignment]["Properties"]
+        assert props["PermissionSetArn"] == {"Fn::GetAtt": [ps, "PermissionSetArn"]}
+        assert props["PrincipalType"] == "GROUP"
+        assert props["PrincipalId"] == {"Ref": group}
+        assert props["TargetId"] == {"Ref": "AWS::AccountId"}
+
+
+def test_api_function_gets_the_permission_set_names_and_parameters():
+    env = RESOURCES["ApiFunction"]["Properties"]["Environment"]["Variables"]
+    assert env["REQUESTER_PS_NAME"] == RESOURCES["RequesterPs"]["Properties"]["Name"]
+    assert env["ADMIN_PS_NAME"] == RESOURCES["AdminPs"]["Properties"]["Name"]
+    assert env["MAX_OPEN_GRANTS_PER_USER"] == {"Ref": "MaxOpenGrantsPerUser"}
+    assert env["AUDITOR_GROUP_ID"] == {"Ref": "AuditorGroupId"}
+
+
+def test_install_parameters():
+    params = TEMPLATE["Parameters"]
+    assert {"AdminGroupId", "RequesterGroupId"} <= set(params)
+    assert params["AuditorGroupId"]["Default"] == ""
+    assert params["MaxOpenGrantsPerUser"]["Default"] == 5
