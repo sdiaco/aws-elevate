@@ -15,6 +15,7 @@ from aws_elevate.adapters.grants_table import (
 from aws_elevate.core.models import (
     Approval,
     CloseReason,
+    ConfigVersion,
     Grant,
     Group,
     PermissionSetRef,
@@ -321,3 +322,112 @@ def test_item_round_trip_of_auto_grant_without_approver_group():
     grant = GRANT.__class__(**{**GRANT.__dict__, "approval": Approval.AUTO, "approver_group": None})
     assert "approverGroup" not in to_item(grant)
     assert from_item(to_item(grant)) == grant
+
+
+# ---------- config versions (design §7.1, §7.3) ----------
+
+CONFIG_KEY = {"pk": {"S": "CONFIG"}, "sk": {"S": "V#00000007"}}
+INVALID = ConfigVersion(
+    number=7, valid=False, errors=("rules[0].approval: must be auto or manual",)
+)
+INVALID_ITEM = {
+    **CONFIG_KEY,
+    "version": {"N": "7"},
+    "valid": {"BOOL": False},
+    "errors": {"L": [{"S": "rules[0].approval: must be auto or manual"}]},
+    "verified": {"BOOL": False},
+    "rejectedEventSent": {"BOOL": False},
+}
+
+
+def test_get_config_missing(table):
+    t, stub = table
+    stub.add_response(
+        "get_item", {}, {"TableName": TABLE, "Key": CONFIG_KEY, "ConsistentRead": True}
+    )
+    assert t.get_config(7) is None
+
+
+def test_get_config_with_author(table):
+    t, stub = table
+    item = {
+        **INVALID_ITEM,
+        "author": {"S": "arn:aws:sts::111111111111:assumed-role/r/user@example.com"},
+        "createdAt": {"S": "2026-11-15T10:00:00Z"},
+        "verified": {"BOOL": True},
+    }
+    stub.add_response(
+        "get_item", {"Item": item}, {"TableName": TABLE, "Key": CONFIG_KEY, "ConsistentRead": True}
+    )
+    got = t.get_config(7)
+    assert got.author.endswith("/user@example.com")
+    assert (got.created_at, got.verified, got.valid) == ("2026-11-15T10:00:00Z", True, False)
+
+
+def test_put_config_first_seen(table):
+    t, stub = table
+    stub.add_response(
+        "put_item",
+        {},
+        {
+            "TableName": TABLE,
+            "Item": INVALID_ITEM,
+            "ConditionExpression": "attribute_not_exists(pk)",
+        },
+    )
+    assert t.put_config(INVALID) is True
+
+
+def test_put_config_already_recorded(table):
+    t, stub = table
+    stub.add_client_error("put_item", service_error_code="ConditionalCheckFailedException")
+    assert t.put_config(INVALID) is False
+
+
+def test_set_config_author(table):
+    t, stub = table
+    stub.add_response(
+        "update_item",
+        {},
+        {
+            "TableName": TABLE,
+            "Key": CONFIG_KEY,
+            "UpdateExpression": "SET author = :a, createdAt = :c, verified = :t",
+            "ExpressionAttributeValues": {
+                ":a": {"S": "arn:x"},
+                ":c": {"S": "2026-11-15T10:00:00Z"},
+                ":t": {"BOOL": True},
+            },
+        },
+    )
+    t.set_config_author(7, "arn:x", "2026-11-15T10:00:00Z")
+
+
+def test_claim_rejected_event_once(table):
+    t, stub = table
+    claim = {
+        "TableName": TABLE,
+        "Key": CONFIG_KEY,
+        "UpdateExpression": "SET rejectedEventSent = :t",
+        "ConditionExpression": "rejectedEventSent = :f",
+        "ExpressionAttributeValues": {":t": {"BOOL": True}, ":f": {"BOOL": False}},
+    }
+    stub.add_response("update_item", {}, claim)
+    stub.add_client_error("update_item", service_error_code="ConditionalCheckFailedException")
+    assert t.claim_rejected_event(7) is True
+    assert t.claim_rejected_event(7) is False
+
+
+def test_release_rejected_event(table):
+    t, stub = table
+    stub.add_response(
+        "update_item",
+        {},
+        {
+            "TableName": TABLE,
+            "Key": CONFIG_KEY,
+            "UpdateExpression": "SET rejectedEventSent = :f",
+            "ExpressionAttributeValues": {":f": {"BOOL": False}},
+        },
+    )
+    t.release_rejected_event(7)

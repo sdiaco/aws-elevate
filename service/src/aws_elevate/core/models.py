@@ -106,6 +106,20 @@ class Grant:
 
 
 @dataclass(frozen=True)
+class ConfigVersion:
+    """What api recorded about a rules version the first time it saw it (design §7.3)."""
+
+    number: int
+    valid: bool
+    errors: tuple[str, ...] = ()
+    author: str | None = None
+    created_at: str | None = None
+    # False until CloudTrail has recorded who created the version.
+    verified: bool = False
+    rejected_event_sent: bool = False
+
+
+@dataclass(frozen=True)
 class Identity:
     """The caller, as resolved by api from the request signature."""
 
