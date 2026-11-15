@@ -91,15 +91,14 @@ def test_auto_request_until_expired(org, requester):
     assert harness.probe(creds) in ("denied", "invalid")
 
 
-def test_manual_request_approved_by_another_user_then_revoked(org, requester, admin):
+@pytest.mark.skipif(
+    not harness.approval_enabled(),
+    reason="approval by a second user is opt-in: E2E_APPROVAL=1 with APPROVER_PROFILE",
+)
+def test_manual_request_approved_by_another_user_then_revoked(org, requester):
     status, body = org.call(requester, "POST", "grants", request_body(org, MANUAL_RULE_ID))
     assert status == 201, body
     grant_id = body["grant"]["id"]
-    assert body["grant"]["state"] == "pending"
-    # Approver group member, but it is their own request (design §3.3), from either role.
-    for creds in (requester, admin):
-        status, refused = org.call(creds, "POST", f"grants/{grant_id}/approve")
-        assert (status, refused["error"]) == (403, "forbidden"), refused
     approver = org.approver_creds()
     _, pending = org.call(approver, "GET", f"grants/{grant_id}")
     assert pending["grant"]["actions"] == ["approve", "reject"]
@@ -116,10 +115,15 @@ def test_manual_request_approved_by_another_user_then_revoked(org, requester, ad
     assert closed["revokedBy"]["userName"] == harness.env("TEST_USER")
 
 
-def test_manual_request_cancelled_by_the_requester(org, requester):
+def test_manual_request_refused_to_its_requester_then_cancelled(org, requester, admin):
     status, body = org.call(requester, "POST", "grants", request_body(org, MANUAL_RULE_ID))
     assert status == 201, body
     grant_id = body["grant"]["id"]
+    assert body["grant"]["state"] == "pending"
+    # Approver group member, but it is their own request (design §3.3), from either role.
+    for creds in (requester, admin):
+        status, refused = org.call(creds, "POST", f"grants/{grant_id}/approve")
+        assert (status, refused["error"]) == (403, "forbidden"), refused
     status, body = call_when_ready(org, requester, "POST", f"grants/{grant_id}/cancel")
     assert status == 200, body
     assert (body["grant"]["state"], body["grant"]["closeReason"]) == ("closed", "cancelled")
