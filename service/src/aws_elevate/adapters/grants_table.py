@@ -14,6 +14,7 @@ from ..core.lifecycle import can_transition
 from ..core.models import (
     Approval,
     CloseReason,
+    ConfigVersion,
     Grant,
     Group,
     PermissionSetRef,
@@ -145,6 +146,42 @@ def _retention_ttl(closed_at: datetime) -> int:
     year, month = closed_at.year + month0 // 12, month0 % 12 + 1
     day = min(closed_at.day, calendar.monthrange(year, month)[1])
     return int(closed_at.replace(year=year, month=month, day=day).timestamp())
+
+
+def _config_key(version: int) -> dict:
+    return {"pk": {"S": "CONFIG"}, "sk": {"S": f"V#{version:08d}"}}
+
+
+def _config_item(cv: ConfigVersion) -> dict:
+    item = {
+        **_config_key(cv.number),
+        "version": {"N": str(cv.number)},
+        "valid": {"BOOL": cv.valid},
+        "errors": {"L": [{"S": e} for e in cv.errors]},
+        "verified": {"BOOL": cv.verified},
+        "rejectedEventSent": {"BOOL": cv.rejected_event_sent},
+    }
+    if cv.author is not None:
+        item["author"] = {"S": cv.author}
+    if cv.created_at is not None:
+        item["createdAt"] = {"S": cv.created_at}
+    return item
+
+
+def _config_from_item(item: dict) -> ConfigVersion:
+    return ConfigVersion(
+        number=int(item["version"]["N"]),
+        valid=item["valid"]["BOOL"],
+        errors=tuple(e["S"] for e in item["errors"]["L"]),
+        author=item.get("author", {}).get("S"),
+        created_at=item.get("createdAt", {}).get("S"),
+        verified=item["verified"]["BOOL"],
+        rejected_event_sent=item["rejectedEventSent"]["BOOL"],
+    )
+
+
+def _condition_failed(err: ClientError) -> bool:
+    return err.response["Error"]["Code"] == "ConditionalCheckFailedException"
 
 
 def _cancellation_codes(err: ClientError) -> list[str] | None:
@@ -299,3 +336,63 @@ class GrantsTable:
                 return False
             raise
         return True
+
+    # ---------- config versions (design §7.1, §7.3) ----------
+
+    def get_config(self, version: int) -> ConfigVersion | None:
+        resp = self._db.get_item(
+            TableName=self._table, Key=_config_key(version), ConsistentRead=True
+        )
+        return _config_from_item(resp["Item"]) if "Item" in resp else None
+
+    def put_config(self, cv: ConfigVersion) -> bool:
+        """Record a version the first time it is seen. False if another container
+        recorded it first; its record wins."""
+        try:
+            self._db.put_item(
+                TableName=self._table,
+                Item=_config_item(cv),
+                ConditionExpression="attribute_not_exists(pk)",
+            )
+        except ClientError as err:
+            if _condition_failed(err):
+                return False
+            raise
+        return True
+
+    def set_config_author(self, version: int, author: str, created_at: str) -> None:
+        self._db.update_item(
+            TableName=self._table,
+            Key=_config_key(version),
+            UpdateExpression="SET author = :a, createdAt = :c, verified = :t",
+            ExpressionAttributeValues={
+                ":a": {"S": author},
+                ":c": {"S": created_at},
+                ":t": {"BOOL": True},
+            },
+        )
+
+    def claim_rejected_event(self, version: int) -> bool:
+        """True for exactly one caller: the one that must emit elevate.config.rejected."""
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key=_config_key(version),
+                UpdateExpression="SET rejectedEventSent = :t",
+                ConditionExpression="rejectedEventSent = :f",
+                ExpressionAttributeValues={":t": {"BOOL": True}, ":f": {"BOOL": False}},
+            )
+        except ClientError as err:
+            if _condition_failed(err):
+                return False
+            raise
+        return True
+
+    def release_rejected_event(self, version: int) -> None:
+        """The event could not be sent: let the next read try again."""
+        self._db.update_item(
+            TableName=self._table,
+            Key=_config_key(version),
+            UpdateExpression="SET rejectedEventSent = :f",
+            ExpressionAttributeValues={":f": {"BOOL": False}},
+        )
