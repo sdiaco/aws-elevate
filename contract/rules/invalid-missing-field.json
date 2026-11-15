@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "id": "backend-ssm-prod",
+      "permissionSet": {
+        "arn": "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-1111111111111111",
+        "name": "ssm-write"
+      },
+      "accounts": [
+        {
+          "id": "111111111111",
+          "name": "prod"
+        }
+      ],
+      "duration": {
+        "defaultSeconds": 3600,
+        "maxSeconds": 14400
+      },
+      "approval": "auto",
+      "approverGroup": null,
+      "privileged": false
+    }
+  ]
+}
