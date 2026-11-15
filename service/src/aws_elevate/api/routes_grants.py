@@ -301,9 +301,9 @@ class GrantRoutes:
         grant = self._visible(identity, grant_id)
         if not identity.is_admin:
             raise forbidden("only an admin can redrive a revocation")
-        # revoking with a failed execution: the step that records revoke_failed failed.
-        stuck = grant.state == State.REVOKING and self._sfn.status(grant_id) == "FAILED"
-        if not (can(identity, "redrive", grant) or stuck):
+        # Only revoke_failed. A grant left revoking because recording revoke_failed itself
+        # failed shows in the logs and is resolved by hand (maintainer's choice).
+        if not can(identity, "redrive", grant):
             raise _conflict(f"grant {grant_id} is {grant.state}, no failed revocation to redrive")
         if not self._sfn.redrive(grant_id):
             raise _conflict(f"the execution of grant {grant_id} cannot be redriven")
