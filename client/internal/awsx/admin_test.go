@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
@@ -126,5 +128,96 @@ func TestDoctorReadsWithTheSDK(t *testing.T) {
 	}
 	if n, err := a.ConfirmedSubscribers(ctx, "arn:aws:sns:eu-west-1:111111111111:elevate-alerts"); err != nil || n != 1 {
 		t.Errorf("subscribers %d %v", n, err)
+	}
+}
+
+// fakePreview answers DescribeStacks, CreateChangeSet and DescribeChangeSet: the change
+// set is in progress at the first read, then complete over two pages, or failed.
+type fakePreview struct {
+	failReason string
+	create     url.Values
+	reads      int
+}
+
+func (f *fakePreview) serve(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		form, _ := url.ParseQuery(string(body))
+		w.Header().Set("Content-Type", "text/xml")
+		change := func(action, id string) string {
+			return `<member><Type>Resource</Type><ResourceChange><Action>` + action + `</Action><LogicalResourceId>` + id +
+				`</LogicalResourceId><ResourceType>AWS::Lambda::Function</ResourceType><Replacement>False</Replacement></ResourceChange></member>`
+		}
+		switch form.Get("Action") {
+		case "DescribeStacks":
+			fmt.Fprint(w, `<DescribeStacksResponse><DescribeStacksResult><Stacks><member><StackName>elevate</StackName><StackStatus>CREATE_COMPLETE</StackStatus><CreationTime>2026-11-16T09:00:00Z</CreationTime><Parameters>`+
+				`<member><ParameterKey>AdminGroupId</ParameterKey><ParameterValue>g-1</ParameterValue></member>`+
+				`<member><ParameterKey>CodeKey</ParameterKey><ParameterValue>v0.0.1/lambda.zip</ParameterValue></member>`+
+				`</Parameters></member></Stacks></DescribeStacksResult></DescribeStacksResponse>`)
+		case "CreateChangeSet":
+			f.create = form
+			fmt.Fprint(w, `<CreateChangeSetResponse><CreateChangeSetResult><Id>cs-1</Id></CreateChangeSetResult></CreateChangeSetResponse>`)
+		case "DescribeChangeSet":
+			f.reads++
+			switch {
+			case f.reads == 1:
+				fmt.Fprint(w, `<DescribeChangeSetResponse><DescribeChangeSetResult><Status>CREATE_IN_PROGRESS</Status></DescribeChangeSetResult></DescribeChangeSetResponse>`)
+			case f.failReason != "":
+				fmt.Fprintf(w, `<DescribeChangeSetResponse><DescribeChangeSetResult><Status>FAILED</Status><StatusReason>%s</StatusReason></DescribeChangeSetResult></DescribeChangeSetResponse>`, f.failReason)
+			case form.Get("NextToken") == "":
+				fmt.Fprint(w, `<DescribeChangeSetResponse><DescribeChangeSetResult><Status>CREATE_COMPLETE</Status><Changes>`+change("Modify", "EngineFunction")+`</Changes><NextToken>p2</NextToken></DescribeChangeSetResult></DescribeChangeSetResponse>`)
+			default:
+				fmt.Fprint(w, `<DescribeChangeSetResponse><DescribeChangeSetResult><Status>CREATE_COMPLETE</Status><Changes>`+change("Add", "ApiFunction")+`</Changes></DescribeChangeSetResult></DescribeChangeSetResponse>`)
+			}
+		default:
+			t.Logf("unexpected %s", body)
+			http.Error(w, "unexpected call", http.StatusBadRequest)
+		}
+	}))
+}
+
+func previewAdmin(srv *httptest.Server) *Admin {
+	a := adminFor(srv)
+	a.sleep = func(context.Context, time.Duration) error { return nil }
+	a.now = func() time.Time { return time.Unix(1700000000, 0) }
+	return a
+}
+
+func TestPreviewUpdateKeepsParametersButCodeKeyAndReadsEveryChange(t *testing.T) {
+	f := &fakePreview{}
+	srv := f.serve(t)
+	defer srv.Close()
+	p, err := previewAdmin(srv).PreviewUpdate(context.Background(), "stack-1", "https://example.com/v0.2.0/elevate.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(p.Parameters, ",") != "AdminGroupId" || p.NoChanges || len(p.Changes) != 2 {
+		t.Fatalf("%+v", p)
+	}
+	if p.Changes[1] != (Change{Action: "Add", Resource: "ApiFunction", Type: "AWS::Lambda::Function", Replacement: "False"}) {
+		t.Errorf("changes %+v", p.Changes)
+	}
+	c := f.create
+	if c.Get("ChangeSetType") != "UPDATE" || c.Get("ChangeSetName") != "elevate-preview-1700000000" ||
+		c.Get("TemplateURL") != "https://example.com/v0.2.0/elevate.yaml" || c.Get("Capabilities.member.1") != "CAPABILITY_NAMED_IAM" ||
+		c.Get("Parameters.member.1.UsePreviousValue") != "true" || c.Get("Parameters.member.2.ParameterKey") != "" {
+		t.Errorf("request %v", c)
+	}
+}
+
+func TestPreviewUpdateWithoutChangesOrFailed(t *testing.T) {
+	f := &fakePreview{failReason: "The submitted information didn't contain changes. Submit different information to create a change set."}
+	srv := f.serve(t)
+	p, err := previewAdmin(srv).PreviewUpdate(context.Background(), "stack-1", "https://example.com/t.yaml")
+	srv.Close()
+	if err != nil || !p.NoChanges {
+		t.Errorf("no changes: %+v %v", p, err)
+	}
+	f = &fakePreview{failReason: "S3 error: Access Denied"}
+	srv = f.serve(t)
+	defer srv.Close()
+	if _, err := previewAdmin(srv).PreviewUpdate(context.Background(), "stack-1", "https://example.com/t.yaml"); err == nil || !strings.Contains(err.Error(), "Access Denied") {
+		t.Errorf("failed: %v", err)
 	}
 }

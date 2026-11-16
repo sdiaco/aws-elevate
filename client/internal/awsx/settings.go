@@ -9,10 +9,16 @@ import (
 	"path/filepath"
 )
 
-// Settings is what setup found, per source profile, so later commands skip discovery.
+// Settings is what setup found, per source profile, so later commands skip discovery,
+// and the user's choices.
 type Settings struct {
 	Profiles map[string]Target `json:"profiles"`
+	// CheckUpdates false stops every call to the public release list (design §12.3).
+	CheckUpdates *bool `json:"checkUpdates,omitempty"`
 }
+
+// UpdatesChecked is true unless the user turned the check off.
+func (s Settings) UpdatesChecked() bool { return s.CheckUpdates == nil || *s.CheckUpdates }
 
 // SettingsPath is ~/.config/aws-elevate/config.json, or under $XDG_CONFIG_HOME when set.
 func SettingsPath() (string, error) {

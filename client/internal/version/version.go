@@ -27,33 +27,14 @@ const (
 // the client minimum. When both are too old the client wins: it is the one to upgrade
 // first, since a newer client tells which infrastructure it needs.
 func Compare(client, infra, minClient, minInfra string) (Compat, error) {
-	cmp := func(a, b string) (int, error) {
-		x, err := parse(a)
-		if err != nil {
-			return 0, err
-		}
-		y, err := parse(b)
-		if err != nil {
-			return 0, err
-		}
-		for i := range x {
-			if x[i] != y[i] {
-				if x[i] < y[i] {
-					return -1, nil
-				}
-				return 1, nil
-			}
-		}
-		return 0, nil
-	}
-	c, err := cmp(client, minClient)
+	c, err := Cmp(client, minClient)
 	if err != nil {
 		return "", err
 	}
 	if c < 0 {
 		return ClientTooOld, nil
 	}
-	i, err := cmp(infra, minInfra)
+	i, err := Cmp(infra, minInfra)
 	if err != nil {
 		return "", err
 	}
@@ -61,6 +42,27 @@ func Compare(client, infra, minClient, minInfra string) (Compat, error) {
 		return InfraTooOld, nil
 	}
 	return OK, nil
+}
+
+// Cmp compares two versions: -1, 0 or 1.
+func Cmp(a, b string) (int, error) {
+	x, err := parse(a)
+	if err != nil {
+		return 0, err
+	}
+	y, err := parse(b)
+	if err != nil {
+		return 0, err
+	}
+	for i := range x {
+		if x[i] != y[i] {
+			if x[i] < y[i] {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	}
+	return 0, nil
 }
 
 func parse(v string) ([3]int, error) {

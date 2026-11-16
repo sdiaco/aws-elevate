@@ -23,9 +23,10 @@ type AdminAWS interface {
 	PermissionSetNames(ctx context.Context) ([]string, error)
 	HasTrail(ctx context.Context) (bool, error)
 	ConfirmedSubscribers(ctx context.Context, topicARN string) (int, error)
+	PreviewUpdate(ctx context.Context, stackID, templateURL string) (awsx.Preview, error)
 }
 
-const adminUsage = "admin rules list | admin rules save <file> | admin export [<file>] | admin import <file> | admin doctor"
+const adminUsage = "admin rules list | admin rules save <file> | admin export [<file>] | admin import <file> | admin doctor | admin updates [--preview <version>]"
 
 func runAdmin(ctx context.Context, e *Env, args []string) error {
 	sub := ""
@@ -43,6 +44,8 @@ func runAdmin(ctx context.Context, e *Env, args []string) error {
 		return runExport(ctx, e, args)
 	case sub == "doctor":
 		return runDoctor(ctx, e, args)
+	case sub == "updates":
+		return runUpdates(ctx, e, args)
 	case sub == "--help" || sub == "-h":
 		fmt.Fprintf(e.Stderr, "usage: aws elevate %s\n", adminUsage)
 		return nil
