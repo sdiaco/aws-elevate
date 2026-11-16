@@ -23,6 +23,8 @@ type Admin interface {
 	// PublishRules creates a rules version on AppConfig starting from latest; it fails
 	// with awsx.ErrVersionConflict when another version came out meanwhile.
 	PublishRules(ctx context.Context, latest *int, doc []byte) (int, error)
+	// PreviewUpdate creates a change set of the stack for infrastructure release v.
+	PreviewUpdate(ctx context.Context, v string) (*UpdatePreview, error)
 }
 
 // emptyDoc is the document before the first rule (contract/rules/valid-empty.json).
@@ -187,13 +189,7 @@ func (a *App) ruleEdit(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, refresh bool, alerts ...Alert) {
 	v := ruleView{Form: form}
-	var err error
-	if v.Sets, err = a.Admin.PermissionSets(r.Context(), refresh); err == nil {
-		if v.Accounts, err = a.Admin.Accounts(r.Context()); err == nil {
-			v.Groups, err = a.Admin.Groups(r.Context())
-		}
-	}
-	if err != nil {
+	if err := a.readChoices(r.Context(), &v, refresh); err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
@@ -203,6 +199,19 @@ func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, re
 		title = "Rule " + form.Orig
 	}
 	a.show(w, http.StatusOK, "rule", title, "/rules", v, alerts...)
+}
+
+// readChoices fills the lists the rule form chooses from, read from AWS by the admin.
+func (a *App) readChoices(ctx context.Context, v *ruleView, refresh bool) error {
+	var err error
+	if v.Sets, err = a.Admin.PermissionSets(ctx, refresh); err != nil {
+		return err
+	}
+	if v.Accounts, err = a.Admin.Accounts(ctx); err != nil {
+		return err
+	}
+	v.Groups, err = a.Admin.Groups(ctx)
+	return err
 }
 
 // psPermissions is "What it contains" of the permission set named in the form, read by the

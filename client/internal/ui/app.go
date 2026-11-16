@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
@@ -40,6 +41,10 @@ type App struct {
 	Console func(g api.Grant) string
 	// Admin reads and writes AWS with the admin's credentials; nil for other roles.
 	Admin Admin
+	// Updates lists releases and updates the client; nil turns the Updates view off.
+	Updates *Updates
+
+	skippedWelcome atomic.Bool // the admin skipped the first run in this session
 }
 
 func (a *App) has(role string) bool { return slices.Contains(a.Me.Roles, role) }
@@ -79,6 +84,13 @@ func Pages(a *App) http.Handler {
 		mux.HandleFunc("GET /rules/import", a.importPage)
 		mux.HandleFunc("POST /rules/import", a.importSubmit)
 		mux.HandleFunc("POST /rules/publish", a.publish)
+		mux.HandleFunc("GET /welcome", a.welcome)
+		mux.HandleFunc("POST /welcome/skip", a.skipWelcome)
+	}
+	if a.has("admin") && a.Admin != nil && a.Updates != nil {
+		mux.HandleFunc("GET /updates", a.updatesPage)
+		mux.HandleFunc("POST /updates/client", a.updateClient)
+		mux.HandleFunc("POST /updates/preview", a.preview)
 	}
 	if a.has("admin") {
 		mux.HandleFunc("GET /problems", a.problemsPage)
@@ -94,6 +106,15 @@ func Pages(a *App) http.Handler {
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
+	first, err := a.firstRun(r.Context())
+	if err != nil {
+		a.fail(w, "aws-elevate", "/", err)
+		return
+	}
+	if first {
+		http.Redirect(w, r, "/welcome", http.StatusSeeOther)
+		return
+	}
 	to := "/active"
 	if a.has("requester") {
 		to = "/request"
@@ -121,6 +142,9 @@ func (a *App) nav() []NavGroup {
 	}
 	if a.has("admin") || a.has("auditor") {
 		admin = append(admin, NavItem{Label: "Config versions", Path: "/versions"})
+	}
+	if a.has("admin") && a.Admin != nil && a.Updates != nil {
+		admin = append(admin, NavItem{Label: "Updates", Path: "/updates"})
 	}
 	if len(admin) > 0 {
 		groups = append(groups, NavGroup{Label: "Administration", Items: admin})

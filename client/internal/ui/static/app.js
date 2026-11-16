@@ -118,6 +118,32 @@ document.addEventListener("change", (e) => {
   });
 });
 
+// A form in steps: <form data-steps> shows one [data-step] section at a time, and Next
+// moves on only when the fields of the current one are valid. Without this script every
+// step shows at once and the form still works.
+function steps(form) {
+  const all = [...form.querySelectorAll("[data-step]")];
+  const back = form.querySelector("[data-step-back]");
+  const next = form.querySelector("[data-step-next]");
+  const done = form.querySelector("[data-step-done]");
+  let at = 0;
+  const show = () => {
+    all.forEach((s, i) => { s.hidden = i !== at; });
+    back.hidden = at === 0;
+    next.hidden = at === all.length - 1;
+    done.hidden = at !== all.length - 1;
+  };
+  back.addEventListener("click", () => { at--; show(); });
+  next.addEventListener("click", () => {
+    const bad = [...all[at].querySelectorAll("input, select")].find((f) => !f.checkValidity());
+    if (bad) { bad.reportValidity(); return; }
+    at++;
+    show();
+  });
+  show();
+}
+
+document.querySelectorAll("form[data-steps]").forEach(steps);
 document.querySelectorAll("[data-list]").forEach(updateSelection);
 document.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));
 tick();

@@ -1,0 +1,19 @@
+{{define "content"}}<div class="welcome">
+<div class="page-head"><div><h1>Your first rule</h1>
+<p class="desc">A rule says what can be requested, where, by whom and how. You can change it or add more in Rules.</p></div>
+<div class="actions"><form method="post" action="/welcome/skip"><button class="btn">Skip</button></form></div></div>
+<div class="box form-box"><form method="post" action="/rules/edit" data-steps>
+<input type="hidden" name="orig" value="">
+<section data-step><h2>1. What</h2>
+<p class="desc">The permission set the rule gives.</p>
+{{template "rule-what" .}}</section>
+<section data-step><h2>2. Where</h2>
+{{template "rule-where" .}}</section>
+<section data-step><h2>3. Who</h2>
+<p class="desc">Who asks for it, and who approves.</p>
+{{template "rule-who" .}}</section>
+<section data-step><h2>4. How</h2>
+<p class="desc">How long it lasts.</p>
+{{template "rule-how" .}}</section>
+<div class="form-actions"><button type="button" class="btn link" data-step-back hidden>Back</button><button type="button" class="btn primary" data-step-next hidden>Next</button><button class="btn primary" data-step-done>Review changes</button></div>
+</form></div></div>{{end}}

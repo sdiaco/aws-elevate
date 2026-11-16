@@ -45,25 +45,34 @@ func runUpdate(ctx context.Context, e *Env, args []string) error {
 		fmt.Fprintf(e.Stdout, "aws-elevate %s is the newest version that works with infrastructure %s.\n", version.Client, infra)
 		return nil
 	}
-	next := candidates[0].Version
-	exe, err := e.Executable()
-	if err != nil {
-		return fmt.Errorf("find this executable: %w", err)
-	}
-	fmt.Fprintf(e.Stdout, "Downloading aws-elevate %s...\n", next)
-	data, err := e.Download(ctx, next, runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintf(e.Stdout, "Downloading aws-elevate %s...\n", candidates[0].Version)
+	msg, err := installClient(ctx, e, candidates[0].Version)
 	if err != nil {
 		return err
+	}
+	fmt.Fprintln(e.Stdout, msg)
+	return nil
+}
+
+// installClient downloads client release v, checks it and replaces this executable. The
+// interface uses it too.
+func installClient(ctx context.Context, e *Env, v string) (string, error) {
+	exe, err := e.Executable()
+	if err != nil {
+		return "", fmt.Errorf("find this executable: %w", err)
+	}
+	data, err := e.Download(ctx, v, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return "", err
 	}
 	err = release.Replace(exe, data)
 	if errors.Is(err, release.ErrNotWritable) {
-		return savedForManualInstall(e, next, exe, data, err)
+		return "", savedForManualInstall(e, v, exe, data, err)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
-	fmt.Fprintf(e.Stdout, "Updated %s from %s to %s.\n", exe, version.Client, next)
-	return nil
+	return fmt.Sprintf("Updated %s from %s to %s.", exe, version.Client, v), nil
 }
 
 // infraVersion asks the service, which tells its version even when it refuses this client.
