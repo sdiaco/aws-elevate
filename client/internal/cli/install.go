@@ -52,13 +52,22 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	profile := f.profileName(e)
 	in := bufio.NewReader(e.Stdin)
 
-	b, err := e.Open(ctx, profile)
+	src, err := e.Profile(ctx, profile)
 	if err != nil {
 		return err
 	}
 	if *region == "" {
-		*region = b.Source().SSORegion
-		fmt.Fprintf(e.Stdout, "Identity Center region (sso_region of profile %s): %s\n", profile, *region)
+		// The SSO region is the Identity Center home region; another profile can only
+		// suggest its own region.
+		from := "sso_region of profile " + profile
+		*region = src.SSORegion
+		if *region == "" {
+			from, *region = "region of profile "+profile, src.Region
+		}
+		if *region == "" {
+			return errors.New("profile " + profile + " has no region: pass --region <Identity Center home region>")
+		}
+		fmt.Fprintf(e.Stdout, "Identity Center region (%s): %s\n", from, *region)
 		answer, err := ask(e, in, "Install there? [y/N] ")
 		if err != nil {
 			return err
@@ -131,6 +140,10 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	}
 	fmt.Fprintf(e.Stdout, "Stack created. Confirm the subscription in the e-mail sent to %s to receive the alerts.\n", *email)
 
+	if src.SSOStartURL == "" {
+		fmt.Fprintln(e.Stdout, "Next: aws-elevate setup --profile <your SSO profile>")
+		return nil
+	}
 	if err := runSetup(ctx, e, []string{"--profile", profile, "--account", where.Account}); err != nil {
 		return fmt.Errorf("%w\nThe stack is installed: run aws-elevate setup --profile %s once your access to the new permission sets shows up", err, profile)
 	}

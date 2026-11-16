@@ -61,7 +61,13 @@ var installed = []awsx.StackState{
 // withInstaller makes the harness install with inst, through the SSO profile work whose
 // sso_region is eu-west-1.
 func (h *harness) withInstaller(inst *fakeInstaller, stdin string) {
-	h.backend.source = awsx.SourceProfile{Name: "work", SSORegion: "eu-west-1", Region: "eu-west-1"}
+	h.backend.source = awsx.SourceProfile{Name: "work", SSOStartURL: "https://example.awsapps.com/start", SSORegion: "eu-west-1", Region: "eu-west-1"}
+	h.env.Profile = func(_ context.Context, profile string) (awsx.SourceProfile, error) {
+		if profile != "work" {
+			return awsx.SourceProfile{}, errors.New("unexpected profile " + profile)
+		}
+		return h.backend.source, nil
+	}
 	h.env.Stdin = strings.NewReader(stdin)
 	h.env.Installer = func(_ context.Context, profile, region string) (Installer, error) {
 		if profile != "work" {
@@ -228,5 +234,39 @@ func TestInstallSaysHowToSetUpWhenSetupFails(t *testing.T) {
 	}
 	if !strings.Contains(h.errOut.String(), "aws-elevate setup --profile work") {
 		t.Errorf("stderr %s", h.errOut)
+	}
+}
+
+// An admin may install with a profile that is not SSO, for example an assumed role: the
+// region comes from the profile and setup is left to the user's SSO profile.
+func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "y\n")
+	h.backend.source = awsx.SourceProfile{Name: "work", Region: "eu-central-1"}
+
+	code := h.run("install", "--profile", "work", "--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if inst.region != "eu-central-1" || !strings.Contains(h.out.String(), "region of profile work") {
+		t.Errorf("region %q, out %s", inst.region, h.out)
+	}
+	if !strings.Contains(h.out.String(), "aws-elevate setup --profile <your SSO profile>") {
+		t.Errorf("out %s", h.out)
+	}
+	if _, err := setUpTarget(h.env, "work"); err == nil {
+		t.Error("setup ran with a profile that is not SSO")
+	}
+}
+
+func TestInstallNeedsARegion(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	h.backend.source = awsx.SourceProfile{Name: "work"}
+
+	if code := h.run("install", "--profile", "work"); code != 1 || !strings.Contains(h.errOut.String(), "--region") {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
 }

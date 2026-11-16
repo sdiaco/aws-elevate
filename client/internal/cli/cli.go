@@ -28,6 +28,7 @@ type Env struct {
 	Getenv       func(string) string
 	Environ      func() []string
 	Open         func(ctx context.Context, profile string) (Backend, error)
+	Profile      func(ctx context.Context, profile string) (awsx.SourceProfile, error)
 	Installer    func(ctx context.Context, profile, region string) (Installer, error)
 	Releases     func(ctx context.Context) ([]release.Release, error)
 	Download     func(ctx context.Context, version, goos, goarch string) ([]byte, error)
@@ -57,6 +58,7 @@ func DefaultEnv() (*Env, error) {
 		Getenv:       os.Getenv,
 		Environ:      os.Environ,
 		Open:         Open,
+		Profile:      awsx.ReadProfile,
 		Installer:    openInstaller,
 		Releases:     release.New().List,
 		Download:     release.New().Download,

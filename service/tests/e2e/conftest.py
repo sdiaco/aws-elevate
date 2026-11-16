@@ -240,6 +240,12 @@ class Org:
         return {t["Key"]: t["Value"] for t in tags}
 
 
+def pytest_collection_modifyitems(items):
+    """test_upgrade.py first: it moves a new stack from the previous release to this one,
+    which the other tests then use."""
+    items.sort(key=lambda item: item.path.name != "test_upgrade.py")
+
+
 @pytest.fixture(scope="session")
 def org():
     return Org()
