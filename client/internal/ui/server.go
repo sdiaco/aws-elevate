@@ -12,11 +12,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
-
-const cookieName = "elevate_session"
 
 // Listen opens a random port on the loopback address only.
 func Listen() (net.Listener, error) {
@@ -107,7 +106,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The pages load nothing from elsewhere and may not be framed by another site.
 	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
 	h.Set("Cache-Control", "no-store")
-	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("X-Content-Type-Options", "nosniff")
 
 	// An exact Host defeats DNS rebinding; a foreign Origin is another site's page.
@@ -119,7 +118,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.start(w, r)
 		return
 	}
-	c, err := r.Cookie(cookieName)
+	c, err := r.Cookie(s.cookieName())
 	if err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.session)) != 1 {
 		forbid(w)
 		return
@@ -153,10 +152,17 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: cookieName, Value: s.session, Path: "/",
+		Name: s.cookieName(), Value: s.session, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// cookieName carries the port: browsers share cookies across the ports of a host, so a
+// second interface (another profile) would otherwise replace this one's session.
+func (s *Server) cookieName() string {
+	_, port, _ := strings.Cut(s.host, ":")
+	return "elevate_session_" + port
 }
 
 func forbid(w http.ResponseWriter) {

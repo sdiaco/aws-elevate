@@ -18,6 +18,7 @@ import (
 // test: the views must show only those.
 type fakeService struct {
 	rules       []api.Rule
+	rulesErr    error // GET /rules fails, as with no valid rules version
 	permsErr    error
 	lists       map[string][]api.Grant // by scope
 	pages       int                    // with more than 0, Grants answers this many pages
