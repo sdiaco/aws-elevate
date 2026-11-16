@@ -12,6 +12,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+
+	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
 type seen struct {
@@ -251,6 +253,44 @@ func TestUnreachableServiceIsAnError(t *testing.T) {
 	c, _ := serve(t, 200, "{}")
 	c.base = "http://127.0.0.1:1"
 	if _, err := c.Me(context.Background()); err == nil {
+		t.Fatal("no error")
+	}
+}
+
+func serveWithInfra(t *testing.T, infra string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(InfraVersionHeader, infra)
+		w.Header().Set(MinClientHeader, "0.0.1")
+		_, _ = io.WriteString(w, string(loadExample(t, "me").Response))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := aws.Config{Region: "eu-west-1", Credentials: credentials.NewStaticCredentialsProvider("a", "b", "c")}
+	return New(cfg, srv.URL)
+}
+
+func TestInfraTooOldStopsTheClient(t *testing.T) {
+	old := version.MinInfra
+	version.MinInfra = "0.2.0"
+	t.Cleanup(func() { version.MinInfra = old })
+
+	_, err := serveWithInfra(t, "0.1.9").Me(context.Background())
+	if !errors.Is(err, ErrInfraTooOld) {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(err.Error(), "0.1.9") || !strings.Contains(err.Error(), "0.2.0") {
+		t.Errorf("message %q", err.Error())
+	}
+}
+
+func TestCompatibleInfraPasses(t *testing.T) {
+	if _, err := serveWithInfra(t, version.MinInfra).Me(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnreadableInfraVersionIsAnError(t *testing.T) {
+	if _, err := serveWithInfra(t, "latest").Me(context.Background()); err == nil {
 		t.Fatal("no error")
 	}
 }

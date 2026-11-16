@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,15 @@ import (
 
 // VersionHeader carries the client version; the service answers 426 below its minimum.
 const VersionHeader = "X-Elevate-Client-Version"
+
+// Every answer of the service carries these (design §12.2).
+const (
+	InfraVersionHeader = "X-Elevate-Infra-Version"
+	MinClientHeader    = "X-Elevate-Min-Client"
+)
+
+// ErrInfraTooOld: the infrastructure is older than this client's minimum.
+var ErrInfraTooOld = errors.New("infrastructure too old for this client")
 
 // Error is an answer of the service other than success. Code is empty when the refusal
 // comes from API Gateway itself (resource policy, signature), not from the service.
@@ -183,11 +193,32 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return fmt.Errorf("read answer: %w", err)
 	}
+	if err := checkInfra(resp.Header); err != nil {
+		return err
+	}
 	if resp.StatusCode >= 300 {
 		return decodeError(resp.StatusCode, raw)
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("unreadable answer from aws-elevate (HTTP %d): %w", resp.StatusCode, err)
+	}
+	return nil
+}
+
+// checkInfra stops the client on an infrastructure older than its minimum. Answers of API
+// Gateway itself carry no version and are not checked.
+func checkInfra(h http.Header) error {
+	infra, minClient := h.Get(InfraVersionHeader), h.Get(MinClientHeader)
+	if infra == "" || minClient == "" {
+		return nil
+	}
+	outcome, err := version.Compare(version.Client, infra, minClient, version.MinInfra)
+	if err != nil {
+		return fmt.Errorf("unreadable version in the answer of aws-elevate: %w", err)
+	}
+	if outcome == version.InfraTooOld {
+		return fmt.Errorf("%w: the infrastructure is %s, this client needs at least %s; "+
+			"ask an administrator to update the stack (aws elevate admin updates)", ErrInfraTooOld, infra, version.MinInfra)
 	}
 	return nil
 }
