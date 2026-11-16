@@ -36,6 +36,7 @@ type Env struct {
 	TempDir      string
 	Sleep        func(ctx context.Context, d time.Duration) error
 	Shell        func(shell string, env []string) (int, error)
+	OpenBrowser  func(url string) error
 	SettingsPath string
 	ConfigFile   string
 	AliasFile    string
@@ -66,6 +67,7 @@ func DefaultEnv() (*Env, error) {
 		TempDir:      os.TempDir(),
 		Sleep:        awsx.Sleep,
 		Shell:        startShell,
+		OpenBrowser:  openBrowser,
 		SettingsPath: settings,
 		ConfigFile:   awsx.ConfigFile(),
 		AliasFile:    alias,
@@ -89,6 +91,7 @@ func init() {
 		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
 		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
 		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject]", runApprove},
+		"ui":      {"Open the local web interface in your browser", "ui", runUI},
 		"update":  {"Replace this executable with the newest version that works with your service", "update", runUpdate},
 		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},
 		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
