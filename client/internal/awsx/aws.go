@@ -27,22 +27,34 @@ func ConfigFile() string {
 	return config.DefaultSharedConfigFilename()
 }
 
-// Open reads the SSO profile and wires the real AWS calls. The SSO token comes from the
-// cache of `aws sso login` and is refreshed there by the SDK.
-func Open(ctx context.Context, profile string) (*Session, aws.Config, error) {
+// ReadProfile reads how profile signs in. SSOStartURL is empty for a profile that is not
+// an IAM Identity Center (SSO) profile.
+func ReadProfile(ctx context.Context, profile string) (SourceProfile, error) {
 	shared, err := config.LoadSharedConfigProfile(ctx, profile, func(o *config.LoadSharedConfigOptions) {
 		o.ConfigFiles = []string{ConfigFile()}
 	})
 	if err != nil {
-		return nil, aws.Config{}, fmt.Errorf("read profile %q: %w", profile, err)
+		return SourceProfile{}, fmt.Errorf("read profile %q: %w", profile, err)
 	}
 	src := SourceProfile{Name: profile, SSOStartURL: shared.SSOStartURL, SSORegion: shared.SSORegion, Region: shared.Region}
-	tokenKey := shared.SSOStartURL
 	if shared.SSOSession != nil {
 		src.SSOSession = shared.SSOSession.Name
 		src.SSOStartURL = shared.SSOSession.SSOStartURL
 		src.SSORegion = shared.SSOSession.SSORegion
-		tokenKey = shared.SSOSession.Name
+	}
+	return src, nil
+}
+
+// Open reads the SSO profile and wires the real AWS calls. The SSO token comes from the
+// cache of `aws sso login` and is refreshed there by the SDK.
+func Open(ctx context.Context, profile string) (*Session, aws.Config, error) {
+	src, err := ReadProfile(ctx, profile)
+	if err != nil {
+		return nil, aws.Config{}, err
+	}
+	tokenKey := src.SSOStartURL
+	if src.SSOSession != "" {
+		tokenKey = src.SSOSession
 	}
 	if src.SSOStartURL == "" || src.SSORegion == "" {
 		return nil, aws.Config{}, fmt.Errorf("profile %q is not an IAM Identity Center (SSO) profile: configure it with aws configure sso", profile)
