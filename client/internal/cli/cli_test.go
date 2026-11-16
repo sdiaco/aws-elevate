@@ -110,21 +110,26 @@ func (f *fakeService) Revoke(_ context.Context, id, reason string) (*api.Grant, 
 }
 
 type fakeBackend struct {
-	svc       *fakeService
-	target    awsx.Target
-	discover  string // account passed to Discover
-	readyRole string
-	readyErr  error
-	admin     *fakeAdmin
+	svc         *fakeService
+	target      awsx.Target
+	discover    string // account passed to Discover
+	readyRole   string
+	readyErr    error
+	admin       *fakeAdmin
+	source      awsx.SourceProfile // zero: the default below
+	discoverErr error
 }
 
 func (b *fakeBackend) Source() awsx.SourceProfile {
+	if b.source != (awsx.SourceProfile{}) {
+		return b.source
+	}
 	return awsx.SourceProfile{Name: "work", SSOSession: "corp", Region: "eu-west-1"}
 }
 
 func (b *fakeBackend) Discover(_ context.Context, account string) (awsx.Target, error) {
 	b.discover = account
-	return b.target, nil
+	return b.target, b.discoverErr
 }
 
 func (b *fakeBackend) WaitReady(_ context.Context, account, role string) error {

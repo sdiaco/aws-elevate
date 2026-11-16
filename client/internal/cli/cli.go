@@ -23,9 +23,11 @@ import (
 type Env struct {
 	Stdout       io.Writer
 	Stderr       io.Writer
+	Stdin        io.Reader
 	Getenv       func(string) string
 	Environ      func() []string
 	Open         func(ctx context.Context, profile string) (Backend, error)
+	Installer    func(ctx context.Context, profile, region string) (Installer, error)
 	Sleep        func(ctx context.Context, d time.Duration) error
 	Shell        func(shell string, env []string) (int, error)
 	SettingsPath string
@@ -46,9 +48,11 @@ func DefaultEnv() (*Env, error) {
 	return &Env{
 		Stdout:       os.Stdout,
 		Stderr:       os.Stderr,
+		Stdin:        os.Stdin,
 		Getenv:       os.Getenv,
 		Environ:      os.Environ,
 		Open:         Open,
+		Installer:    openInstaller,
 		Sleep:        awsx.Sleep,
 		Shell:        startShell,
 		SettingsPath: settings,
@@ -74,6 +78,7 @@ func init() {
 		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
 		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
 		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject]", runApprove},
+		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},
 		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
 	}
 }
