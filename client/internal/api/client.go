@@ -138,6 +138,13 @@ func (c *Client) Permissions(ctx context.Context, ruleID string) (*Permissions, 
 	return &out, c.do(ctx, http.MethodGet, "/v1/rules/"+url.PathEscape(ruleID)+"/permissions", nil, nil, &out)
 }
 
+// PermissionSetPermissions is what a permission set contains, read by the service for an
+// administrator before any rule uses it (design §7.5).
+func (c *Client) PermissionSetPermissions(ctx context.Context, arn string) (*Permissions, error) {
+	var out Permissions
+	return &out, c.do(ctx, http.MethodGet, "/v1/permission-sets/permissions", url.Values{"arn": {arn}}, nil, &out)
+}
+
 // CheckRules asks the service to check a rules document before it is published.
 func (c *Client) CheckRules(ctx context.Context, doc []byte) (*CheckResult, error) {
 	if !json.Valid(doc) {

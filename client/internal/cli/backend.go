@@ -16,6 +16,7 @@ type Service interface {
 	Rules(ctx context.Context) (*api.RuleList, error)
 	RequestableRules(ctx context.Context) (*api.RuleList, error)
 	Permissions(ctx context.Context, ruleID string) (*api.Permissions, error)
+	PermissionSetPermissions(ctx context.Context, arn string) (*api.Permissions, error)
 	CreateGrant(ctx context.Context, req api.CreateRequest) (*api.Grant, error)
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)
 	Grants(ctx context.Context, q api.ListQuery) (*api.GrantList, error)

@@ -16,6 +16,7 @@ type Service interface {
 	RequestableRules(ctx context.Context) (*api.RuleList, error)
 	CheckRules(ctx context.Context, doc []byte) (*api.CheckResult, error)
 	Permissions(ctx context.Context, ruleID string) (*api.Permissions, error)
+	PermissionSetPermissions(ctx context.Context, arn string) (*api.Permissions, error)
 	CreateGrant(ctx context.Context, req api.CreateRequest) (*api.Grant, error)
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)
 	Grants(ctx context.Context, q api.ListQuery) (*api.GrantList, error)
@@ -72,6 +73,7 @@ func Pages(a *App) http.Handler {
 	if a.has("admin") && a.Admin != nil {
 		mux.HandleFunc("GET /rules", a.rulesPage)
 		mux.HandleFunc("GET /rules/edit", a.ruleEdit)
+		mux.HandleFunc("GET /rules/ps-permissions", a.psPermissions)
 		mux.HandleFunc("POST /rules/edit", a.ruleSave)
 		mux.HandleFunc("POST /rules/delete", a.rulesDelete)
 		mux.HandleFunc("GET /rules/import", a.importPage)

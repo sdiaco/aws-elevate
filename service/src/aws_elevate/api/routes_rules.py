@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from ..adapters.sso_read import PsNotFound
 from ..core.models import Identity, Rule, SourcePs
 from ..core.policy import build_inline, check_limits, summarize
-from ..core.rules import InvalidRules, parse, requestable, rule_to_dict
+from ..core.rules import PS_ARN, InvalidRules, parse, requestable, rule_to_dict
 from .errors import ApiError, forbidden
 
 # Codes of the entries of POST /rules/check, as in contract/vocabulary.json checkCodes.
@@ -62,6 +62,16 @@ def _rule_errors(rule: Rule, source: SourcePs | None) -> list[dict]:
     return [_entry(rule.id, "limits", f"{source.name}: {m}") for m in limits]
 
 
+def _content(source: SourcePs) -> dict:
+    return {
+        "managed": list(source.managed),
+        "customerManaged": [_ref(c) for c in source.customer_managed],
+        "boundary": _boundary(source.boundary),
+        "inline": source.inline,
+        "inlineSummary": summarize(source.inline),
+    }
+
+
 class RuleRoutes:
     def __init__(self, config, sso):
         self._config = config
@@ -99,13 +109,23 @@ class RuleRoutes:
                 f"permission set {rule.permission_set.name} of rule {rule_id} no longer "
                 "exists in Identity Center; ask an administrator",
             ) from err
-        return {
-            "managed": list(source.managed),
-            "customerManaged": [_ref(c) for c in source.customer_managed],
-            "boundary": _boundary(source.boundary),
-            "inline": source.inline,
-            "inlineSummary": summarize(source.inline),
-        }
+        return _content(source)
+
+    def ps_permissions(self, identity: Identity, query: dict) -> dict:
+        """What a permission set contains, for the Rules form before any rule uses it
+        (design §7.5). Same answer as a rule's permissions; administrators only."""
+        if not identity.is_admin:
+            raise forbidden("only an administrator can read a permission set by ARN")
+        arn = query.get("arn", "")
+        if set(query) != {"arn"} or not PS_ARN.match(arn):
+            raise ApiError(400, "invalid_request", "the only query is arn=<permission set ARN>")
+        try:
+            source = self._sso.read_source(arn)
+        except PsNotFound as err:
+            raise ApiError(
+                404, "not_found", f"permission set {arn} does not exist in Identity Center"
+            ) from err
+        return _content(source)
 
     def check(self, identity: Identity, body) -> dict:
         if not identity.is_admin:

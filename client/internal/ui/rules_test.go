@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,12 +102,38 @@ func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
 		`name="account" value="111111111111" checked`, `name="account" value="222222222222"`,
 		`name="default" value="1h"`, `name="max" value="2h"`,
 		`name="approval" value="auto" checked`,
-		`data-load="/request/permissions?rule=ssm-dev"`,
+		`data-load="/rules/ps-permissions?ps=" data-load-from="ps"`,
 	)
 	lacks(t, out, `name="privileged" checked`)
 	h.get(t, "/rules/edit?refresh=1")
 	if !adm.refreshed {
 		t.Error("refresh did not read AWS again")
+	}
+}
+
+func TestNewRuleFormShowsWhatThePermissionSetContains(t *testing.T) {
+	h, _ := rulesHarness()
+	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`)
+	lacks(t, h.get(t, "/rules/edit"), "shows once the rule is saved")
+}
+
+func TestPermissionSetContentsAreReadByTheServiceFromTheChosenName(t *testing.T) {
+	h, _ := rulesHarness()
+	out := h.get(t, "/rules/ps-permissions?ps=db-admin")
+	contains(t, out, "AmazonSSMReadOnlyAccess", "ssm:PutParameter")
+	if !slices.Contains(h.svc.calls, "ps permissions arn:aws:sso:::permissionSet/ssoins-1/ps-9") {
+		t.Errorf("calls %v", h.svc.calls)
+	}
+	out = h.get(t, "/rules/ps-permissions?ps=nope")
+	contains(t, out, "no permission set nope in Identity Center")
+	n := 0
+	for _, c := range h.svc.calls {
+		if strings.HasPrefix(c, "ps permissions ") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("an unknown name reached the service: %v", h.svc.calls)
 	}
 }
 

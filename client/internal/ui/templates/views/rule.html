@@ -12,7 +12,7 @@
 <input type="text" id="ps" name="ps" value="{{.Form.PS}}" list="ps-names" required autocomplete="off">
 {{if .PSMissing}}<span class="constraint warn">{{.Form.PS}} is no longer in Identity Center: choose another permission set.</span>{{end}}
 <datalist id="ps-names">{{range .Sets}}<option value="{{.Name}}">{{end}}</datalist>
-{{if .Contents}}<details class="expand" data-load="{{.Contents}}"><summary>What it contains</summary><div data-load-target><p class="muted">Loading…</p></div></details>{{else}}<span class="constraint">What it contains shows once the rule is saved.</span>{{end}}</div>
+<details class="expand" data-load="/rules/ps-permissions?ps=" data-load-from="ps"><summary>What it contains</summary><div data-load-target><p class="muted">Loading…</p></div></details></div>
 <fieldset class="field"><legend>Accounts</legend>
 <span class="desc">Where the permission set can be given. The management account is never listed.</span>
 <div class="choices">{{range .Accounts}}<label class="choice"><input type="checkbox" name="account" value="{{.ID}}"{{if has $.Form.Accounts .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.ID}}</span></label>{{end}}</div></fieldset>

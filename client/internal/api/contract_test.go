@@ -43,21 +43,22 @@ func strict(t *testing.T, raw []byte, into any) {
 // added by the service without the client knowing fails here.
 func TestEveryResponseExampleDecodes(t *testing.T) {
 	types := map[string]func() any{
-		"me":                func() any { return &Me{} },
-		"error":             func() any { return &errorBody{} },
-		"grants-create":     func() any { return &GrantResponse{} },
-		"grants-get":        func() any { return &GrantDetail{} },
-		"grants-list":       func() any { return &GrantList{} },
-		"grants-approve":    func() any { return &GrantResponse{} },
-		"grants-reject":     func() any { return &GrantResponse{} },
-		"grants-cancel":     func() any { return &GrantResponse{} },
-		"grants-revoke":     func() any { return &GrantResponse{} },
-		"grants-redrive":    func() any { return &GrantResponse{} },
-		"rules-list":        func() any { return &RuleList{} },
-		"rules-permissions": func() any { return &Permissions{} },
-		"rules-check":       func() any { return &CheckResult{} },
-		"config-versions":   func() any { return &ConfigVersions{} },
-		"config-version":    func() any { return &ConfigVersion{} },
+		"me":                          func() any { return &Me{} },
+		"error":                       func() any { return &errorBody{} },
+		"grants-create":               func() any { return &GrantResponse{} },
+		"grants-get":                  func() any { return &GrantDetail{} },
+		"grants-list":                 func() any { return &GrantList{} },
+		"grants-approve":              func() any { return &GrantResponse{} },
+		"grants-reject":               func() any { return &GrantResponse{} },
+		"grants-cancel":               func() any { return &GrantResponse{} },
+		"grants-revoke":               func() any { return &GrantResponse{} },
+		"grants-redrive":              func() any { return &GrantResponse{} },
+		"rules-list":                  func() any { return &RuleList{} },
+		"rules-permissions":           func() any { return &Permissions{} },
+		"permission-sets-permissions": func() any { return &Permissions{} },
+		"rules-check":                 func() any { return &CheckResult{} },
+		"config-versions":             func() any { return &ConfigVersions{} },
+		"config-version":              func() any { return &ConfigVersion{} },
 	}
 	files, err := filepath.Glob("../../../contract/api/*.json")
 	if err != nil {

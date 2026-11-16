@@ -174,6 +174,44 @@ def test_permissions_of_a_deleted_permission_set_is_not_found(make, fx):
     assert "ssm-write" in err.message
 
 
+# ---------- GET /permission-sets/permissions (Rules form, design §7.5) ----------
+
+
+def test_admin_reads_any_permission_set_by_arn(make, fx):
+    # The Rules form shows what a PS contains before any rule uses it.
+    routes, sso = make()
+    body = routes.ps_permissions(fx.ADMIN, {"arn": fx.PS_ARN})
+    assert sso.reads == [fx.PS_ARN]
+    assert body == routes.permissions(fx.ADMIN, "ssm-dev")
+
+
+@pytest.mark.parametrize("who", ["REQUESTER", "LEAD", "AUDITOR", "STRANGER"])
+def test_only_an_admin_reads_a_permission_set_by_arn(make, fx, who):
+    routes, sso = make()
+    err = error_of(lambda: routes.ps_permissions(getattr(fx, who), {"arn": fx.PS_ARN}))
+    assert (err.status, err.code) == (403, "forbidden")
+    assert sso.reads == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    [{}, {"arn": "nope"}, {"arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-1", "x": "1"}],
+)
+def test_permission_set_query_must_be_one_valid_arn(make, fx, query):
+    routes, sso = make()
+    err = error_of(lambda: routes.ps_permissions(fx.ADMIN, query))
+    assert (err.status, err.code) == (400, "invalid_request")
+    assert sso.reads == []
+
+
+def test_unknown_permission_set_by_arn_is_not_found(make, fx):
+    routes, _ = make()
+    arn = "arn:aws:sso:::permissionSet/ssoins-1/ps-2"
+    err = error_of(lambda: routes.ps_permissions(fx.ADMIN, {"arn": arn}))
+    assert (err.status, err.code) == (404, "not_found")
+    assert arn in err.message
+
+
 # ---------- POST /rules/check (design §5.4, §7.1) ----------
 
 
