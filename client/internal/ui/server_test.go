@@ -155,7 +155,9 @@ func TestResponsesAllowNoCrossOriginUseAndNoExternalResource(t *testing.T) {
 				t.Errorf("CSP %q lacks %q", csp, want)
 			}
 		}
-		if h.Get("Cache-Control") != "no-store" || h.Get("Referrer-Policy") != "no-referrer" || h.Get("X-Content-Type-Options") != "nosniff" {
+		// Not no-referrer: with it the browser sends "Origin: null" on every POST, even to
+		// this page, and the origin check refuses all writes (seen in the test organization).
+		if h.Get("Cache-Control") != "no-store" || h.Get("Referrer-Policy") != "same-origin" || h.Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("headers %v", h)
 		}
 	}
@@ -215,3 +217,16 @@ type cookieJar struct{ cookies []*http.Cookie }
 
 func (j *cookieJar) SetCookies(_ *url.URL, c []*http.Cookie) { j.cookies = append(j.cookies, c...) }
 func (j *cookieJar) Cookies(*url.URL) []*http.Cookie         { return j.cookies }
+
+// Cookies ignore the port: two interfaces open on 127.0.0.1 (two profiles) must not
+// overwrite each other's session (seen in the test organization).
+func TestTwoInterfacesKeepTheirOwnSession(t *testing.T) {
+	a, b := newTestServer(t, time.Minute), newTestServer(t, time.Minute)
+	ca, cb := login(t, a), login(t, b)
+	if ca.Name == cb.Name {
+		t.Fatalf("both interfaces use cookie %q", ca.Name)
+	}
+	if w := do(a, "GET", "/", nil, ca); w.Code != http.StatusOK {
+		t.Fatalf("first interface after the second login: %d", w.Code)
+	}
+}

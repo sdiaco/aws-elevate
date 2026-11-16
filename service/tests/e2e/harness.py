@@ -11,7 +11,9 @@ run the approval by a second user, with APPROVER_PROFILE (SSO profile logged in 
 elevate-e2e-approver, with its own sso-session). The approval run needs a manual first login
 of that user, so it is opt-in: use it only when the approval path changes.
 
-Creates only elevate-e2e* resources: stack, code bucket, a source permission set, the
+Creates only elevate-e2e* resources, plus the permission set ElevateConsole (the
+maintainer's console access to the service account during tests): stack, code bucket, a
+source permission set, the
 seeder Lambda (records written as the engine role, because the table policy admits no one
 else), the groups elevate-e2e-admins and elevate-e2e-requesters with the test user in
 both, with E2E_APPROVAL=1 the user elevate-e2e-approver in the admin group (a request
@@ -57,6 +59,14 @@ CLI = Path(
 SERVICE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATE = SERVICE_DIR.parent / "infra" / "elevate.yaml"
 SOURCE_PS = "elevate-e2e-source"
+# The maintainer's way into the console of the service account during tests (reset the
+# approver's password, read logs): Identity Center users and groups, read-only elsewhere.
+CONSOLE_PS = "ElevateConsole"
+CONSOLE_POLICIES = (
+    "arn:aws:iam::aws:policy/AWSSSODirectoryAdministrator",
+    "arn:aws:iam::aws:policy/AWSSSOMemberAccountAdministrator",
+    "arn:aws:iam::aws:policy/ReadOnlyAccess",
+)
 SEEDER = "elevate-e2e-seeder"
 GRANT_PREFIX = "e2e"  # grant ids written by the engine tests start with it
 RULE_PREFIX = "e2e-"  # every e2e rule id: cleanup finds the JIT-* of api grants by tag
@@ -463,6 +473,37 @@ def ensure_source_ps(session: boto3.Session, instance_arn: str) -> str:
     return arn
 
 
+def ensure_console_ps(session: boto3.Session) -> None:
+    """CONSOLE_PS assigned to the test user in the service account."""
+    sso = sso_admin(session)
+    instance = sso.list_instances()["Instances"][0]["InstanceArn"]
+    arn = None
+    for page in sso.get_paginator("list_permission_sets").paginate(InstanceArn=instance):
+        for candidate in page["PermissionSets"]:
+            ps = sso.describe_permission_set(InstanceArn=instance, PermissionSetArn=candidate)
+            if ps["PermissionSet"]["Name"] == CONSOLE_PS:
+                arn = candidate
+    if arn is None:
+        arn = sso.create_permission_set(
+            InstanceArn=instance, Name=CONSOLE_PS, SessionDuration="PT4H",
+            Description="aws-elevate e2e: maintainer console access",
+        )["PermissionSet"]["PermissionSetArn"]  # fmt: skip
+        for policy in CONSOLE_POLICIES:
+            sso.attach_managed_policy_to_permission_set(
+                InstanceArn=instance, PermissionSetArn=arn, ManagedPolicyArn=policy
+            )
+        log(f"created permission set {CONSOLE_PS}")
+    req = sso.create_account_assignment(
+        InstanceArn=instance, TargetId=env("SERVICE_ACCOUNT"), TargetType="AWS_ACCOUNT",
+        PermissionSetArn=arn, PrincipalType="USER", PrincipalId=e2e_user_id(session),
+    )["AccountAssignmentCreationStatus"]  # fmt: skip
+    _wait_request(
+        sso.describe_account_assignment_creation_status, "AccountAssignmentCreationStatus",
+        "AccountAssignmentCreationRequestId", instance, req["RequestId"],
+    )  # fmt: skip
+    log(f"{CONSOLE_PS} assigned to {env('TEST_USER')} in {env('SERVICE_ACCOUNT')}")
+
+
 # ---------- portal credentials and probe ----------
 
 
@@ -656,7 +697,7 @@ def cleanup_permission_sets(session: boto3.Session, failures: list) -> None:
             ]["Name"]
             if (
                 name.startswith(f"JIT-{GRANT_PREFIX}")
-                or name == SOURCE_PS
+                or name in (SOURCE_PS, CONSOLE_PS)
                 or _e2e_api_grant(sso, instance, arn, name)
             ):
                 _remove_permission_set(sso, instance, arn, name, user_id, failures)
@@ -738,6 +779,7 @@ if __name__ == "__main__":
         svc = service_session()
         stack_up(svc)
         ensure_seeder(svc)
+        ensure_console_ps(svc)
     elif command == "down":
         stack_down(service_session())
     else:

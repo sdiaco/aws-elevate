@@ -44,6 +44,9 @@ func (f *fakeAdmin) PublishRules(_ context.Context, latest *int, doc []byte) (in
 }
 
 func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
+	if f.rulesErr != nil {
+		return nil, f.rulesErr
+	}
 	return &api.RuleList{ConfigVersion: 3, Rules: f.rules}, nil
 }
 
