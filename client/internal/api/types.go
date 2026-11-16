@@ -28,6 +28,16 @@ type Me struct {
 	Roles        []string `json:"roles"`
 	InfraVersion string   `json:"infraVersion"`
 	MinClient    string   `json:"minClient"`
+	// Only for admins: the resources the admin commands use with their own credentials.
+	Installation *Installation `json:"installation"`
+}
+
+type Installation struct {
+	StackID            string `json:"stackId"`
+	RulesApplicationID string `json:"rulesApplicationId"`
+	RulesProfileID     string `json:"rulesProfileId"`
+	AlertsTopicARN     string `json:"alertsTopicArn"`
+	ApprovalsTopicARN  string `json:"approvalsTopicArn"`
 }
 
 type Grant struct {
@@ -169,7 +179,8 @@ type VersionInfo struct {
 }
 
 type ConfigVersions struct {
-	Current  int           `json:"current"`
+	// The version in use, the latest valid one; nil when none is valid.
+	Current  *int          `json:"current"`
 	Versions []VersionInfo `json:"versions"`
 }
 

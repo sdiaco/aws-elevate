@@ -21,6 +21,9 @@ type Service interface {
 	Reject(ctx context.Context, id string) (*api.Grant, error)
 	Cancel(ctx context.Context, id string) (*api.Grant, error)
 	Revoke(ctx context.Context, id, reason string) (*api.Grant, error)
+	CheckRules(ctx context.Context, doc []byte) (*api.CheckResult, error)
+	ConfigVersions(ctx context.Context) (*api.ConfigVersions, error)
+	ConfigVersion(ctx context.Context, n int) (*api.ConfigVersion, error)
 }
 
 // Backend is what the commands need from AWS for one source profile.
@@ -29,6 +32,7 @@ type Backend interface {
 	Discover(ctx context.Context, account string) (awsx.Target, error)
 	WaitReady(ctx context.Context, account, role string) error
 	Service(ctx context.Context, t awsx.Target) (Service, error)
+	Admin(ctx context.Context, t awsx.Target) (AdminAWS, error)
 }
 
 // Open is the real Backend: the SSO profile through the AWS SDK.
@@ -57,9 +61,25 @@ func (b *sdkBackend) WaitReady(ctx context.Context, account, role string) error 
 }
 
 func (b *sdkBackend) Service(ctx context.Context, t awsx.Target) (Service, error) {
-	creds, err := b.session.Portal.Credentials(ctx, t.Account, t.Role)
+	creds, err := b.credentials(ctx, t)
 	if err != nil {
-		return nil, fmt.Errorf("get %s credentials in account %s: %w", t.Role, t.Account, err)
+		return nil, err
 	}
 	return api.New(awsx.WithCredentials(b.cfg, creds), t.APIURL), nil
+}
+
+func (b *sdkBackend) Admin(ctx context.Context, t awsx.Target) (AdminAWS, error) {
+	creds, err := b.credentials(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	return awsx.NewAdmin(b.cfg, creds), nil
+}
+
+func (b *sdkBackend) credentials(ctx context.Context, t awsx.Target) (aws.Credentials, error) {
+	creds, err := b.session.Portal.Credentials(ctx, t.Account, t.Role)
+	if err != nil {
+		return aws.Credentials{}, fmt.Errorf("get %s credentials in account %s: %w", t.Role, t.Account, err)
+	}
+	return creds, nil
 }

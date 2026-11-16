@@ -17,8 +17,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/appconfig v1.54.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.84.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.65.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.13.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sns v1.48.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.53.0 // indirect
 	github.com/aws/smithy-go v1.28.9 // indirect
 )

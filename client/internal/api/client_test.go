@@ -46,8 +46,8 @@ func TestCallsAreSignedAndCarryTheClientVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.User.UserName != "user@example.com" {
-		t.Errorf("user %q", me.User.UserName)
+	if me.User.UserName != "admin@example.com" || me.Installation == nil || me.Installation.RulesProfileID != "e4f5g6h" {
+		t.Errorf("me %+v", me)
 	}
 	if got.method != "GET" || got.path != "/api/v1/me" {
 		t.Errorf("called %s %s", got.method, got.path)
@@ -230,7 +230,7 @@ func TestCheckRules(t *testing.T) {
 func TestConfigVersions(t *testing.T) {
 	c, got := serve(t, 200, string(loadExample(t, "config-versions").Response))
 	v, err := c.ConfigVersions(context.Background())
-	if err != nil || v.Current != 3 || got.path != "/api/v1/config/versions" {
+	if err != nil || v.Current == nil || *v.Current != 3 || got.path != "/api/v1/config/versions" {
 		t.Fatalf("got %+v %v", v, err)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "config-version").Response))
