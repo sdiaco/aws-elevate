@@ -25,12 +25,6 @@
 <div class="form-actions">{{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a>{{else}}<button type="button" class="btn primary" disabled>Open in console</button>{{end}}</div>
 {{end}}</div>{{end}}
 
-{{define "userhistory"}}<p class="muted">{{.Note}}</p>
-{{if .Grants}}<div class="table-wrap"><table>
-<thead><tr><th>Requested</th><th>Permission set</th><th>Account</th><th>State</th><th>Id</th></tr></thead>
-<tbody>{{range .Grants}}<tr><td><time datetime="{{iso .CreatedAt}}" title="{{exact .CreatedAt}}">{{ago .CreatedAt}}</time></td><td>{{.SourcePs.Name}}</td><td>{{.Account}}</td><td>{{template "state" .State}}{{with .CloseReason}} <span class="muted">{{.}}</span>{{end}}</td><td><button type="button" class="copy" data-copy="{{.ID}}" title="Copy">{{.ID}}</button></td></tr>{{end}}</tbody>
-</table></div>{{else}}<p class="muted">Nothing to show.</p>{{end}}{{end}}
-
 {{/* What changes between two rules documents, rule by rule. */}}
 {{define "changes"}}<div class="compare">
 {{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{end}}

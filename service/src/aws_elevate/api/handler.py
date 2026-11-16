@@ -193,7 +193,6 @@ def _build_api() -> Api:
         sfn=StepFunctions(boto3.client("stepfunctions"), os.environ["STATE_MACHINE_ARN"]),
         store=store,
         max_open=int(os.environ["MAX_OPEN_GRANTS_PER_USER"]),
-        approver_history=os.environ.get("APPROVER_HISTORY"),
     )
     rules = RuleRoutes(
         config=config, sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"])

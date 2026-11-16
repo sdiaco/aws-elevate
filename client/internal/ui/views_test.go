@@ -469,9 +469,8 @@ func TestPendingShowsRequestsToApproveAndOwnRequests(t *testing.T) {
 		`<button class="btn primary" formaction="/pending/approve"`, `href="/pending/reject?id=ask2345678"`,
 		`href="/pending/cancel?id=own2345678"`,
 		`data-load="/request/permissions?rule=ssm-prod"`,
-		`data-load="/pending/history?user=u-2"`,
 	)
-	lacks(t, out, "seen234567", "act2345678", "mine234567", `formaction="/pending/approve" name="id" value="own2345678"`)
+	lacks(t, out, "/pending/history", "seen234567", "act2345678", "mine234567", `formaction="/pending/approve" name="id" value="own2345678"`)
 }
 
 func TestPendingActionsShowTheirOutcome(t *testing.T) {
@@ -488,19 +487,6 @@ func TestPendingActionsShowTheirOutcome(t *testing.T) {
 	contains(t, w.Body.String(), "ask2345678", "Closed")
 	if strings.Join(h.svc.calls, ",") != "approve ask2345678,get ask2345678,reject ask2345678" {
 		t.Errorf("calls %v", h.svc.calls)
-	}
-}
-
-func TestRequesterHistoryUsesTheWidestScopeTheRoleAllows(t *testing.T) {
-	for roles, scope := range map[string]string{"approver": "approvable", "approver,auditor": "all"} {
-		h := newHarness(strings.Split(roles, ",")...)
-		h.svc.lists[scope] = []api.Grant{grant("old2345678", "closed", other)}
-		out := h.get(t, "/pending/history?user=u-2")
-		contains(t, out, "old2345678")
-		lacks(t, out, `class="nav"`)
-		if q := h.svc.queries[0]; q.Scope != scope || q.User != "u-2" {
-			t.Errorf("%s: query %+v", roles, q)
-		}
 	}
 }
 

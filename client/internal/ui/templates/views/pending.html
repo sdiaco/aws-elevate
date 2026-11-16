@@ -16,7 +16,6 @@
 <div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{.ID}}" title="Copy">{{.ID}}</button></dd></div>
 </dl>
 <details class="expand" data-load="/request/permissions?rule={{.RuleID}}"><summary>Permissions</summary><div data-load-target><p class="muted">Loading…</p></div></details>
-{{if or (can . "approve") (can . "reject")}}<details class="expand" data-load="/pending/history?user={{.Requester.UserID}}"><summary>Recent history of {{.Requester.UserName}}</summary><div data-load-target><p class="muted">Loading…</p></div></details>{{end}}
 <form method="post" class="form-actions"><input type="hidden" name="id" value="{{.ID}}">
 {{if can . "cancel"}}<a class="btn" href="/pending/cancel?id={{.ID}}">Cancel request</a>{{end}}
 {{if can . "reject"}}<a class="btn" href="/pending/reject?id={{.ID}}">Reject…</a>{{end}}

@@ -72,7 +72,6 @@ func Pages(a *App) http.Handler {
 	mux.HandleFunc("POST /pending/reject", a.reject)
 	mux.HandleFunc("GET /pending/cancel", a.cancelConfirm)
 	mux.HandleFunc("POST /pending/cancel", a.cancel)
-	mux.HandleFunc("GET /pending/history", a.requesterHistory)
 	mux.HandleFunc("GET /history", a.historyPage)
 	mux.HandleFunc("GET /history/export.csv", a.historyExport)
 	if a.has("admin") && a.Admin != nil {
