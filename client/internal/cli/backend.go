@@ -23,6 +23,7 @@ type Service interface {
 	Reject(ctx context.Context, id string) (*api.Grant, error)
 	Cancel(ctx context.Context, id string) (*api.Grant, error)
 	Revoke(ctx context.Context, id, reason string) (*api.Grant, error)
+	Redrive(ctx context.Context, id string) (*api.Grant, error)
 	CheckRules(ctx context.Context, doc []byte) (*api.CheckResult, error)
 	ConfigVersions(ctx context.Context) (*api.ConfigVersions, error)
 	ConfigVersion(ctx context.Context, n int) (*api.ConfigVersion, error)

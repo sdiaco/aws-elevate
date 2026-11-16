@@ -128,6 +128,10 @@ func (f *fakeService) Revoke(_ context.Context, id, reason string) (*api.Grant, 
 	return f.action("revoke", id)
 }
 
+func (f *fakeService) Redrive(_ context.Context, id string) (*api.Grant, error) {
+	return f.action("redrive", id)
+}
+
 type fakeBackend struct {
 	svc         *fakeService
 	target      awsx.Target

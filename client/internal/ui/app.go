@@ -21,6 +21,9 @@ type Service interface {
 	Reject(ctx context.Context, id string) (*api.Grant, error)
 	Cancel(ctx context.Context, id string) (*api.Grant, error)
 	Revoke(ctx context.Context, id, reason string) (*api.Grant, error)
+	Redrive(ctx context.Context, id string) (*api.Grant, error)
+	ConfigVersions(ctx context.Context) (*api.ConfigVersions, error)
+	ConfigVersion(ctx context.Context, n int) (*api.ConfigVersion, error)
 }
 
 // App is what the views need from the process that holds the credentials.
@@ -62,6 +65,16 @@ func Pages(a *App) http.Handler {
 	mux.HandleFunc("GET /pending/history", a.requesterHistory)
 	mux.HandleFunc("GET /history", a.historyPage)
 	mux.HandleFunc("GET /history/export.csv", a.historyExport)
+	if a.has("admin") {
+		mux.HandleFunc("GET /problems", a.problemsPage)
+		mux.HandleFunc("POST /problems/retry", a.retry)
+	}
+	if a.has("admin") || a.has("auditor") {
+		mux.HandleFunc("GET /versions", a.versionsPage)
+		mux.HandleFunc("GET /versions/compare", a.compare)
+		mux.HandleFunc("GET /versions/{n}", a.versionPage)
+		mux.HandleFunc("GET /versions/{n}/export.json", a.versionExport)
+	}
 	return mux
 }
 
@@ -83,7 +96,18 @@ func (a *App) nav() []NavGroup {
 		NavItem{Label: "Pending", Path: "/pending"},
 		NavItem{Label: "History", Path: "/history"},
 	)
-	return []NavGroup{{Items: items}}
+	groups := []NavGroup{{Items: items}}
+	var admin []NavItem
+	if a.has("admin") {
+		admin = append(admin, NavItem{Label: "Problems", Path: "/problems"})
+	}
+	if a.has("admin") || a.has("auditor") {
+		admin = append(admin, NavItem{Label: "Config versions", Path: "/versions"})
+	}
+	if len(admin) > 0 {
+		groups = append(groups, NavGroup{Label: "Administration", Items: admin})
+	}
+	return groups
 }
 
 // show renders a view inside the base layout.
