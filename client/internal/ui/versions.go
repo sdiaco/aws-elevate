@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
@@ -95,10 +96,56 @@ func (a *App) versionExport(w http.ResponseWriter, r *http.Request) {
 type ruleChange struct {
 	ID            string
 	Before, After string
+	// The two sides line by line, the lines that differ marked.
+	BeforeLines, AfterLines []line
+}
+
+type line struct {
+	Text    string
+	Changed bool
+}
+
+// markLines marks the lines of each side that are not in their longest common
+// subsequence: what was removed on the left, what was added on the right.
+func markLines(before, after string) ([]line, []line) {
+	a, b := strings.Split(before, "\n"), strings.Split(after, "\n")
+	lcs := make([][]int, len(a)+1)
+	for i := range lcs {
+		lcs[i] = make([]int, len(b)+1)
+	}
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i+1][j], lcs[i][j+1])
+			}
+		}
+	}
+	left, right := make([]line, len(a)), make([]line, len(b))
+	for i := range a {
+		left[i] = line{Text: a[i], Changed: true}
+	}
+	for j := range b {
+		right[j] = line{Text: b[j], Changed: true}
+	}
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		switch {
+		case a[i] == b[j]:
+			left[i].Changed, right[j].Changed = false, false
+			i, j = i+1, j+1
+		case lcs[i+1][j] >= lcs[i][j+1]:
+			i++
+		default:
+			j++
+		}
+	}
+	return left, right
 }
 
 type compareView struct {
 	Old, New                int
+	OldLabel, NewLabel      string
 	Added, Removed, Changed []ruleChange
 	Other                   bool // a field outside the rules changed
 }
@@ -133,6 +180,7 @@ func (a *App) compare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Old, view.New = ns[0], ns[1]
+	view.OldLabel, view.NewLabel = fmt.Sprintf("Version %d", ns[0]), fmt.Sprintf("Version %d", ns[1])
 	a.show(w, http.StatusOK, "compare", "Compare versions", "/versions", view)
 }
 
@@ -154,7 +202,9 @@ func diffRules(old, new json.RawMessage) (compareView, error) {
 		case !ok:
 			view.Added = append(view.Added, ruleChange{ID: id, After: indent(after.rules[id])})
 		case !jsonEqual(b, after.rules[id]):
-			view.Changed = append(view.Changed, ruleChange{ID: id, Before: indent(b), After: indent(after.rules[id])})
+			rc := ruleChange{ID: id, Before: indent(b), After: indent(after.rules[id])}
+			rc.BeforeLines, rc.AfterLines = markLines(rc.Before, rc.After)
+			view.Changed = append(view.Changed, rc)
 		}
 	}
 	for _, id := range before.order {

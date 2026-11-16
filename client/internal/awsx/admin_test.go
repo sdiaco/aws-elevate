@@ -46,7 +46,22 @@ func (f *fakeAdminAWS) serve(t *testing.T) *httptest.Server {
 			w.Header().Set("Content-Type", "text/xml")
 			fmt.Fprint(w, `<DescribeStacksResponse xmlns="http://cloudformation.amazonaws.com/doc/2010-05-15/"><DescribeStacksResult><Stacks><member><StackName>elevate</StackName><StackStatus>UPDATE_COMPLETE</StackStatus><CreationTime>2026-11-15T09:00:00Z</CreationTime></member></Stacks></DescribeStacksResult></DescribeStacksResponse>`)
 		case strings.HasSuffix(target, ".ListInstances"):
-			fmt.Fprint(w, `{"Instances":[{"InstanceArn":"arn:aws:sso:::instance/ssoins-1"}]}`)
+			fmt.Fprint(w, `{"Instances":[{"InstanceArn":"arn:aws:sso:::instance/ssoins-1","IdentityStoreId":"d-1234567890"}]}`)
+		case strings.HasSuffix(target, ".ListAccounts"):
+			if strings.Contains(form, `"NextToken"`) {
+				fmt.Fprint(w, `{"Accounts":[{"Id":"333333333333","Name":"old","Status":"SUSPENDED","Arn":"arn:aws:organizations::999999999999:account/o-1/333333333333"}]}`)
+				return
+			}
+			fmt.Fprint(w, `{"NextToken":"more","Accounts":[`+
+				`{"Id":"999999999999","Name":"management","Status":"ACTIVE","Arn":"arn:aws:organizations::999999999999:account/o-1/999999999999"},`+
+				`{"Id":"222222222222","Name":"prod","Status":"ACTIVE","Arn":"arn:aws:organizations::999999999999:account/o-1/222222222222"},`+
+				`{"Id":"111111111111","Name":"dev","Status":"ACTIVE","Arn":"arn:aws:organizations::999999999999:account/o-1/111111111111"}]}`)
+		case strings.HasSuffix(target, ".ListGroups"):
+			if !strings.Contains(form, `"IdentityStoreId":"d-1234567890"`) {
+				http.Error(w, "wrong store", http.StatusBadRequest)
+				return
+			}
+			fmt.Fprint(w, `{"Groups":[{"GroupId":"g-2","DisplayName":"leads"},{"GroupId":"g-1","DisplayName":"backend-devs"}]}`)
 		case strings.HasSuffix(target, ".ListPermissionSets"):
 			if strings.Contains(form, `"NextToken"`) {
 				fmt.Fprint(w, `{"PermissionSets":["arn:aws:sso:::permissionSet/ssoins-1/ps-2"]}`)
@@ -55,7 +70,7 @@ func (f *fakeAdminAWS) serve(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, `{"PermissionSets":["arn:aws:sso:::permissionSet/ssoins-1/ps-1"],"NextToken":"more"}`)
 		case strings.HasSuffix(target, ".DescribePermissionSet"):
 			name := map[bool]string{true: "ElevateAdmin", false: "ElevateRequester"}[strings.Contains(form, "ps-1")]
-			fmt.Fprintf(w, `{"PermissionSet":{"Name":%q}}`, name)
+			fmt.Fprintf(w, `{"PermissionSet":{"Name":%q,"PermissionSetArn":"arn:aws:sso:::permissionSet/ssoins-1/%s"}}`, name, map[bool]string{true: "ps-1", false: "ps-2"}[name == "ElevateAdmin"])
 		case strings.HasSuffix(target, ".DescribeTrails"):
 			if f.noTrail {
 				fmt.Fprint(w, `{"trailList":[]}`)
@@ -219,5 +234,25 @@ func TestPreviewUpdateWithoutChangesOrFailed(t *testing.T) {
 	defer srv.Close()
 	if _, err := previewAdmin(srv).PreviewUpdate(context.Background(), "stack-1", "https://example.com/t.yaml"); err == nil || !strings.Contains(err.Error(), "Access Denied") {
 		t.Errorf("failed: %v", err)
+	}
+}
+
+func TestCatalogListsPermissionSetsAccountsAndGroupsSortedByName(t *testing.T) {
+	f := &fakeAdminAWS{}
+	srv := f.serve(t)
+	defer srv.Close()
+	a, ctx := adminFor(srv), context.Background()
+	ps, err := a.PermissionSets(ctx)
+	if err != nil || len(ps) != 2 || ps[0] != (Named{ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-1", Name: "ElevateAdmin"}) {
+		t.Errorf("permission sets %+v %v", ps, err)
+	}
+	// Active accounts only, never the management account (design §3.1).
+	accounts, err := a.Accounts(ctx)
+	if err != nil || fmt.Sprint(accounts) != "[{111111111111 dev} {222222222222 prod}]" {
+		t.Errorf("accounts %+v %v", accounts, err)
+	}
+	groups, err := a.Groups(ctx)
+	if err != nil || fmt.Sprint(groups) != "[{g-1 backend-devs} {g-2 leads}]" {
+		t.Errorf("groups %+v %v", groups, err)
 	}
 }

@@ -1,0 +1,7 @@
+{{define "content"}}<div class="page-head"><h1>Import rules</h1></div>
+<div class="box form-box"><form method="post" action="/rules/import" enctype="multipart/form-data">
+<div class="field"><label for="doc">Rules file</label>
+<span class="desc">A file exported from Config versions or with aws elevate admin export. It replaces every rule; you review the changes before publishing.</span>
+<input type="file" name="doc" id="doc" accept=".json,application/json" required></div>
+<div class="form-actions"><a class="btn link" href="/rules">Cancel</a><button class="btn primary">Review changes</button></div>
+</form></div>{{end}}

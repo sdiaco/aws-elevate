@@ -285,3 +285,21 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .compare h2 { margin: 24px 0 8px; }
 .compare h2:first-of-type { margin-top: 0; }
 .compare details + details { margin-top: 8px; }
+
+/* Rule form */
+.form-box { max-width: 720px; }
+fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.field + .field, .field + fieldset.field { margin-top: 20px; }
+legend { font-weight: 600; padding: 0; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
+label.choice { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; }
+.field-row { display: flex; gap: 20px; flex-wrap: wrap; }
+.field-row .field + .field { margin-top: 0; }
+.field .constraint.warn { color: var(--warning); }
+.field .expand { margin-top: 8px; }
+
+/* Lines that differ in a changed rule */
+.diff pre span { display: inline-block; min-width: 100%; }
+.diff pre .del { background: var(--bg-error); }
+.diff pre .add { background: var(--bg-success); }
+.form-actions.start { justify-content: flex-start; }

@@ -46,19 +46,21 @@ type publishCall struct {
 // fakeAdmin answers the admin AWS calls; the zero value is a healthy installation
 // except for what each test sets.
 type fakeAdmin struct {
-	published  []publishCall
-	publishN   int
-	publishErr error
-	stack      string
-	stackErr   error
-	psNames    []string
-	psErr      error
-	noTrail    bool
-	trailErr   error
-	subs       map[string]int
-	subsErr    error
-	preview    awsx.Preview
-	previewed  []string // stack id and template url
+	published      []publishCall
+	publishN       int
+	publishErr     error
+	stack          string
+	stackErr       error
+	psNames        []string
+	psErr          error
+	noTrail        bool
+	trailErr       error
+	subs           map[string]int
+	subsErr        error
+	preview        awsx.Preview
+	previewed      []string // stack id and template url
+	permissionSets []awsx.Named
+	psReads        int
 }
 
 func (a *fakeAdmin) PreviewUpdate(_ context.Context, stackID, templateURL string) (awsx.Preview, error) {
@@ -72,6 +74,15 @@ func (a *fakeAdmin) PublishRules(_ context.Context, app, profile string, latest 
 }
 
 func (a *fakeAdmin) StackStatus(context.Context, string) (string, error) { return a.stack, a.stackErr }
+
+func (a *fakeAdmin) PermissionSets(context.Context) ([]awsx.Named, error) {
+	a.psReads++
+	return a.permissionSets, nil
+}
+
+func (a *fakeAdmin) Accounts(context.Context) ([]awsx.Named, error) { return nil, nil }
+
+func (a *fakeAdmin) Groups(context.Context) ([]awsx.Named, error) { return nil, nil }
 
 func (a *fakeAdmin) PermissionSetNames(context.Context) ([]string, error) { return a.psNames, a.psErr }
 

@@ -1,0 +1,7 @@
+{{define "content"}}<div class="page-head"><h1>Review changes</h1></div>
+{{template "changes" .Changes}}
+<form method="post" class="form-actions">
+<input type="hidden" name="change" value="{{.Change}}">
+<input type="hidden" name="latest" value="{{.Latest}}">
+<a class="btn link" href="/rules">Cancel</a><button class="btn primary" formaction="/rules/publish">Publish</button>
+</form>{{end}}

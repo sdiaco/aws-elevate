@@ -24,13 +24,26 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 	if len(rest) > 0 {
 		return fmt.Errorf("unexpected argument %q: %w", rest[0], errUsage)
 	}
-	b, svc, err := connect(ctx, e, f.profileName(e))
+	profile := f.profileName(e)
+	target, err := setUpTarget(e, profile)
+	if err != nil {
+		return err
+	}
+	b, svc, err := connect(ctx, e, profile)
 	if err != nil {
 		return err
 	}
 	me, err := svc.Me(ctx)
 	if err != nil {
 		return err
+	}
+	var admin ui.Admin
+	if me.Installation != nil { // only ElevateAdmin gets it (design §7.2)
+		aws, err := b.Admin(ctx, target)
+		if err != nil {
+			return err
+		}
+		admin = newUIAdmin(e, profile, aws, me.Installation)
 	}
 	app := &ui.App{
 		Me:      *me,
@@ -45,6 +58,7 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		Console: func(g api.Grant) string {
 			return awsx.ConsoleLink(b.Source().SSOStartURL, g.Account, RoleName(g.ID))
 		},
+		Admin: admin,
 	}
 	ln, err := ui.Listen()
 	if err != nil {

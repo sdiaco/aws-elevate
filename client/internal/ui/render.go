@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 )
@@ -126,6 +127,7 @@ var funcs = template.FuncMap{
 	"ago":        ago,
 	"short":      short,
 	"can":        can,
+	"has":        func(list []string, s string) bool { return slices.Contains(list, s) },
 	"indent":     indent,
 	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
 	"columns": func(l List) int {
