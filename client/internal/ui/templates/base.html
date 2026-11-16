@@ -1,0 +1,28 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · aws-elevate</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<div class="app">
+<nav class="nav" aria-label="Views">
+<div class="nav-brand">aws-elevate</div>
+{{range .Nav}}{{if .Label}}<div class="nav-group">{{.Label}}</div>{{end}}
+{{range .Items}}<a href="{{.Path}}"{{if eq .Path $.Path}} aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="count{{if .Warn}} warn{{end}}">{{.Count}}</span>{{end}}</a>
+{{end}}{{end}}
+<div class="nav-user">{{.User}}{{if .Roles}} · {{.Roles}}{{end}}</div>
+</nav>
+<main class="main">
+<div class="page-head"><h1>{{.Title}}</h1></div>
+{{template "content" .Content}}
+</main>
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "state"}}<span class="st st-{{.}}">{{stateLabel .}}</span>{{end}}

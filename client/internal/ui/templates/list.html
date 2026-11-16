@@ -1,0 +1,31 @@
+{{/* The one list of the interface (design §11.1): search, quick filters, table,
+     selection bar. Action buttons send the selected ids as id=… to their address. */}}
+{{define "list"}}<form class="list" data-list method="get">
+<div class="list-tools">
+{{if .Search}}<input type="search" data-search placeholder="Search this page" aria-label="Search this page">{{end}}
+{{if .Filters}}<div class="filters">{{range .Filters}}<a href="{{.Path}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>{{end}}
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr>{{if .Actions}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all"></th>{{end}}{{range .Columns}}<th>{{.}}</th>{{end}}</tr></thead>
+<tbody>
+{{range .Rows}}<tr data-row>{{if $.Actions}}<td class="check">{{if .ID}}<input type="checkbox" name="id" value="{{.ID}}" data-select aria-label="Select {{.ID}}">{{end}}</td>{{end}}{{range .Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>
+{{else}}<tr><td class="empty" colspan="{{columns .}}">{{.Empty}}</td></tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{if .Next}}<div class="pager"><a class="btn" href="{{.Next}}">Next page</a></div>{{end}}
+{{if .Actions}}<div class="select-bar hidden" role="region" aria-label="Selection">
+<span><strong data-selected-count>0</strong> selected</span>
+<button type="button" class="btn link" data-select-clear>Clear</button>
+{{range .Actions}}<button class="btn{{if .Danger}} danger{{else}} primary{{end}}" formaction="{{.Path}}">{{.Label}}</button>{{end}}
+</div>{{end}}
+</form>{{end}}
+
+{{define "cell"}}{{if .State}}{{template "state" .State}}{{end}}
+{{- if .Href}}<a href="{{.Href}}">{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}>{{.Text}}</span>{{end}}
+{{- range .Tags}} <span class="tag">{{.}}</span>{{end}}
+{{- if .Copy}}<button type="button" class="copy" data-copy="{{.Copy}}" title="Copy">{{.Copy}}</button>{{end}}
+{{- if not .Until.IsZero}}<time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>{{end}}
+{{- if not .At.IsZero}}<time datetime="{{iso .At}}" title="{{exact .At}}">{{ago .At}}</time>{{end}}{{end}}
