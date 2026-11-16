@@ -49,6 +49,15 @@ class FakeConfig:
         return 3, self.rules
 
 
+INSTALLATION = {
+    "stackId": "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1",
+    "rulesApplicationId": "app1",
+    "rulesProfileId": "prof1",
+    "alertsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-alerts",
+    "approvalsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-approvals",
+}
+
+
 def event(method, proxy, body=None, query=None, version=INFRA_VERSION, headers=None):
     hdrs = {"X-Elevate-Client-Version": version} if version else {}
     hdrs.update(headers or {})
@@ -71,6 +80,7 @@ def api(fx):
             config or FakeConfig([fx.AUTO_RULE, fx.MANUAL_RULE]),
             rules or RecordingGrants(),
             versions or RecordingGrants(),
+            INSTALLATION,
         )
 
     return build
@@ -260,7 +270,18 @@ def test_me_lists_user_roles_and_versions(api, fx):
         "roles": ["requester"],
         "infraVersion": INFRA_VERSION,
         "minClient": MIN_CLIENT,
+        "installation": None,
     }
+
+
+def test_me_gives_the_installation_only_to_an_admin(api, fx):
+    # The admin client publishes rules and runs doctor with its own credentials and
+    # cannot list these resources; nobody else needs them.
+    assert body_of(api(identity=fx.ADMIN).handle(event("GET", "me")))["installation"] == (
+        INSTALLATION
+    )
+    for identity in (fx.REQUESTER, fx.LEAD, fx.AUDITOR):
+        assert body_of(api(identity=identity).handle(event("GET", "me")))["installation"] is None
 
 
 def test_me_recognises_approver_admin_and_auditor(api, fx):
@@ -296,12 +317,16 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "AUDITOR_GROUP_ID": "",
         "MAX_OPEN_GRANTS_PER_USER": "5",
         "SSO_INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
+        "STACK_ID": INSTALLATION["stackId"],
+        "ALERTS_TOPIC_ARN": INSTALLATION["alertsTopicArn"],
+        "APPROVALS_TOPIC_ARN": INSTALLATION["approvalsTopicArn"],
     }
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(module, "_api", None)
     first = module._get_api()
     assert isinstance(first, Api)
+    assert first._installation == INSTALLATION
     assert module._get_api() is first
 
 

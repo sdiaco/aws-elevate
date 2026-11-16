@@ -52,7 +52,7 @@ def scenario(fx, name: str):
         closed_at="2026-11-15T11:01:02Z",
     )
     return {
-        "me": (fx.REQUESTER, ()),
+        "me": (fx.ADMIN, ()),
         "rules-list": (fx.REQUESTER, ()),
         "rules-permissions": (fx.REQUESTER, ()),
         "rules-check": (fx.ADMIN, ()),
@@ -97,6 +97,13 @@ def respond(fx, name: str, example: dict) -> tuple[int, dict]:
         config,
         RuleRoutes(config=config, sso=fx.FakeSso()),
         ConfigRoutes(config),
+        {
+            "stackId": "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1",
+            "rulesApplicationId": "app1",
+            "rulesProfileId": "prof1",
+            "alertsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-alerts",
+            "approvalsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-approvals",
+        },
     )
     request = example["request"]
     resp = api.handle(

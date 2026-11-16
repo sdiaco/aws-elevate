@@ -1355,6 +1355,9 @@ Resources:
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
+          STACK_ID: !Ref AWS::StackId
+          ALERTS_TOPIC_ARN: !Ref AlertsTopic
+          APPROVALS_TOPIC_ARN: !Ref ApprovalsTopic
 
   RestApi:
     Type: AWS::ApiGateway::RestApi

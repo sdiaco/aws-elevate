@@ -474,6 +474,14 @@ def test_api_function_gets_the_permission_set_names_and_parameters():
     assert env["SSO_INSTANCE_ARN"] == {"Fn::GetAtt": ["Precheck", "InstanceArn"]}
 
 
+def test_api_function_knows_what_the_admin_client_reads_with_its_own_credentials():
+    # Returned by GET /me to admins: the resources ElevateAdmin may act on.
+    env = RESOURCES["ApiFunction"]["Properties"]["Environment"]["Variables"]
+    assert env["STACK_ID"] == {"Ref": "AWS::StackId"}
+    assert env["ALERTS_TOPIC_ARN"] == {"Ref": "AlertsTopic"}
+    assert env["APPROVALS_TOPIC_ARN"] == {"Ref": "ApprovalsTopic"}
+
+
 def test_install_parameters():
     params = TEMPLATE["Parameters"]
     assert {"AdminGroupId", "RequesterGroupId"} <= set(params)
