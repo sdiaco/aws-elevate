@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/release"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -28,6 +29,7 @@ type Env struct {
 	Environ      func() []string
 	Open         func(ctx context.Context, profile string) (Backend, error)
 	Installer    func(ctx context.Context, profile, region string) (Installer, error)
+	Releases     func(ctx context.Context) ([]release.Release, error)
 	Sleep        func(ctx context.Context, d time.Duration) error
 	Shell        func(shell string, env []string) (int, error)
 	SettingsPath string
@@ -53,6 +55,7 @@ func DefaultEnv() (*Env, error) {
 		Environ:      os.Environ,
 		Open:         Open,
 		Installer:    openInstaller,
+		Releases:     release.New().List,
 		Sleep:        awsx.Sleep,
 		Shell:        startShell,
 		SettingsPath: settings,

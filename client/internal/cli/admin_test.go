@@ -57,6 +57,13 @@ type fakeAdmin struct {
 	trailErr   error
 	subs       map[string]int
 	subsErr    error
+	preview    awsx.Preview
+	previewed  []string // stack id and template url
+}
+
+func (a *fakeAdmin) PreviewUpdate(_ context.Context, stackID, templateURL string) (awsx.Preview, error) {
+	a.previewed = []string{stackID, templateURL}
+	return a.preview, nil
 }
 
 func (a *fakeAdmin) PublishRules(_ context.Context, app, profile string, latest *int, doc []byte) (int, error) {

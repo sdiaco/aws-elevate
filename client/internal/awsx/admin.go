@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/appconfig"
 	appconfigtypes "github.com/aws/aws-sdk-go-v2/service/appconfig/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
@@ -20,11 +23,15 @@ var ErrVersionConflict = errors.New("another rules version was published meanwhi
 
 // Admin makes the AWS calls of the admin commands with ElevateAdmin credentials: the
 // publication of rules (design §7.2) and the reads of doctor.
-type Admin struct{ cfg aws.Config }
+type Admin struct {
+	cfg   aws.Config
+	sleep func(ctx context.Context, d time.Duration) error
+	now   func() time.Time
+}
 
 // NewAdmin signs every call with creds.
 func NewAdmin(cfg aws.Config, creds aws.Credentials) *Admin {
-	return &Admin{cfg: WithCredentials(cfg, creds)}
+	return &Admin{cfg: WithCredentials(cfg, creds), sleep: Sleep, now: time.Now}
 }
 
 // PublishRules creates a hosted configuration version. latest is the newest version
@@ -120,4 +127,97 @@ func (a *Admin) ConfirmedSubscribers(ctx context.Context, topicARN string) (int,
 		}
 	}
 	return n, nil
+}
+
+// Preview is a change set of the stack: what an update would change.
+type Preview struct {
+	// Parameters keep their current value; the update command must pass the same.
+	Parameters []string
+	Changes    []Change
+	NoChanges  bool
+}
+
+type Change struct {
+	Action      string
+	Resource    string
+	Type        string
+	Replacement string
+}
+
+// previewPoll is how often PreviewUpdate reads the change set; it takes about 8 s
+// (spike C10).
+const previewPoll = 2 * time.Second
+
+// PreviewUpdate creates a change set of the stack from templateURL and waits for it: it
+// changes nothing (design §12.3). Every parameter keeps its value except CodeKey, whose
+// default names the Lambda package of the new release.
+func (a *Admin) PreviewUpdate(ctx context.Context, stackID, templateURL string) (Preview, error) {
+	client := cloudformation.NewFromConfig(a.cfg)
+	stacks, err := client.DescribeStacks(ctx, &cloudformation.DescribeStacksInput{StackName: &stackID})
+	if err != nil {
+		return Preview{}, fmt.Errorf("read stack: %w", err)
+	}
+	if len(stacks.Stacks) == 0 {
+		return Preview{}, fmt.Errorf("stack %s not found", stackID)
+	}
+	var p Preview
+	in := &cloudformation.CreateChangeSetInput{
+		StackName:     &stackID,
+		ChangeSetName: aws.String(fmt.Sprintf("elevate-preview-%d", a.now().Unix())),
+		ChangeSetType: cfntypes.ChangeSetTypeUpdate,
+		TemplateURL:   &templateURL,
+		Capabilities:  []cfntypes.Capability{cfntypes.CapabilityCapabilityNamedIam},
+	}
+	for _, par := range stacks.Stacks[0].Parameters {
+		key := aws.ToString(par.ParameterKey)
+		if key == "CodeKey" {
+			continue
+		}
+		p.Parameters = append(p.Parameters, key)
+		in.Parameters = append(in.Parameters, cfntypes.Parameter{ParameterKey: aws.String(key), UsePreviousValue: aws.Bool(true)})
+	}
+	created, err := client.CreateChangeSet(ctx, in)
+	if err != nil {
+		return Preview{}, fmt.Errorf("create the preview: %w", err)
+	}
+	for {
+		d, err := client.DescribeChangeSet(ctx, &cloudformation.DescribeChangeSetInput{ChangeSetName: created.Id, StackName: &stackID})
+		if err != nil {
+			return Preview{}, fmt.Errorf("read the preview: %w", err)
+		}
+		switch d.Status {
+		case cfntypes.ChangeSetStatusFailed:
+			// CloudFormation fails a change set that changes nothing, with this reason.
+			if strings.Contains(aws.ToString(d.StatusReason), "didn't contain changes") {
+				p.NoChanges = true
+				return p, nil
+			}
+			return Preview{}, fmt.Errorf("preview failed: %s", aws.ToString(d.StatusReason))
+		case cfntypes.ChangeSetStatusCreateComplete:
+			for {
+				for _, c := range d.Changes {
+					rc := c.ResourceChange
+					if rc == nil {
+						continue
+					}
+					p.Changes = append(p.Changes, Change{
+						Action:      string(rc.Action),
+						Resource:    aws.ToString(rc.LogicalResourceId),
+						Type:        aws.ToString(rc.ResourceType),
+						Replacement: string(rc.Replacement),
+					})
+				}
+				if d.NextToken == nil {
+					return p, nil
+				}
+				d, err = client.DescribeChangeSet(ctx, &cloudformation.DescribeChangeSetInput{ChangeSetName: created.Id, StackName: &stackID, NextToken: d.NextToken})
+				if err != nil {
+					return Preview{}, fmt.Errorf("read the preview: %w", err)
+				}
+			}
+		}
+		if err := a.sleep(ctx, previewPoll); err != nil {
+			return Preview{}, err
+		}
+	}
 }
