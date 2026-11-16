@@ -104,6 +104,7 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 	until := time.Now().Add(38 * time.Minute)
 	at := time.Now().Add(-4 * time.Minute)
 	l := List{
+		Title:   "Active",
 		Search:  true,
 		Filters: []Filter{{Label: "All (2)", Path: "/active", On: true}, {Label: "Mine (1)", Path: "/active?mine=1"}},
 		Columns: []string{"State", "Rule", "Expires in", "Requested", "Id"},
@@ -119,8 +120,9 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 	out := renderList(t, l)
 	for _, want := range []string{
 		`<form class="list" data-list method="get">`,
+		`<div class="list-head"><h1>Active <span class="counter">(1)</span></h1>`,
 		`<input type="search" data-search`,
-		`<a href="/active" aria-current="true">All (2)</a>`,
+		`<div class="segmented" role="group" aria-label="Filter"><a href="/active" aria-current="true">All (2)</a>`,
 		`<a href="/active?mine=1">Mine (1)</a>`,
 		`data-select-all`,
 		`<input type="checkbox" name="id" value="k3f9x2m7qa" data-select`,
@@ -129,8 +131,7 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 		`<time data-until datetime="` + until.UTC().Format(time.RFC3339) + `" title="` + until.Local().Format("2006-01-02 15:04:05") + `">38 min</time>`,
 		`>4 min ago</time>`,
 		`<button type="button" class="copy" data-copy="k3f9x2m7qa"`,
-		`<div class="select-bar hidden"`,
-		`<button class="btn danger" formaction="/revoke">Revoke…</button>`,
+		`<button class="btn" formaction="/revoke" disabled data-action>Revoke…<span data-selected-count></span></button>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
@@ -139,18 +140,25 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 }
 
 func TestListWithoutActionsOrRows(t *testing.T) {
-	out := renderList(t, List{Columns: []string{"When", "Who"}, Empty: "No grants in this period.", Next: "/history?page=x"})
-	if strings.Contains(out, "checkbox") || strings.Contains(out, "select-bar") || strings.Contains(out, "data-search") {
+	out := renderList(t, List{Title: "History", Columns: []string{"When", "Who"}, Empty: "No grants in this period.", Next: "/history?page=x"})
+	if strings.Contains(out, "checkbox") || strings.Contains(out, "data-action") || strings.Contains(out, "data-search") {
 		t.Errorf("selection or search without actions:\n%s", out)
 	}
-	for _, want := range []string{`<td class="empty" colspan="2">No grants in this period.</td>`, `<a class="btn" href="/history?page=x">Next page</a>`} {
+	for _, want := range []string{
+		`<td class="empty" colspan="2">No grants in this period.</td>`,
+		`<a class="btn" href="/history?page=x">Next page</a>`,
+		`<h1>History <span class="counter">(0+)</span></h1>`,
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
 	}
-	withActions := renderList(t, List{Columns: []string{"When", "Who"}, Actions: []Action{{Label: "Revoke…", Path: "/revoke"}}})
+	withActions := renderList(t, List{Columns: []string{"When", "Who"}, Actions: []Action{{Label: "Approve", Path: "/approve"}}})
 	if !strings.Contains(withActions, `colspan="3"`) {
 		t.Errorf("the empty row does not span the selection column:\n%s", withActions)
+	}
+	if !strings.Contains(withActions, `<button class="btn primary" formaction="/approve" disabled data-action>`) {
+		t.Errorf("a non-destructive action is not the primary button:\n%s", withActions)
 	}
 }
 

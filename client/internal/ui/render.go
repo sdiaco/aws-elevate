@@ -39,13 +39,15 @@ type NavItem struct {
 	Warn  bool
 }
 
-// List is the data of the one list template: search, filters, table, selection bar.
+// List is the data of the one list template: header with title, counter and actions,
+// search, filters, table.
 type List struct {
+	Title   string
 	Search  bool
 	Filters []Filter
 	Columns []string
 	Rows    []Row
-	Actions []Action // with actions the rows can be selected
+	Actions []Action // with actions the rows can be selected; disabled until some are
 	Empty   string
 	Next    string // address of the next page
 }
@@ -74,6 +76,8 @@ type Cell struct {
 	At    time.Time
 }
 
+// Action is a header button. Destructive actions are normal buttons, as in the console;
+// the others are primary.
 type Action struct {
 	Label  string
 	Path   string

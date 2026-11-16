@@ -3,7 +3,7 @@
 "use strict";
 
 // Selection: [data-select-all] toggles the [data-select] boxes of its list; the
-// .select-bar of the list shows how many are selected.
+// header actions [data-action] are enabled only with a selection and show its size.
 function updateSelection(list) {
   const boxes = [...list.querySelectorAll("[data-select]")];
   const picked = boxes.filter((b) => b.checked);
@@ -13,11 +13,10 @@ function updateSelection(list) {
     all.checked = boxes.length > 0 && picked.length === boxes.length;
     all.indeterminate = picked.length > 0 && picked.length < boxes.length;
   }
-  const bar = list.querySelector(".select-bar");
-  if (bar) {
-    bar.classList.toggle("hidden", picked.length === 0);
-    bar.querySelector("[data-selected-count]").textContent = picked.length;
-  }
+  list.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.disabled = picked.length === 0;
+    btn.querySelector("[data-selected-count]").textContent = picked.length ? ` (${picked.length})` : "";
+  });
 }
 
 document.addEventListener("change", (e) => {
@@ -30,12 +29,6 @@ document.addEventListener("change", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  const clear = e.target.closest("[data-select-clear]");
-  if (clear) {
-    const list = clear.closest("[data-list]");
-    list.querySelectorAll("[data-select]").forEach((b) => { b.checked = false; });
-    updateSelection(list);
-  }
   const copy = e.target.closest("[data-copy]");
   if (copy) {
     navigator.clipboard.writeText(copy.dataset.copy).then(() => {
