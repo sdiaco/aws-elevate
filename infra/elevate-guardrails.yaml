@@ -33,18 +33,34 @@ Resources:
       Content:
         Version: "2012-10-17"
         Statement:
-          # Approving, starting or ending a grant: only the api role (exact ARN, spike
-          # S16) and the deployers. SendTask* has no resource-level permissions.
-          - Sid: ProtectExecutions
+          # Approving or rejecting a request: only the api role (exact ARN, spike S16) and
+          # the deployers. SendTask* has no resource-level permissions, so this also
+          # covers task tokens of other state machines of the account.
+          - Sid: ProtectTaskTokens
             Effect: Deny
             Action:
               - states:SendTaskSuccess
               - states:SendTaskFailure
               - states:SendTaskHeartbeat
+            Resource: "*"
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Split
+                  - ","
+                  - !Join
+                    - ","
+                    - - !Sub arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/${StackName}-api
+                      - !Join [",", !Ref DeployerRoleArns]
+          # Starting or ending a grant; other state machines of the account stay free.
+          - Sid: ProtectExecutions
+            Effect: Deny
+            Action:
               - states:StartExecution
               - states:StopExecution
               - states:RedriveExecution
-            Resource: "*"
+            Resource:
+              - !Sub arn:${AWS::Partition}:states:*:${ServiceAccountId}:stateMachine:${StackName}-*
+              - !Sub arn:${AWS::Partition}:states:*:${ServiceAccountId}:execution:${StackName}-*:*
             Condition:
               ArnNotLike:
                 aws:PrincipalArn: !Split
