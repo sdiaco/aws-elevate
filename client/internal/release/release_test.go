@@ -88,3 +88,18 @@ func TestInfraUpdatesAreNewerThanTheInfrastructure(t *testing.T) {
 		t.Errorf("infra updates %s", got)
 	}
 }
+
+// GitHub orders by date: a patch of an older line published later must not come first.
+func TestUpdatesAreSortedByVersion(t *testing.T) {
+	rels := []Release{
+		{Version: "0.1.3", MinInfra: "0.0.1"},
+		{Version: "0.2.0", MinInfra: "0.0.1"},
+		{Version: "0.1.2", MinInfra: "0.0.1"},
+	}
+	if got := versions(ClientUpdates(rels, "0.1.0", "0.1.0")); got != "0.2.0,0.1.3,0.1.2" {
+		t.Errorf("client updates %s", got)
+	}
+	if got := versions(InfraUpdates(rels, "0.1.0")); got != "0.2.0,0.1.3,0.1.2" {
+		t.Errorf("infra updates %s", got)
+	}
+}
