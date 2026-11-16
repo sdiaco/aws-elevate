@@ -501,14 +501,6 @@ def test_api_function_gets_the_permission_set_names_and_parameters():
     assert env["MAX_OPEN_GRANTS_PER_USER"] == {"Ref": "MaxOpenGrantsPerUser"}
     assert env["AUDITOR_GROUP_ID"] == {"Ref": "AuditorGroupId"}
     assert env["SSO_INSTANCE_ARN"] == {"Fn::GetAtt": ["Precheck", "InstanceArn"]}
-    assert env["APPROVER_HISTORY"] == {"Ref": "ApproverHistory"}
-
-
-def test_approver_history_defaults_to_the_rules_the_approver_approves():
-    # Design §11.3: "all" is opt-in.
-    param = TEMPLATE["Parameters"]["ApproverHistory"]
-    assert param["Default"] == "rules"
-    assert param["AllowedValues"] == ["rules", "all"]
 
 
 def test_api_function_knows_what_the_admin_client_reads_with_its_own_credentials():

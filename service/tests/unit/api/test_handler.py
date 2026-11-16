@@ -316,7 +316,6 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "ADMIN_PS_NAME": "ElevateAdmin",
         "AUDITOR_GROUP_ID": "",
         "MAX_OPEN_GRANTS_PER_USER": "5",
-        "APPROVER_HISTORY": "all",
         "SSO_INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
         "STACK_ID": INSTALLATION["stackId"],
         "ALERTS_TOPIC_ARN": INSTALLATION["alertsTopicArn"],
@@ -328,7 +327,6 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
     first = module._get_api()
     assert isinstance(first, Api)
     assert first._installation == INSTALLATION
-    assert first._targets["grants"]._approver_sees_all is True
     assert module._get_api() is first
 
 

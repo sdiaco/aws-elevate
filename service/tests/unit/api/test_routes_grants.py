@@ -14,7 +14,7 @@ from aws_elevate.core.times import parse_iso
 
 @pytest.fixture
 def make(fx):
-    def build(*grants, config=None, sfn=None, store=None, max_open=5, approver_history="rules"):
+    def build(*grants, config=None, sfn=None, store=None, max_open=5):
         table = fx.FakeTable(*grants)
         sfn = sfn or fx.FakeSfn()
         routes = GrantRoutes(
@@ -23,7 +23,6 @@ def make(fx):
             sfn=sfn,
             store=store or fx.FakeStore(),
             max_open=max_open,
-            approver_history=approver_history,
             clock=lambda: fx.NOW,
         )
         return routes, table, sfn
@@ -476,57 +475,10 @@ def test_approvable_reads_the_open_index_for_the_caller_groups(make, fx):
     assert table.queries == [("open",)]
 
 
-def requester_history(fx):
-    """u-9 has a pending request for the leads, a closed grant the leads approved and a
-    closed grant of a rule approved by another group."""
-    other = fx.Group(id="g-other", name="others")
-    closed = {"state": State.CLOSED, "close_reason": CloseReason.EXPIRED}
-    luca = Principal("u-9", "x")
-    return (
-        g(fx, "aaaaa23456", "2026-11-15T09:00:00Z", requester=luca),
-        g(fx, "bbbbb23456", "2026-11-01T09:00:00Z", requester=luca, **closed),
-        g(fx, "ccccc23456", "2026-11-02T09:00:00Z", requester=luca, approver_group=other,
-          **closed),
-        g(fx, "ddddd23456", "2026-11-15T09:30:00Z"),
-    )  # fmt: skip
-
-
-def test_approvable_for_one_user_is_their_period_on_the_rules_the_caller_approves(make, fx):
-    routes, table, _ = make(*requester_history(fx))
-    body = routes.list(fx.LEAD, {"scope": "approvable", "user": "u-9"})
-    assert sorted(ids(body)) == ["aaaaa23456", "bbbbb23456"]
-    assert table.queries[0][:2] == ("by_user", "u-9")
-    assert table.queries[0][2] == "2026-10-16T10:00:00Z"  # last 30 days
-
-
-def test_approvable_history_with_all_shows_every_grant_of_a_user_waiting_on_the_caller(make, fx):
-    routes, _, _ = make(*requester_history(fx), approver_history="all")
-    body = routes.list(fx.LEAD, {"scope": "approvable", "user": "u-9"})
-    assert sorted(ids(body)) == ["aaaaa23456", "bbbbb23456", "ccccc23456"]
-    foreign = next(i for i in body["items"] if i["id"] == "ccccc23456")
-    assert foreign["actions"] == []
-
-
-def test_approvable_history_with_all_needs_a_request_waiting_on_the_caller(make, fx):
-    # Without a pending request the caller can approve, "all" gives nothing more.
-    history = [h for h in requester_history(fx) if h.id != "aaaaa23456"]
-    routes, _, _ = make(*history, approver_history="all")
-    body = routes.list(fx.LEAD, {"scope": "approvable", "user": "u-9"})
-    assert ids(body) == ["bbbbb23456"]
-
-
-@pytest.mark.parametrize("value", ["rules", "", "ALL", None])
-def test_approvable_history_other_values_mean_rules(make, fx, value):
-    routes, _, _ = make(*requester_history(fx), approver_history=value)
-    body = routes.list(fx.LEAD, {"scope": "approvable", "user": "u-9"})
-    assert sorted(ids(body)) == ["aaaaa23456", "bbbbb23456"]
-
-
-def test_approvable_without_user_stays_on_the_open_grants(make, fx):
-    routes, table, _ = make(*requester_history(fx), approver_history="all")
-    body = routes.list(fx.LEAD, {"scope": "approvable"})
-    assert sorted(ids(body)) == ["aaaaa23456", "ddddd23456"]
-    assert table.queries == [("open",)]
+def test_approvable_takes_no_user(make, fx):
+    routes, _, _ = make()
+    err = error_of(lambda: routes.list(fx.LEAD, {"scope": "approvable", "user": "u-9"}))
+    assert err.code == "invalid_request"
 
 
 @pytest.mark.parametrize("who", ["REQUESTER", "LEAD"])
