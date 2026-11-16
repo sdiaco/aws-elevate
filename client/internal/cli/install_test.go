@@ -149,6 +149,24 @@ func TestInstallWithFlagsAsksNothingAndPassesTheTestOverrides(t *testing.T) {
 	}
 }
 
+func TestInstallWithTheGroupFlagsDoesNotAskForTheAuditor(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if out := h.out.String(); strings.Contains(out, "Auditor group") || strings.Contains(out, "Identity Center groups") {
+		t.Errorf("asked for the auditor group:\n%s", out)
+	}
+	if _, ok := inst.created.Parameters["AuditorGroupId"]; ok {
+		t.Errorf("parameters %v, want no auditor", inst.created.Parameters)
+	}
+}
+
 func TestInstallStopsWhenTheRegionIsNotConfirmed(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
