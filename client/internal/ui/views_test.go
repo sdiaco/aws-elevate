@@ -28,7 +28,9 @@ type fakeService struct {
 	calls       []string
 	queries     []api.ListQuery
 	revokeErr   map[string]error
-	afterAction string // state returned by an action
+	versions    *api.ConfigVersions
+	docs        map[int]string // rules documents by version
+	afterAction string         // state returned by an action
 }
 
 func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
