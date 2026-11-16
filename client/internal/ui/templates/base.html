@@ -17,7 +17,8 @@
 <div class="nav-user">{{.User}}{{if .Roles}} · {{.Roles}}{{end}}</div>
 </nav>
 <main class="main">
-{{template "content" .Content}}
+{{range .Alerts}}<div class="alert {{.Kind}}" role="status">{{.Text}}</div>
+{{end}}{{template "content" .Content}}
 </main>
 </div>
 </body>

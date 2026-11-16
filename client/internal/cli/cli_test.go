@@ -47,6 +47,10 @@ func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
 	return &api.RuleList{Rules: f.rules}, nil
 }
 
+func (f *fakeService) Permissions(context.Context, string) (*api.Permissions, error) {
+	return &api.Permissions{}, f.err
+}
+
 func (f *fakeService) CreateGrant(_ context.Context, req api.CreateRequest) (*api.Grant, error) {
 	f.created = &req
 	if f.err != nil {

@@ -1,5 +1,6 @@
 // The little JavaScript of the interface (design §11.1): selection, countdowns,
-// polling of grants in transition and copyable ids. Everything else is server pages.
+// polling of grants in transition, details read when opened and copyable ids.
+// Everything else is server pages.
 "use strict";
 
 // Selection: [data-select-all] toggles the [data-select] boxes of its list; the
@@ -78,6 +79,8 @@ function poll(el, attempt) {
       tpl.innerHTML = (await res.text()).trim();
       const next = tpl.content.firstElementChild;
       el.replaceWith(next);
+      const list = next.closest("[data-list]");
+      if (list) updateSelection(list);
       tick();
       if (next.dataset.poll) poll(next, attempt + 1);
     } catch {
@@ -85,6 +88,24 @@ function poll(el, attempt) {
     }
   }, delay);
 }
+
+// Details read when opened: <details data-load="/address"> fills its
+// [data-load-target] with the HTML at that address, once.
+document.addEventListener("toggle", async (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.open || !d.dataset.load || d.dataset.loaded) return;
+  d.dataset.loaded = "1";
+  const box = d.querySelector("[data-load-target]");
+  try {
+    const res = await fetch(d.dataset.load, { headers: { Accept: "text/html" } });
+    if (!res.ok) throw new Error(res.status);
+    box.innerHTML = await res.text();
+    tick();
+  } catch {
+    box.textContent = "Not loaded: close and open again, or reload the page.";
+    delete d.dataset.loaded;
+  }
+}, true); // toggle does not bubble
 
 document.querySelectorAll("[data-list]").forEach(updateSelection);
 document.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));

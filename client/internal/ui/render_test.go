@@ -68,7 +68,7 @@ func TestEveryStateHasALabelAndAColor(t *testing.T) {
 func render(t *testing.T, view string, p Page) string {
 	t.Helper()
 	w := httptest.NewRecorder()
-	if err := renderPage(w, view, p); err != nil {
+	if err := renderPage(w, http.StatusOK, view, p); err != nil {
 		t.Fatal(err)
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
@@ -78,7 +78,7 @@ func render(t *testing.T, view string, p Page) string {
 }
 
 func TestBaseShowsTheNavigationAndTheCurrentView(t *testing.T) {
-	out := render(t, "home", Page{
+	out := render(t, "message", Page{
 		Title: "Active", Path: "/active", User: "user@example.com", Roles: "admin",
 		Nav: []NavGroup{
 			{Items: []NavItem{{Label: "Request", Path: "/request"}, {Label: "Active", Path: "/active", Count: 5}}},
@@ -106,7 +106,7 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 	l := List{
 		Title:   "Active",
 		Search:  true,
-		Filters: []Filter{{Label: "All (2)", Path: "/active", On: true}, {Label: "Mine (1)", Path: "/active?mine=1"}},
+		Filters: []FilterGroup{{Items: []Filter{{Label: "All (2)", Path: "/active", On: true}, {Label: "Mine (1)", Path: "/active?mine=1"}}}},
 		Columns: []string{"State", "Rule", "Expires in", "Requested", "Id"},
 		Rows: []Row{{ID: "k3f9x2m7qa", Cells: []Cell{
 			{State: "active"},
@@ -165,7 +165,7 @@ func TestListWithoutActionsOrRows(t *testing.T) {
 func renderList(t *testing.T, l List) string {
 	t.Helper()
 	var b bytes.Buffer
-	if err := templates["home"].ExecuteTemplate(&b, "list", l); err != nil {
+	if err := parts.ExecuteTemplate(&b, "list", l); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()
@@ -190,7 +190,7 @@ func TestTimesAreRelative(t *testing.T) {
 }
 
 func TestStaticFilesAreServed(t *testing.T) {
-	h := Pages()
+	h := Pages(&App{})
 	for path, ct := range map[string]string{"/static/app.css": "text/css", "/static/app.js": "text/javascript"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
@@ -198,9 +198,12 @@ func TestStaticFilesAreServed(t *testing.T) {
 			t.Errorf("%s: %d %q", path, w.Code, w.Header().Get("Content-Type"))
 		}
 	}
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `class="nav"`) {
-		t.Errorf("home: %d %s", w.Code, w.Body)
+}
+
+func TestDurationsAreShortAsTheCLITakesThem(t *testing.T) {
+	for s, want := range map[int]string{3600: "1h", 2700: "45m", 5400: "1h30m", 30: "30s", 0: "0s", 14400: "4h"} {
+		if got := short(s); got != want {
+			t.Errorf("short(%d) = %q, want %q", s, got, want)
+		}
 	}
 }

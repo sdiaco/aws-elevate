@@ -223,3 +223,56 @@ td.check input, th.check input { display: block; }
 .copy:hover { color: var(--accent); }
 .copy.copied::after { content: " ✓"; color: var(--success); }
 pre { background: var(--surface-soft); border-radius: 4px; padding: 12px 16px; overflow-x: auto; margin: 0 0 16px; }
+
+/* Two columns: a list and its detail, or the rules and the form (Request). */
+.split { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 16px; align-items: start; }
+.split.wide { grid-template-columns: minmax(0, 1fr); }
+.split.wide:has(> aside) { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+@media (max-width: 1000px) { .split, .split.wide:has(> aside) { grid-template-columns: minmax(0, 1fr); } }
+.rules { padding: 12px 0 8px; }
+.rules h2 { padding: 0 20px; }
+.rules > p { padding: 0 20px; }
+.rule-item { display: block; padding: 8px 20px; border-left: 2px solid transparent; text-decoration: none; color: var(--text); }
+.rule-item span { display: block; font-size: 12px; line-height: 16px; }
+.rule-item .tag { display: inline; }
+.rule-item:hover { background: var(--surface-soft); color: var(--text-strong); }
+.rule-item[aria-current="true"] { border-left-color: var(--selected-border); background: var(--selected-bg); color: var(--text-strong); }
+.box > h2 + p.muted { margin: -8px 0 16px; }
+select { min-width: min(320px, 100%); }
+#duration { width: 160px; }
+
+/* Expandable sections read when opened. */
+details.expand { margin-top: 20px; border-top: 1px solid var(--divider); padding-top: 12px; }
+details.expand > summary { cursor: pointer; font-weight: 600; color: var(--text-strong); }
+details.expand > summary + * { margin-top: 12px; }
+.perms h3 { font-size: 14px; margin: 12px 0 4px; }
+.perms ul { margin: 0; padding-left: 20px; }
+td.wrap { white-space: normal; }
+td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
+
+/* Progress of a request: steps, then the ready command. */
+.steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.steps li { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.steps li::before { content: ""; width: 14px; height: 14px; flex: none; border: 1.5px solid currentColor; border-radius: 50%; display: inline-grid; place-items: center; font-size: 9px; font-weight: 700; }
+.steps li.done { color: var(--text); }
+.steps li.done::before { content: "✓"; color: var(--success); }
+.steps li.current { color: var(--text-strong); font-weight: 600; }
+.steps li.current::before { color: var(--info); border-right-color: transparent; animation: spin .8s linear infinite; }
+.steps li.failed { color: var(--error); }
+.steps li.failed::before { content: "✕"; }
+@media (prefers-reduced-motion: reduce) { .steps li::before { animation: none !important; } }
+.progress pre { margin: 4px 0 0; }
+.progress .field + .field { margin-top: 12px; }
+
+/* Cards of the Pending view and key-value pairs. */
+.section { margin-top: 32px; }
+.card + .card { margin-top: 16px; }
+.card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 12px; }
+.card-head h2, .card-head h3 { margin: 0; flex: 1; }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 20px; margin: 0; }
+.kv dt { font-size: 12px; line-height: 16px; color: var(--text-2); }
+.kv dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.detail .kv { grid-template-columns: minmax(0, 1fr); }
+.timeline { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.timeline time { color: var(--text-2); font-size: 12px; }
+.confirm .ids { margin: 0 0 16px; padding-left: 20px; }

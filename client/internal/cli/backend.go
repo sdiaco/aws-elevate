@@ -14,6 +14,7 @@ import (
 type Service interface {
 	Me(ctx context.Context) (*api.Me, error)
 	Rules(ctx context.Context) (*api.RuleList, error)
+	Permissions(ctx context.Context, ruleID string) (*api.Permissions, error)
 	CreateGrant(ctx context.Context, req api.CreateRequest) (*api.Grant, error)
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)
 	Grants(ctx context.Context, q api.ListQuery) (*api.GrantList, error)

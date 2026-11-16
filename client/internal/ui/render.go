@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -24,7 +25,14 @@ type Page struct {
 	Nav     []NavGroup
 	User    string
 	Roles   string
+	Alerts  []Alert
 	Content any // the data of the view's "content" template
+}
+
+// Alert is a message above the view. Kind is error, success, warning or info.
+type Alert struct {
+	Kind string
+	Text string
 }
 
 type NavGroup struct {
@@ -44,12 +52,20 @@ type NavItem struct {
 type List struct {
 	Title   string
 	Search  bool
-	Filters []Filter
+	Filters []FilterGroup
 	Columns []string
 	Rows    []Row
 	Actions []Action // with actions the rows can be selected; disabled until some are
+	Tools   []Action // header links that need no selection
 	Empty   string
+	First   string // address of the first page, when this is not it
 	Next    string // address of the next page
+}
+
+// FilterGroup is one segmented control; its label names it for screen readers.
+type FilterGroup struct {
+	Label string
+	Items []Filter
 }
 
 type Filter struct {
@@ -60,20 +76,28 @@ type Filter struct {
 
 type Row struct {
 	ID    string // the value sent by the actions; empty for a row that cannot be selected
+	Poll  string // address of the row's fresh HTML while its state can still change
 	Cells []Cell
+}
+
+// rowCtx renders one row inside its table: with or without the selection column.
+type rowCtx struct {
+	Row   Row
+	Check bool
 }
 
 // Cell shows the fields that are set, in this order: state, text or link, tags, copyable
 // id, countdown, relative time.
 type Cell struct {
-	State string
-	Text  string
-	Href  string
-	Muted bool
-	Tags  []string
-	Copy  string
-	Until time.Time
-	At    time.Time
+	State    string
+	Text     string
+	Href     string
+	External bool // opens in a new tab, without telling the other site where it came from
+	Muted    bool
+	Tags     []string
+	Copy     string
+	Until    time.Time
+	At       time.Time
 }
 
 // Action is a header button. Destructive actions are normal buttons, as in the console;
@@ -100,6 +124,10 @@ var funcs = template.FuncMap{
 	"exact":      func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
 	"left":       left,
 	"ago":        ago,
+	"short":      short,
+	"can":        can,
+	"indent":     indent,
+	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
 	"columns": func(l List) int {
 		if len(l.Actions) > 0 {
 			return len(l.Columns) + 1
@@ -108,11 +136,15 @@ var funcs = template.FuncMap{
 	},
 }
 
-// templates holds one set per view: the base layout, the shared parts and the view.
-var templates = parseTemplates()
+// parts are the shared templates; templates holds one set per view: the base layout, the
+// shared parts and the view.
+var (
+	parts     = template.Must(template.New("").Funcs(funcs).ParseFS(files, "templates/*.html"))
+	templates = parseTemplates()
+)
 
 func parseTemplates() map[string]*template.Template {
-	shared := template.Must(template.New("").Funcs(funcs).ParseFS(files, "templates/*.html"))
+	shared := parts
 	views, err := fs.Glob(files, "templates/views/*.html")
 	if err != nil {
 		panic(err)
@@ -126,18 +158,53 @@ func parseTemplates() map[string]*template.Template {
 }
 
 // renderPage writes the whole page or, on a template error, nothing.
-func renderPage(w http.ResponseWriter, view string, p Page) error {
+func renderPage(w http.ResponseWriter, status int, view string, p Page) error {
 	set, ok := templates[view]
 	if !ok {
 		return fmt.Errorf("no view %q", view)
 	}
+	return write(w, status, set, "base", p)
+}
+
+// renderPart writes a shared template alone: the HTML a page fetches into itself.
+func renderPart(w http.ResponseWriter, name string, data any) error {
+	return write(w, http.StatusOK, parts, name, data)
+}
+
+func write(w http.ResponseWriter, status int, set *template.Template, name string, data any) error {
 	var b bytes.Buffer
-	if err := set.ExecuteTemplate(&b, "base", p); err != nil {
-		return fmt.Errorf("render %s: %w", view, err)
+	if err := set.ExecuteTemplate(&b, name, data); err != nil {
+		return fmt.Errorf("render %s: %w", name, err)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
 	_, err := b.WriteTo(w)
 	return err
+}
+
+// indent lays out JSON for reading; anything unreadable is shown as it came.
+func indent(raw []byte) string {
+	var b bytes.Buffer
+	if err := json.Indent(&b, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return b.String()
+}
+
+// short is a duration as the CLI takes it: 45m, 1h, 1h30m.
+func short(seconds int) string {
+	h, m, sec := seconds/3600, seconds%3600/60, seconds%60
+	out := ""
+	if h > 0 {
+		out += fmt.Sprintf("%dh", h)
+	}
+	if m > 0 {
+		out += fmt.Sprintf("%dm", m)
+	}
+	if sec > 0 || out == "" {
+		out += fmt.Sprintf("%ds", sec)
+	}
+	return out
 }
 
 // left is the countdown text, the same app.js updates every second.
