@@ -1,6 +1,6 @@
 """End-to-end harness against a real test organization.
 
-    python tests/e2e/harness.py up      # package, upload, create or update stack elevate-e2e
+    python tests/e2e/harness.py up      # package, upload, install or update stack elevate-e2e
     python tests/e2e/harness.py down    # remove everything elevate-e2e* (always run it)
 
 Environment: PROFILE (SSO profile of the test user, able to assume
@@ -21,13 +21,22 @@ and the JIT-* permission sets the engine makes for e2e grants. The stack also
 creates the service permission sets ElevateRequester and ElevateAdmin, under their real
 names (the client looks them up by name; the maintainer approved it for the test
 organization). `down` removes all of them, including the resources the stack retains on
-deletion (table, AppConfig application)."""
+deletion (table, AppConfig application).
+
+A new stack is installed with the client (`aws-elevate install`, built into
+build/aws-elevate) at the previous infrastructure version, PREVIOUS_INFRA: the same code
+with another INFRA_VERSION. test_upgrade.py, run first, updates it to the current code
+with a grant open (design §12.2). The install signs as OrganizationAccountAccessRole of
+the service account, through a temporary AWS config with one more profile."""
 
 import hashlib
 import io
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -41,6 +50,10 @@ from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 
 STACK = "elevate-e2e"
+PREVIOUS_INFRA = "0.0.0"  # what a new e2e stack runs until test_upgrade updates it
+CLI = Path(
+    os.environ.get("ELEVATE_CLI", Path(__file__).resolve().parents[3] / "build" / "aws-elevate")
+)
 SERVICE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATE = SERVICE_DIR.parent / "infra" / "elevate.yaml"
 SOURCE_PS = "elevate-e2e-source"
@@ -233,15 +246,21 @@ def delete_groups(session: boto3.Session, failures: list) -> None:
 # ---------- package and stack ----------
 
 
-def package() -> bytes:
-    """Zip of src/aws_elevate with fixed timestamps, so the same code gives the same zip."""
+def package(infra_version: str | None = None) -> bytes:
+    """Zip of src/aws_elevate with fixed timestamps, so the same code gives the same zip.
+    infra_version, if given, replaces INFRA_VERSION: the release before this one."""
     buffer = io.BytesIO()
     root = SERVICE_DIR / "src"
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in sorted((root / "aws_elevate").rglob("*.py")):
+            body = path.read_bytes()
+            if infra_version and path.name == "version.py":
+                body, n = re.subn(rb'INFRA_VERSION = "[^"]*"',
+                                  f'INFRA_VERSION = "{infra_version}"'.encode(), body)  # fmt: skip
+                assert n == 1, "INFRA_VERSION not found in version.py"
             info = zipfile.ZipInfo(str(path.relative_to(root)), date_time=(2020, 1, 1, 0, 0, 0))
             info.external_attr = 0o644 << 16
-            zf.writestr(info, path.read_bytes(), zipfile.ZIP_DEFLATED)
+            zf.writestr(info, body, zipfile.ZIP_DEFLATED)
     return buffer.getvalue()
 
 
@@ -249,8 +268,12 @@ def bucket_name(session: boto3.Session) -> str:
     return f"elevate-e2e-{env('SERVICE_ACCOUNT')}-{session.region_name}"
 
 
-def upload(session: boto3.Session) -> tuple[str, str]:
-    s3, bucket, body = session.client("s3"), bucket_name(session), package()
+def template_url(session: boto3.Session) -> str:
+    return f"https://{bucket_name(session)}.s3.{session.region_name}.amazonaws.com/e2e/elevate.yaml"
+
+
+def upload(session: boto3.Session, infra_version: str | None = None) -> tuple[str, str]:
+    s3, bucket, body = session.client("s3"), bucket_name(session), package(infra_version)
     try:
         s3.create_bucket(
             Bucket=bucket,
@@ -285,9 +308,13 @@ def _stack_exists(cfn) -> bool:
 
 
 def stack_up(session: boto3.Session) -> dict:
+    """Updates the stack to the current code, or installs it at PREVIOUS_INFRA."""
+    cfn = session.client("cloudformation")
+    if not _stack_exists(cfn):
+        install(session)
+        return stack_outputs(session)
     bucket, key = upload(session)
     admin_group, requester_group = ensure_groups(session)
-    cfn = session.client("cloudformation")
     params = [
         {"ParameterKey": "AlertEmail", "ParameterValue": env("ALERT_EMAIL", "user@example.com")},
         {"ParameterKey": "CodeBucket", "ParameterValue": bucket},
@@ -295,40 +322,77 @@ def stack_up(session: boto3.Session) -> dict:
         {"ParameterKey": "AdminGroupId", "ParameterValue": admin_group},
         {"ParameterKey": "RequesterGroupId", "ParameterValue": requester_group},
     ]
-    args = {
-        "StackName": STACK,
-        "TemplateURL": f"https://{bucket}.s3.{session.region_name}.amazonaws.com/e2e/elevate.yaml",
-        "Parameters": params,
-        "Capabilities": ["CAPABILITY_NAMED_IAM"],
-    }
-    started = time.monotonic()
-    if _stack_exists(cfn):
-        try:
-            cfn.update_stack(**args)
-        except ClientError as err:
-            if "No updates are to be performed" not in str(err):
-                raise
-            log("stack already up to date")
-            return stack_outputs(session)
-        log("updating stack")
-        cfn.get_waiter("stack_update_complete").wait(
-            StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 90}
-        )
-    else:
-        log("creating stack")
-        stack_id = cfn.create_stack(**args, OnFailure="DELETE")["StackId"]
-        try:
-            cfn.get_waiter("stack_create_complete").wait(
-                StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 90}
-            )
-        except Exception as err:
-            for event in cfn.describe_stack_events(StackName=stack_id)["StackEvents"]:
-                if event["ResourceStatus"] == "CREATE_FAILED":
-                    log(f"{event['LogicalResourceId']}: {event.get('ResourceStatusReason')}")
-            message = "stack creation failed; run `make e2e-down` to remove leftovers"
-            raise SystemExit(message) from err
-    log(f"stack ready in {time.monotonic() - started:.0f}s")
+    _update(cfn, params, template_url(session))
     return stack_outputs(session)
+
+
+def _update(cfn, params: list[dict], url: str) -> None:
+    started = time.monotonic()
+    try:
+        cfn.update_stack(StackName=STACK, TemplateURL=url, Parameters=params,
+                         Capabilities=["CAPABILITY_NAMED_IAM"])  # fmt: skip
+    except ClientError as err:
+        if "No updates are to be performed" not in str(err):
+            raise
+        log("stack already up to date")
+        return
+    log("updating stack")
+    cfn.get_waiter("stack_update_complete").wait(
+        StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 90}
+    )
+    log(f"stack updated in {time.monotonic() - started:.0f}s")
+
+
+def upgrade(session: boto3.Session) -> None:
+    """The update an admin runs from `admin updates --preview` (design §12.3): every
+    parameter keeps its value except CodeKey, the package of the new release."""
+    bucket, key = upload(session)
+    cfn = session.client("cloudformation")
+    stack = cfn.describe_stacks(StackName=STACK)["Stacks"][0]
+    params = [
+        {"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
+        for p in stack["Parameters"]
+        if p["ParameterKey"] != "CodeKey"
+    ]
+    params.append({"ParameterKey": "CodeKey", "ParameterValue": key})
+    _update(cfn, params, template_url(session))
+
+
+def install(session: boto3.Session) -> None:
+    """`aws-elevate install` of the previous release, as an admin of the service account."""
+    if not CLI.is_file():
+        raise SystemExit(f"{CLI} is missing: run `make e2e-up`, which builds it")
+    bucket, key = upload(session, PREVIOUS_INFRA)
+    ensure_groups(session)
+    human = human_session()
+    role = f"arn:aws:iam::{env('SERVICE_ACCOUNT')}:role/OrganizationAccountAccessRole"
+    real = Path(os.environ.get("AWS_CONFIG_FILE", Path.home() / ".aws" / "config"))
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "config"
+        config.write_text(
+            real.read_text()
+            + "\n[profile elevate-e2e-install]\n"
+            + f"role_arn = {role}\n"
+            + f"source_profile = {human.profile_name}\n"
+            + f"region = {session.region_name}\n"
+        )
+        environ = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
+        environ.update(AWS_CONFIG_FILE=str(config), XDG_CONFIG_HOME=tmp)
+        cmd = [
+            str(CLI), "install", "--profile", "elevate-e2e-install",
+            "--region", session.region_name, "--stack-name", STACK,
+            "--template-url", template_url(session), "--code-bucket", bucket, "--code-key", key,
+            "--admin-group", ADMIN_GROUP, "--requester-group", REQUESTER_GROUP,
+            "--email", env("ALERT_EMAIL", "user@example.com"),
+        ]  # fmt: skip
+        log(f"installing {STACK} {PREVIOUS_INFRA} with aws-elevate install")
+        started = time.monotonic()
+        result = subprocess.run(cmd, env=environ, capture_output=True, text=True, timeout=1200)
+    print(result.stdout, end="", flush=True)
+    if result.returncode != 0:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+        raise SystemExit("aws-elevate install failed; run `make e2e-down` to remove leftovers")
+    log(f"installed in {time.monotonic() - started:.0f}s")
 
 
 # ---------- seeder (records written as the engine role) ----------

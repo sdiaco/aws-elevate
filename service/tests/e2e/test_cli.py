@@ -17,7 +17,7 @@ import harness
 import pytest
 from harness import MANUAL_RULE_ID, RULE_ID
 
-CLI = Path(os.environ.get("ELEVATE_CLI", harness.SERVICE_DIR.parent / "build" / "aws-elevate"))
+CLI = harness.CLI
 REASON = "aws-elevate e2e"
 
 
