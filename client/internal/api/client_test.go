@@ -294,3 +294,20 @@ func TestUnreadableInfraVersionIsAnError(t *testing.T) {
 		t.Fatal("no error")
 	}
 }
+
+// update needs the infrastructure version even when the service refuses this client.
+func TestClientTooOldCarriesTheInfraVersion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(InfraVersionHeader, "0.3.0")
+		w.Header().Set(MinClientHeader, "0.3.0")
+		w.WriteHeader(426)
+		_, _ = io.WriteString(w, `{"error": "client_too_old", "message": "upgrade aws-elevate"}`)
+	}))
+	t.Cleanup(srv.Close)
+	cfg := aws.Config{Region: "eu-west-1", Credentials: credentials.NewStaticCredentialsProvider("a", "b", "c")}
+	_, err := New(cfg, srv.URL).Me(context.Background())
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.InfraVersion != "0.3.0" {
+		t.Fatalf("got %#v", err)
+	}
+}
