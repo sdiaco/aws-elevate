@@ -83,7 +83,9 @@ package:
 e2e-up:
 	cd service && uv run python tests/e2e/harness.py up
 
-e2e:
+# The CLI tests run the real executable, built in the container (Go is only there).
+e2e: dev-image
+	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && ELEVATE_E2E=1 uv run pytest tests/e2e -v -s -p no:cacheprovider
 
 e2e-down:
