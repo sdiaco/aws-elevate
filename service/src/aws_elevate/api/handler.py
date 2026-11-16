@@ -74,9 +74,12 @@ def _check_client(event: dict) -> None:
 
 
 class Api:
-    def __init__(self, identity, grants, config, rules, versions):
+    def __init__(self, identity, grants, config, rules, versions, installation):
         self._identity = identity
         self._config = config
+        # Resource ids the admin client needs to publish rules and run doctor with its own
+        # credentials, which cannot list them.
+        self._installation = installation
         self._targets = {"grants": grants, "rules": rules, "versions": versions}
 
     def handle(self, event: dict) -> dict:
@@ -143,6 +146,7 @@ class Api:
             "roles": roles,
             "infraVersion": INFRA_VERSION,
             "minClient": MIN_CLIENT,
+            "installation": self._installation if identity.is_admin else None,
         }
 
 
@@ -192,7 +196,14 @@ def _build_api() -> Api:
     rules = RuleRoutes(
         config=config, sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"])
     )
-    return Api(identity, grants, config, rules, ConfigRoutes(config))
+    installation = {
+        "stackId": os.environ["STACK_ID"],
+        "rulesApplicationId": app,
+        "rulesProfileId": profile,
+        "alertsTopicArn": os.environ["ALERTS_TOPIC_ARN"],
+        "approvalsTopicArn": os.environ["APPROVALS_TOPIC_ARN"],
+    }
+    return Api(identity, grants, config, rules, ConfigRoutes(config), installation)
 
 
 def _get_api() -> Api:

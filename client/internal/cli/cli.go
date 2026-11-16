@@ -74,6 +74,7 @@ func init() {
 		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
 		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
 		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject]", runApprove},
+		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
 	}
 }
 
@@ -176,15 +177,24 @@ func (f *flags) profileName(e *Env) string {
 	return "default"
 }
 
-// connect opens the profile and the service found by setup.
-func connect(ctx context.Context, e *Env, profile string) (Backend, Service, error) {
+// setUpTarget is the service setup found for the profile.
+func setUpTarget(e *Env, profile string) (awsx.Target, error) {
 	settings, err := awsx.LoadSettings(e.SettingsPath)
 	if err != nil {
-		return nil, nil, err
+		return awsx.Target{}, err
 	}
 	target, ok := settings.Profiles[profile]
 	if !ok {
-		return nil, nil, fmt.Errorf("profile %q is not set up: run aws-elevate setup --profile %s", profile, profile)
+		return awsx.Target{}, fmt.Errorf("profile %q is not set up: run aws-elevate setup --profile %s", profile, profile)
+	}
+	return target, nil
+}
+
+// connect opens the profile and the service found by setup.
+func connect(ctx context.Context, e *Env, profile string) (Backend, Service, error) {
+	target, err := setUpTarget(e, profile)
+	if err != nil {
+		return nil, nil, err
 	}
 	b, err := e.Open(ctx, profile)
 	if err != nil {

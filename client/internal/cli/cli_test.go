@@ -25,13 +25,19 @@ type fakeService struct {
 	lists    map[string][]api.Grant
 	calls    []string
 	revokeBy map[string]string
+	// admin side
+	installation *api.Installation
+	check        *api.CheckResult
+	checked      []string
+	versions     *api.ConfigVersions
+	docs         map[int]string
 }
 
 func (f *fakeService) Me(context.Context) (*api.Me, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: []string{"requester"}, InfraVersion: "0.0.1"}, nil
+	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: []string{"requester"}, InfraVersion: "0.0.1", MinClient: "0.0.1", Installation: f.installation}, nil
 }
 
 func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
@@ -109,6 +115,7 @@ type fakeBackend struct {
 	discover  string // account passed to Discover
 	readyRole string
 	readyErr  error
+	admin     *fakeAdmin
 }
 
 func (b *fakeBackend) Source() awsx.SourceProfile {
@@ -126,6 +133,8 @@ func (b *fakeBackend) WaitReady(_ context.Context, account, role string) error {
 }
 
 func (b *fakeBackend) Service(context.Context, awsx.Target) (Service, error) { return b.svc, nil }
+
+func (b *fakeBackend) Admin(context.Context, awsx.Target) (AdminAWS, error) { return b.admin, nil }
 
 type harness struct {
 	env     *Env
