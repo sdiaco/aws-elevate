@@ -72,20 +72,24 @@ class RuleRoutes:
             return rules
         return requestable(rules, identity)
 
-    def list(self, identity: Identity) -> dict:
+    def list(self, identity: Identity, query: dict) -> dict:
+        """Admins and auditors see every rule; scope=requestable keeps only what the caller
+        can request, for the Request view (design §11.2)."""
+        if query not in ({}, {"scope": "requestable"}):
+            raise ApiError(400, "invalid_request", "the only query is scope=requestable")
         version, rules = self._config.current()
-        return {
-            "configVersion": version,
-            "rules": [rule_to_dict(r) for r in self._visible(identity, rules)],
-        }
+        shown = requestable(rules, identity) if query else self._visible(identity, rules)
+        return {"configVersion": version, "rules": [rule_to_dict(r) for r in shown]}
 
     def permissions(self, identity: Identity, rule_id: str) -> dict:
         _, rules = self._config.current()
         rule = next((r for r in rules if r.id == rule_id), None)
         if rule is None:
             raise ApiError(404, "not_found", f"no rule {rule_id}")
-        if rule not in self._visible(identity, rules):
-            raise forbidden(f"rule {rule_id} is not one you can request")
+        # Approvers read what they grant even when they cannot request it (design §11.2).
+        approver = rule.approver_group is not None and rule.approver_group.id in identity.group_ids
+        if not approver and rule not in self._visible(identity, rules):
+            raise forbidden(f"rule {rule_id} is not one you can request or approve")
         try:
             source = self._sso.read_source(rule.permission_set.arn)
         except PsNotFound as err:

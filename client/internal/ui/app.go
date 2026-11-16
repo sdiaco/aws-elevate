@@ -12,7 +12,7 @@ import (
 // Service is the part of the api client the views use. Every decision comes from it:
 // the views show the actions each grant carries and nothing else.
 type Service interface {
-	Rules(ctx context.Context) (*api.RuleList, error)
+	RequestableRules(ctx context.Context) (*api.RuleList, error)
 	Permissions(ctx context.Context, ruleID string) (*api.Permissions, error)
 	CreateGrant(ctx context.Context, req api.CreateRequest) (*api.Grant, error)
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)

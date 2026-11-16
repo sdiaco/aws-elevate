@@ -196,6 +196,13 @@ func TestRulesAndPermissions(t *testing.T) {
 	if err != nil || len(rules.Rules) != 2 || got.path != "/api/v1/rules" {
 		t.Fatalf("got %+v %v from %s", rules, err, got.path)
 	}
+	if got.query != "" {
+		t.Errorf("Rules sent %q", got.query)
+	}
+	c, got = serve(t, 200, string(loadExample(t, "rules-list").Response))
+	if _, err := c.RequestableRules(context.Background()); err != nil || got.query != "scope=requestable" {
+		t.Fatalf("RequestableRules sent %q: %v", got.query, err)
+	}
 	c, got = serve(t, 200, string(loadExample(t, "rules-permissions").Response))
 	p, err := c.Permissions(context.Background(), "ssm dev/x")
 	if err != nil {

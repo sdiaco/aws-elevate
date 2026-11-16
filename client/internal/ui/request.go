@@ -35,7 +35,7 @@ func (a *App) requestPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) showRequest(w http.ResponseWriter, r *http.Request, ruleID string, form requestForm, alerts ...Alert) {
-	rules, err := a.Service.Rules(r.Context())
+	rules, err := a.Service.RequestableRules(r.Context())
 	if err != nil {
 		a.fail(w, "Request access", "/request", err)
 		return

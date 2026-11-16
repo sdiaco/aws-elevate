@@ -47,6 +47,21 @@ func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
 	return &api.RuleList{Rules: f.rules}, nil
 }
 
+// RequestableRules hides the admin-only rules, as the service does for scope=requestable.
+func (f *fakeService) RequestableRules(ctx context.Context) (*api.RuleList, error) {
+	list, err := f.Rules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var mine []api.Rule
+	for _, r := range list.Rules {
+		if !strings.HasPrefix(r.ID, "admin-only") {
+			mine = append(mine, r)
+		}
+	}
+	return &api.RuleList{Rules: mine}, nil
+}
+
 func (f *fakeService) Permissions(context.Context, string) (*api.Permissions, error) {
 	return &api.Permissions{}, f.err
 }
@@ -316,7 +331,9 @@ func TestCommandsBeforeSetupSayWhatToRun(t *testing.T) {
 func TestRequestWithoutArgumentsListsTheRules(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.svc.rules = []api.Rule{rule}
+	adminOnly := rule
+	adminOnly.ID = "admin-only-rule"
+	h.svc.rules = []api.Rule{rule, adminOnly}
 	if got := h.run("request", "--profile", "work"); got != 0 {
 		t.Fatalf("exit %d: %s", got, h.errOut.String())
 	}
@@ -325,6 +342,9 @@ func TestRequestWithoutArgumentsListsTheRules(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in %q", want, out)
 		}
+	}
+	if strings.Contains(out, "admin-only-rule") {
+		t.Error("listed a rule the caller cannot request")
 	}
 	if h.svc.created != nil {
 		t.Error("created a grant")
