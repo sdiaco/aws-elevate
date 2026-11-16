@@ -1,0 +1,20 @@
+{{define "content"}}<div class="split wide">
+<div>{{template "list" .List}}</div>
+{{with .Alert}}<aside class="box detail">{{template "alert" .}}</aside>{{end}}
+{{with .Detail}}<aside class="box detail" aria-label="Grant {{.Grant.ID}}">
+<div class="card-head"><h2>{{.Grant.SourcePs.Name}} on {{.Grant.Account}}</h2><a class="btn link" href="{{$.Close}}" aria-label="Close">✕</a></div>
+<dl class="kv">
+<div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{.Grant.ID}}" title="Copy">{{.Grant.ID}}</button></dd></div>
+<div><dt>State</dt><dd>{{template "state" .Grant.State}}{{with .Grant.CloseReason}} <span class="muted">{{.}}</span>{{end}}{{if .Grant.Privileged}} <span class="tag">privileged</span>{{end}}</dd></div>
+<div><dt>Requester</dt><dd>{{.Grant.Requester.UserName}}</dd></div>
+<div><dt>Reason</dt><dd>{{.Grant.Reason}}</dd></div>
+<div><dt>Rule</dt><dd>{{.Grant.RuleID}} · config v{{.Grant.ConfigVersion}}{{if .Grant.RuleRemoved}} <span class="tag">rule removed</span>{{end}}</dd></div>
+<div><dt>Duration</dt><dd>{{short .Grant.DurationSeconds}}</dd></div>
+{{with .Grant.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}</dd></div>{{end}}
+{{with .Grant.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $.Detail.Grant.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
+{{with .Grant.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}
+</dl>
+<h3>Timeline</h3>
+<ol class="timeline">{{range .Timeline}}<li><time datetime="{{iso .At}}">{{exact .At}}</time> {{template "state" .State}}{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</li>{{end}}</ol>
+</aside>{{end}}
+</div>{{end}}

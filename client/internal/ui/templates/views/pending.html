@@ -1,0 +1,25 @@
+{{define "content"}}<div class="page-head"><h1>Pending</h1></div>
+<h2>To approve <span class="counter">({{len .ToApprove}})</span></h2>
+{{range .ToApprove}}{{template "card" .}}{{else}}<p class="muted">Nothing to approve.</p>{{end}}
+<h2 class="section">Your requests <span class="counter">({{len .Mine}})</span></h2>
+{{range .Mine}}{{template "card" .}}{{else}}<p class="muted">You have no request waiting.</p>{{end}}{{end}}
+
+{{define "card"}}<article class="box card">
+<div class="card-head"><h3>{{.Requester.UserName}} asks {{.SourcePs.Name}} on {{.Account}}</h3>{{template "state" .State}}{{if .Privileged}} <span class="tag">privileged</span>{{end}}</div>
+<dl class="kv">
+<div><dt>Reason</dt><dd>{{.Reason}}</dd></div>
+<div><dt>Duration</dt><dd>{{short .DurationSeconds}}</dd></div>
+<div><dt>Rule</dt><dd>{{.RuleID}}{{if .RuleRemoved}} <span class="tag">rule removed</span>{{end}}</dd></div>
+<div><dt>Approvers</dt><dd>{{with .ApproverGroup}}{{.Name}}{{end}}</dd></div>
+<div><dt>Requested</dt><dd><time datetime="{{iso .CreatedAt}}" title="{{exact .CreatedAt}}">{{ago .CreatedAt}}</time></dd></div>
+{{with .ApprovalExpiresAt}}<div><dt>Expires in</dt><dd><time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time> if nobody answers</dd></div>{{end}}
+<div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{.ID}}" title="Copy">{{.ID}}</button></dd></div>
+</dl>
+<details class="expand" data-load="/request/permissions?rule={{.RuleID}}"><summary>Permissions</summary><div data-load-target><p class="muted">Loading…</p></div></details>
+{{if or (can . "approve") (can . "reject")}}<details class="expand" data-load="/pending/history?user={{.Requester.UserID}}"><summary>Recent history of {{.Requester.UserName}}</summary><div data-load-target><p class="muted">Loading…</p></div></details>{{end}}
+<form method="post" class="form-actions"><input type="hidden" name="id" value="{{.ID}}">
+{{if can . "cancel"}}<a class="btn" href="/pending/cancel?id={{.ID}}">Cancel request</a>{{end}}
+{{if can . "reject"}}<a class="btn" href="/pending/reject?id={{.ID}}">Reject…</a>{{end}}
+{{if can . "approve"}}<button class="btn primary" formaction="/pending/approve">Approve</button>{{end}}
+</form>
+</article>{{end}}

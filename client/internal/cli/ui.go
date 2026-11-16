@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/sdiaco/aws-elevate/client/internal/api"
+	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/ui"
 )
 
@@ -22,15 +24,34 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 	if len(rest) > 0 {
 		return fmt.Errorf("unexpected argument %q: %w", rest[0], errUsage)
 	}
-	if _, err := setUpTarget(e, f.profileName(e)); err != nil {
+	b, svc, err := connect(ctx, e, f.profileName(e))
+	if err != nil {
 		return err
+	}
+	me, err := svc.Me(ctx)
+	if err != nil {
+		return err
+	}
+	app := &ui.App{
+		Me:      *me,
+		Service: svc,
+		Ready: func(ctx context.Context, g api.Grant) (string, error) {
+			role := RoleName(g.ID)
+			if err := b.WaitReady(ctx, g.Account, role); err != nil {
+				return "", err
+			}
+			return awsx.WriteProfile(e.ConfigFile, b.Source(), g.SourcePs.Name, g.Account, role)
+		},
+		Console: func(g api.Grant) string {
+			return awsx.ConsoleLink(b.Source().SSOStartURL, g.Account, RoleName(g.ID))
+		},
 	}
 	ln, err := ui.Listen()
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
-	s, err := ui.New(ln, ui.Pages(), uiIdle)
+	s, err := ui.New(ln, ui.Pages(app), uiIdle)
 	if err != nil {
 		return err
 	}
