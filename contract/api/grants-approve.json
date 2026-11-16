@@ -42,7 +42,8 @@
       "ruleRemoved": false,
       "actions": [
         "revoke"
-      ]
+      ],
+      "approvalExpiresAt": null
     }
   }
 }

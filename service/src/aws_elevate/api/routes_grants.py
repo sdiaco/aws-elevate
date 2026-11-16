@@ -16,7 +16,16 @@ from botocore.exceptions import ClientError
 from ..adapters.grants_table import RETENTION_MONTHS, Duplicate, StateConflict
 from ..core.authz import actions, can
 from ..core.ids import new_grant_id
-from ..core.models import Approval, CloseReason, Grant, Identity, Principal, Rule, State
+from ..core.models import (
+    APPROVAL_TIMEOUT_SECONDS,
+    Approval,
+    CloseReason,
+    Grant,
+    Identity,
+    Principal,
+    Rule,
+    State,
+)
 from ..core.rules import InvalidRequest, coherence_errors, requestable, validate_request
 from ..core.times import iso, parse_iso
 from .errors import ApiError, forbidden
@@ -133,6 +142,7 @@ class GrantRoutes:
             "error": g.error,
             "ruleRemoved": g.rule_id not in rule_ids,
             "actions": sorted(actions(identity, g) - {"view"}),
+            "approvalExpiresAt": _approval_expires_at(g),
         }
 
     def _rule_ids(self) -> set[str]:
@@ -413,3 +423,11 @@ class GrantRoutes:
 
 def _me(identity: Identity) -> Principal:
     return Principal(user_id=identity.user_id, user_name=identity.user_name)
+
+
+def _approval_expires_at(g: Grant) -> str | None:
+    """When a pending request times out. The wait starts with the execution, right after
+    creation, so this is within seconds of the real timeout."""
+    if g.state != State.PENDING:
+        return None
+    return iso(parse_iso(g.created_at) + timedelta(seconds=APPROVAL_TIMEOUT_SECONDS))

@@ -45,7 +45,8 @@
       "revokeReason": "incident closed",
       "error": null,
       "ruleRemoved": false,
-      "actions": []
+      "actions": [],
+      "approvalExpiresAt": null
     }
   }
 }

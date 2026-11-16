@@ -4,6 +4,9 @@ contract/vocabulary.json (design §3.2, §3.3)."""
 from dataclasses import dataclass
 from enum import StrEnum
 
+# How long a manual request waits for its approvers (design §6.2).
+APPROVAL_TIMEOUT_SECONDS = 1800
+
 
 class State(StrEnum):
     PENDING = "pending"

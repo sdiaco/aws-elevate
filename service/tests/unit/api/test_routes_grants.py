@@ -1,5 +1,7 @@
 import base64
+import dataclasses
 import json
+from datetime import timedelta
 
 import pytest
 from botocore.exceptions import ClientError
@@ -7,6 +9,7 @@ from botocore.exceptions import ClientError
 from aws_elevate.api.errors import ApiError
 from aws_elevate.api.routes_grants import GrantRoutes
 from aws_elevate.core.models import CloseReason, Principal, State
+from aws_elevate.core.times import parse_iso
 
 
 @pytest.fixture
@@ -382,8 +385,18 @@ def test_grant_view_has_every_contract_key(make, fx):
         "id", "state", "closeReason", "ruleId", "approval", "configVersion", "requester",
         "approver", "approverGroup", "sourcePs", "account", "durationSeconds", "reason",
         "privileged", "createdAt", "activatedAt", "expiresAt", "closedAt", "revokedBy",
-        "revokeReason", "error", "ruleRemoved", "actions",
+        "revokeReason", "error", "ruleRemoved", "actions", "approvalExpiresAt",
     }  # fmt: skip
+
+
+def test_a_pending_grant_says_when_its_approval_wait_ends(make, fx):
+    pending = fx.make_grant()
+    active = dataclasses.replace(pending, id="bcdef34567", state=State.ACTIVE)
+    routes, _, _ = make(pending, active)
+    created = parse_iso(pending.created_at)
+    view = routes.get(fx.LEAD, "abcde23456")["grant"]
+    assert parse_iso(view["approvalExpiresAt"]) == created + timedelta(seconds=1800)
+    assert routes.get(fx.LEAD, "bcdef34567")["grant"]["approvalExpiresAt"] is None
 
 
 # ---------- GET /grants (design §11.3: by key, paginated, never a Scan) ----------

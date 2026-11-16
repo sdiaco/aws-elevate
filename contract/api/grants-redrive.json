@@ -45,7 +45,8 @@
       "ruleRemoved": false,
       "actions": [
         "redrive"
-      ]
+      ],
+      "approvalExpiresAt": null
     }
   }
 }
