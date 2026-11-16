@@ -99,6 +99,7 @@ class GrantRoutes:
         sfn,
         store,
         max_open: int,
+        approver_history: str | None = "rules",
         clock: Callable[[], datetime] | None = None,
     ):
         self._table = table
@@ -106,6 +107,9 @@ class GrantRoutes:
         self._sfn = sfn
         self._store = store
         self._max_open = max_open
+        # Stack parameter ApproverHistory (design §11.3); anything but "all" is the
+        # narrower "rules".
+        self._approver_sees_all = approver_history == "all"
         self._now = clock or (lambda: datetime.now(UTC))
 
     # ---------- view ----------
@@ -347,14 +351,20 @@ class GrantRoutes:
                 identity.user_id, start, end, PAGE_SIZE, after, open_only
             )
             nxt = {"m": None, "k": key} if key else None
+        elif scope == "approvable" and user is not None:
+            # The requester's history on an In attesa card (design §11.3).
+            grants, key = self._table.by_user(user, start, end, PAGE_SIZE, after, open_only)
+            if self._approver_sees_all and self._waits_on(identity, user):
+                rule_ids = self._rule_ids()
+                return {
+                    "items": [self._view(identity, g, rule_ids) for g in grants],
+                    "cursor": _encode({"m": None, "k": key}) if key else None,
+                }
+            grants = [g for g in grants if self._approves(identity, g)]
+            nxt = {"m": None, "k": key} if key else None
         elif scope == "approvable":
             grants, key = self._table.open_grants(PAGE_SIZE, after)
-            grants = [
-                g
-                for g in grants
-                if g.approver_group and g.approver_group.id in identity.group_ids
-                if user is None or g.requester.user_id == user
-            ]
+            grants = [g for g in grants if self._approves(identity, g)]
             nxt = {"m": None, "k": key} if key else None
         else:
             if not (identity.is_admin or identity.is_auditor):
@@ -375,6 +385,18 @@ class GrantRoutes:
             ],
             "cursor": _encode(nxt) if nxt else None,
         }
+
+    @staticmethod
+    def _approves(identity: Identity, grant: Grant) -> bool:
+        return grant.approver_group is not None and grant.approver_group.id in identity.group_ids
+
+    def _waits_on(self, identity: Identity, user: str) -> bool:
+        """The user has a request pending that the caller can approve. Open grants per user
+        are capped (MaxOpenGrantsPerUser), so one page holds them all."""
+        now = self._now()
+        start = iso(now - timedelta(days=31 * RETENTION_MONTHS))
+        grants, _ = self._table.by_user(user, start, iso(now), PAGE_SIZE, None, True)
+        return any(can(identity, "approve", g) for g in grants)
 
     def _by_months(self, start: str, end: str, cursor: dict | None):
         """Up to one page across the month partitions of the period, newest first."""

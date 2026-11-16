@@ -31,7 +31,8 @@ type fakeService struct {
 	afterAction string // state returned by an action
 }
 
-func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
+func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
+	f.calls = append(f.calls, "requestable rules")
 	return &api.RuleList{ConfigVersion: 3, Rules: f.rules}, nil
 }
 
@@ -235,6 +236,10 @@ func TestRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 	out := h.get(t, "/request")
 	contains(t, out, `href="/request?rule=ssm-prod"`, "ssm-write", "Choose what to request")
 	lacks(t, out, `<textarea`)
+	// Admins and auditors see every rule elsewhere; Request shows only what can be asked.
+	if h.svc.calls[0] != "requestable rules" {
+		t.Errorf("calls %v", h.svc.calls)
+	}
 
 	out = h.get(t, "/request?rule=ssm-prod")
 	contains(t, out,

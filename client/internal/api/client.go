@@ -126,6 +126,13 @@ func (c *Client) Rules(ctx context.Context) (*RuleList, error) {
 	return &out, c.do(ctx, http.MethodGet, "/v1/rules", nil, nil, &out)
 }
 
+// RequestableRules are the rules the caller can request, also for admins and auditors who
+// see every rule with Rules (design §11.2).
+func (c *Client) RequestableRules(ctx context.Context) (*RuleList, error) {
+	var out RuleList
+	return &out, c.do(ctx, http.MethodGet, "/v1/rules", url.Values{"scope": {"requestable"}}, nil, &out)
+}
+
 func (c *Client) Permissions(ctx context.Context, ruleID string) (*Permissions, error) {
 	var out Permissions
 	return &out, c.do(ctx, http.MethodGet, "/v1/rules/"+url.PathEscape(ruleID)+"/permissions", nil, nil, &out)

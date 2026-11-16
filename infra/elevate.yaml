@@ -46,6 +46,13 @@ Parameters:
     Default: 5
     MinValue: 1
     Description: Maximum number of grants not yet closed per user (design §6.1).
+  ApproverHistory:
+    Type: String
+    Default: rules
+    AllowedValues: [rules, all]
+    Description: >-
+      What an approver sees of a requester's history on a pending request: "rules" (only
+      the grants of the rules they approve) or "all" (every grant of that requester).
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
@@ -1354,6 +1361,7 @@ Resources:
           ADMIN_PS_NAME: ElevateAdmin
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
+          APPROVER_HISTORY: !Ref ApproverHistory
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
           STACK_ID: !Ref AWS::StackId
           ALERTS_TOPIC_ARN: !Ref AlertsTopic

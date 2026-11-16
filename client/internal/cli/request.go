@@ -38,7 +38,7 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	rules, err := svc.Rules(ctx)
+	rules, err := svc.RequestableRules(ctx)
 	if err != nil {
 		return err
 	}

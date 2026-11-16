@@ -44,7 +44,7 @@ def error_of(call) -> ApiError:
 def test_requester_sees_only_the_rules_of_their_groups(make, fx):
     other = dataclasses.replace(fx.AUTO_RULE, id="other", group=fx.LEADS)
     routes, _ = make(config=fx.FakeConfig(fx.AUTO_RULE, other))
-    body = routes.list(fx.REQUESTER)
+    body = routes.list(fx.REQUESTER, {})
     assert body["configVersion"] == 3
     assert [r["id"] for r in body["rules"]] == ["ssm-dev"]
 
@@ -52,13 +52,13 @@ def test_requester_sees_only_the_rules_of_their_groups(make, fx):
 @pytest.mark.parametrize("who", ["ADMIN", "AUDITOR"])
 def test_admin_and_auditor_see_every_rule(make, fx, who):
     routes, _ = make()
-    body = routes.list(getattr(fx, who))
+    body = routes.list(getattr(fx, who), {})
     assert [r["id"] for r in body["rules"]] == ["ssm-dev", "ssm-prod"]
 
 
 def test_rules_are_in_the_document_form(make, fx):
     routes, _ = make()
-    rule = routes.list(fx.REQUESTER)["rules"][1]
+    rule = routes.list(fx.REQUESTER, {})["rules"][1]
     assert rule == {
         "id": "ssm-prod",
         "group": {"id": "g-req", "name": "backend-devs"},
@@ -71,9 +71,30 @@ def test_rules_are_in_the_document_form(make, fx):
     }
 
 
+@pytest.mark.parametrize("who", ["ADMIN", "AUDITOR"])
+def test_requestable_scope_hides_the_rules_admins_and_auditors_cannot_request(make, fx, who):
+    routes, _ = make()
+    assert routes.list(getattr(fx, who), {"scope": "requestable"})["rules"] == []
+
+
+def test_requestable_scope_keeps_the_rules_of_the_caller_groups(make, fx):
+    other = dataclasses.replace(fx.AUTO_RULE, id="other", group=fx.LEADS)
+    routes, _ = make(config=fx.FakeConfig(fx.AUTO_RULE, other))
+    admin_requester = dataclasses.replace(fx.ADMIN, group_ids=frozenset({"g-req"}))
+    body = routes.list(admin_requester, {"scope": "requestable"})
+    assert [r["id"] for r in body["rules"]] == ["ssm-dev"]
+
+
+@pytest.mark.parametrize("query", [{"scope": "all"}, {"scope": ""}, {"other": "x"}])
+def test_unknown_rules_query_is_refused(make, fx, query):
+    routes, _ = make()
+    err = error_of(lambda: routes.list(fx.ADMIN, query))
+    assert (err.status, err.code) == (400, "invalid_request")
+
+
 def test_caller_in_no_rule_gets_an_empty_list(make, fx):
     routes, _ = make()
-    assert routes.list(fx.STRANGER)["rules"] == []
+    assert routes.list(fx.STRANGER, {})["rules"] == []
 
 
 # ---------- GET /rules/{id}/permissions ("Cosa otterrai") ----------
@@ -116,6 +137,20 @@ def test_permissions_without_boundary(make, fx):
 def test_requester_asking_for_a_rule_not_theirs_is_forbidden(make, fx):
     routes, sso = make()
     err = error_of(lambda: routes.permissions(fx.STRANGER, "ssm-dev"))
+    assert (err.status, err.code) == (403, "forbidden")
+    assert sso.reads == []
+
+
+def test_approver_of_a_rule_reads_its_permissions_without_being_able_to_request_it(make, fx):
+    # The approver must see what they grant (design §11.2, In attesa).
+    routes, sso = make()
+    assert routes.permissions(fx.LEAD, "ssm-prod")["managed"]
+    assert sso.reads == [fx.PS_ARN]
+
+
+def test_approver_cannot_read_a_rule_they_do_not_approve(make, fx):
+    routes, sso = make()
+    err = error_of(lambda: routes.permissions(fx.LEAD, "ssm-dev"))  # auto rule, no approvers
     assert (err.status, err.code) == (403, "forbidden")
     assert sso.reads == []
 

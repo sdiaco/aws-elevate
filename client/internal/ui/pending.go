@@ -87,10 +87,11 @@ func (a *App) confirmRequest(w http.ResponseWriter, r *http.Request, title, butt
 }
 
 // requesterHistory is the recent history of a requester, read when the card is opened.
-// Admins and auditors read all of it; an approver sees what their groups can approve.
+// Admins and auditors read all of it; for an approver the service decides how much
+// (stack parameter ApproverHistory, design §11.3).
 func (a *App) requesterHistory(w http.ResponseWriter, r *http.Request) {
 	q := api.ListQuery{Scope: "approvable", User: r.URL.Query().Get("user")}
-	note := "Open requests and grants in your approver groups; the full history is for admins and auditors."
+	note := "Last 30 days, as far as your role allows."
 	if a.has("admin") || a.has("auditor") {
 		q.Scope, note = "all", "Last 30 days."
 	}

@@ -28,7 +28,7 @@ _ROUTES = [
     ("POST", re.compile(rf"grants/{_ID}/cancel"), "grants", "cancel", None, 200),
     ("POST", re.compile(rf"grants/{_ID}/revoke"), "grants", "revoke", "body", 200),
     ("POST", re.compile(rf"grants/{_ID}/redrive"), "grants", "redrive", None, 200),
-    ("GET", re.compile(r"rules"), "rules", "list", None, 200),
+    ("GET", re.compile(r"rules"), "rules", "list", "query", 200),
     ("GET", re.compile(r"rules/([^/]+)/permissions"), "rules", "permissions", None, 200),
     ("POST", re.compile(r"rules/check"), "rules", "check", "body", 200),
     ("GET", re.compile(r"config/versions"), "versions", "list", None, 200),
@@ -192,6 +192,7 @@ def _build_api() -> Api:
         sfn=StepFunctions(boto3.client("stepfunctions"), os.environ["STATE_MACHINE_ARN"]),
         store=store,
         max_open=int(os.environ["MAX_OPEN_GRANTS_PER_USER"]),
+        approver_history=os.environ.get("APPROVER_HISTORY"),
     )
     rules = RuleRoutes(
         config=config, sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"])
