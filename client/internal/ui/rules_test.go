@@ -21,6 +21,7 @@ type fakeAdmin struct {
 	published []string // documents
 	latest    []*int
 	conflict  bool
+	previewed []string // versions
 }
 
 func (f *fakeAdmin) PermissionSets(_ context.Context, refresh bool) ([]awsx.Named, error) {

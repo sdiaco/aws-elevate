@@ -7,6 +7,7 @@ import (
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/ui"
 )
 
 // uiAdmin gives the Rules view the admin's own AWS calls: the reads of §7.5, with the
@@ -42,4 +43,12 @@ func (a *uiAdmin) Groups(ctx context.Context) ([]awsx.Named, error) { return a.a
 
 func (a *uiAdmin) PublishRules(ctx context.Context, latest *int, doc []byte) (int, error) {
 	return a.aws.PublishRules(ctx, a.inst.RulesApplicationID, a.inst.RulesProfileID, latest, doc)
+}
+
+func (a *uiAdmin) PreviewUpdate(ctx context.Context, v string) (*ui.UpdatePreview, error) {
+	p, cmd, err := previewInfra(ctx, a.aws, a.inst.StackID, v)
+	if err != nil {
+		return nil, err
+	}
+	return &ui.UpdatePreview{NoChanges: p.NoChanges, Changes: p.Changes, Command: cmd}, nil
 }

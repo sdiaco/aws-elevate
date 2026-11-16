@@ -89,13 +89,8 @@ func typeOf(r release.Release) string {
 }
 
 func showPreview(ctx context.Context, e *Env, s *adminSession, v string) error {
-	region, stackName, err := stackRegionAndName(s.inst.StackID)
-	if err != nil {
-		return err
-	}
-	url := fmt.Sprintf("https://elevate-releases-%s.s3.%s.amazonaws.com/v%s/elevate.yaml", region, region, v)
-	fmt.Fprintf(e.Stdout, "Previewing infrastructure %s on stack %s (nothing is changed)...\n", v, stackName)
-	p, err := s.aws.PreviewUpdate(ctx, s.inst.StackID, url)
+	fmt.Fprintf(e.Stdout, "Previewing infrastructure %s (nothing is changed)...\n", v)
+	p, cmd, err := previewInfra(ctx, s.aws, s.inst.StackID, v)
 	if err != nil {
 		return err
 	}
@@ -112,6 +107,22 @@ func showPreview(ctx context.Context, e *Env, s *adminSession, v string) error {
 		return err
 	}
 	fmt.Fprintln(e.Stdout, "\nTo apply it, run with your own admin role of the account (ElevateAdmin cannot):")
+	fmt.Fprintln(e.Stdout, "  "+cmd)
+	return nil
+}
+
+// previewInfra creates the change set of infrastructure release v on the stack and
+// returns it with the command that applies the update. CLI and interface both use it.
+func previewInfra(ctx context.Context, aws AdminAWS, stackID, v string) (awsx.Preview, string, error) {
+	region, stackName, err := stackRegionAndName(stackID)
+	if err != nil {
+		return awsx.Preview{}, "", err
+	}
+	url := fmt.Sprintf("https://elevate-releases-%s.s3.%s.amazonaws.com/v%s/elevate.yaml", region, region, v)
+	p, err := aws.PreviewUpdate(ctx, stackID, url)
+	if err != nil {
+		return awsx.Preview{}, "", err
+	}
 	cmd := []string{
 		"aws cloudformation update-stack",
 		"--profile <your admin profile> --region " + region,
@@ -126,8 +137,7 @@ func showPreview(ctx context.Context, e *Env, s *adminSession, v string) error {
 		cmd = append(cmd, "--parameters "+strings.Join(params, " "))
 	}
 	cmd = append(cmd, "--capabilities CAPABILITY_NAMED_IAM")
-	fmt.Fprintln(e.Stdout, "  "+strings.Join(cmd, " \\\n    "))
-	return nil
+	return p, strings.Join(cmd, " \\\n    "), nil
 }
 
 // stackRegionAndName reads arn:aws:cloudformation:<region>:<account>:stack/<name>/<id>.

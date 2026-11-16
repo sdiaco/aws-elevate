@@ -27,7 +27,8 @@ type Page struct {
 	User    string
 	Roles   string
 	Alerts  []Alert
-	Content any // the data of the view's "content" template
+	Content any  // the data of the view's "content" template
+	Bare    bool // full screen, without the navigation
 }
 
 // Alert is a message above the view. Kind is error, success, warning or info.

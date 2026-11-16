@@ -45,6 +45,10 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		}
 		admin = newUIAdmin(e, profile, aws, me.Installation)
 	}
+	updates, err := uiUpdates(e)
+	if err != nil {
+		return err
+	}
 	app := &ui.App{
 		Me:      *me,
 		Service: svc,
@@ -58,7 +62,8 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		Console: func(g api.Grant) string {
 			return awsx.ConsoleLink(b.Source().SSOStartURL, g.Account, RoleName(g.ID))
 		},
-		Admin: admin,
+		Admin:   admin,
+		Updates: updates,
 	}
 	ln, err := ui.Listen()
 	if err != nil {
@@ -77,6 +82,22 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 	}
 	fmt.Fprintln(e.Stdout, "The interface stops with Ctrl+C or after 30 minutes without use.")
 	return s.Serve(ctx)
+}
+
+// uiUpdates gives the Updates view the same releases and client update as the commands.
+func uiUpdates(e *Env) (*ui.Updates, error) {
+	settings, err := awsx.LoadSettings(e.SettingsPath)
+	if err != nil {
+		return nil, err
+	}
+	return &ui.Updates{
+		Checked:      settings.UpdatesChecked(),
+		SettingsPath: e.SettingsPath,
+		Releases:     e.Releases,
+		InstallClient: func(ctx context.Context, v string) (string, error) {
+			return installClient(ctx, e, v)
+		},
+	}, nil
 }
 
 // openBrowser asks the desktop to open url and does not wait for the browser.
