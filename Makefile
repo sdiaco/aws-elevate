@@ -54,7 +54,7 @@ else
 	if [ -n "$$unformatted" ]; then echo "gofmt: these files need formatting:"; echo "$$unformatted"; exit 1; fi
 	cd client && go vet ./...
 	@mkdir -p build
-	cd client && go test -coverprofile=../build/client.cover ./internal/...
+	cd client && go test -count=1 -coverprofile=../build/client.cover ./internal/...
 	@cd client && go tool cover -func=../build/client.cover | awk -v min=$(CLIENT_COVERAGE) \
 		'/^total:/ { pct = $$3; sub("%", "", pct); print "client coverage " pct "%"; \
 		if (pct + 0 < min) { print "below the " min "% threshold"; exit 1 } }'
@@ -69,7 +69,7 @@ test-client:
 ifeq ($(wildcard client/go.mod),)
 	@echo "warning: client/go.mod not found, skipping client tests"
 else
-	cd client && go test ./...
+	cd client && go test -count=1 ./...
 endif
 
 package:

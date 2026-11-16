@@ -57,6 +57,11 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	if g.State == api.StatePending {
+		fmt.Fprintf(e.Stderr, "Request %s is waiting for approval by %s; it expires %s.\n"+
+			"Once approved: aws elevate shell %s\n", g.ID, approvers(g), inMinutes(g.ApprovalExpiresAt), g.ID)
+		return nil
+	}
 	fmt.Fprintf(e.Stderr, "Request %s created.\n", g.ID)
 	if g, err = waitActive(ctx, e, svc, g); err != nil {
 		return err
@@ -76,28 +81,19 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 	return nil
 }
 
-// waitActive polls the grant until the service activates or closes it. A pending request
-// waits for its approvers, up to the service's own timeout.
+// waitActive polls an activating grant until the service activates or closes it.
 func waitActive(ctx context.Context, e *Env, svc Service, g *api.Grant) (*api.Grant, error) {
-	told := ""
+	fmt.Fprintln(e.Stderr, "Activating…")
 	for attempt := 0; ; attempt++ {
 		switch g.State {
 		case api.StateActive:
 			return g, nil
 		case api.StateClosed:
 			return nil, fmt.Errorf("request %s closed: %s", g.ID, closeText(g))
-		case api.StatePending:
-			if told != g.State {
-				fmt.Fprintf(e.Stderr, "Waiting for approval by %s. Ctrl-C stops waiting; the request stays pending (aws elevate status).\n", approvers(g))
-			}
 		case api.StateActivating:
-			if told != g.State {
-				fmt.Fprintln(e.Stderr, "Activating…")
-			}
 		default:
 			return nil, fmt.Errorf("request %s is %s: see aws elevate status", g.ID, g.State)
 		}
-		told = g.State
 		if err := e.Sleep(ctx, pollDelays[min(attempt, len(pollDelays)-1)]); err != nil {
 			return nil, fmt.Errorf("stopped waiting for %s: %w", g.ID, err)
 		}
@@ -191,6 +187,15 @@ func closeText(g *api.Grant) string {
 		text += " (" + *g.Error + ")"
 	}
 	return text
+}
+
+// inMinutes is "in 30 min (10:30)", rounded to the nearest minute.
+func inMinutes(t *time.Time) string {
+	if t == nil {
+		return "when the service times it out"
+	}
+	left := time.Until(*t).Round(time.Minute)
+	return fmt.Sprintf("in %d min (%s)", int(left.Minutes()), t.Local().Format("15:04"))
 }
 
 func when(t *time.Time) string {

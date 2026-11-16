@@ -55,6 +55,8 @@ type Grant struct {
 	RuleRemoved     bool          `json:"ruleRemoved"`
 	// Actions the caller may take on this grant, decided by the service.
 	Actions []string `json:"actions"`
+	// When a pending request times out; null in every other state.
+	ApprovalExpiresAt *time.Time `json:"approvalExpiresAt"`
 }
 
 type GrantResponse struct {
