@@ -1503,15 +1503,26 @@ Resources:
             Effect: Allow
             Action: [cloudtrail:LookupEvents, cloudtrail:DescribeTrails]
             Resource: "*"
-          # Update previews only (design §12.3); applying them is not allowed.
-          - Sid: PreviewStackUpdates
+          # Update previews only (design §12.3, spike C10): change sets of this stack from
+          # the official release bucket can be created and read, never applied.
+          - Sid: ReadStackAndPreviews
             Effect: Allow
             Action:
               - cloudformation:DescribeStacks
-              - cloudformation:CreateChangeSet
               - cloudformation:DescribeChangeSet
               - cloudformation:ListChangeSets
             Resource: !Ref AWS::StackId
+          - Sid: PreviewReleaseTemplates
+            Effect: Allow
+            Action: cloudformation:CreateChangeSet
+            Resource: !Ref AWS::StackId
+            Condition:
+              StringLike:
+                cloudformation:TemplateUrl: !Sub https://elevate-releases-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/*
+          - Sid: ReadReleaseTemplates
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::elevate-releases-${AWS::Region}/*
           - Sid: DoctorTopics
             Effect: Allow
             Action: sns:ListSubscriptionsByTopic

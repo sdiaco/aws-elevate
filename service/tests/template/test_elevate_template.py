@@ -453,6 +453,35 @@ def test_admin_cannot_write_permission_sets_iam_lambda_or_apply_stack_updates():
     assert forbidden == []
 
 
+def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket():
+    # design §12.3, spike C10: create and read change sets, never apply them.
+    release_bucket = "elevate-releases-${AWS::Region}"
+    statements = ps_statements("AdminPs")
+    cfn = [
+        s for s in statements if any(a.startswith("cloudformation:") for a in as_list(s["Action"]))
+    ]
+    assert {a for s in cfn for a in as_list(s["Action"])} == {
+        "cloudformation:DescribeStacks",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ListChangeSets",
+    }
+    for s in cfn:
+        assert s["Resource"] == {"Ref": "AWS::StackId"}
+    (create,) = [s for s in cfn if "cloudformation:CreateChangeSet" in as_list(s["Action"])]
+    assert as_list(create["Action"]) == ["cloudformation:CreateChangeSet"]
+    assert create["Condition"] == {
+        "StringLike": {
+            "cloudformation:TemplateUrl": {
+                "Fn::Sub": f"https://{release_bucket}.s3.${{AWS::Region}}.amazonaws.com/*"
+            }
+        }
+    }
+    (read,) = [s for s in statements if "s3:GetObject" in as_list(s["Action"])]
+    assert as_list(read["Action"]) == ["s3:GetObject"]
+    assert read["Resource"] == {"Fn::Sub": f"arn:${{AWS::Partition}}:s3:::{release_bucket}/*"}
+
+
 def test_service_permission_sets_are_assigned_to_the_groups_by_id_in_this_account():
     for assignment, ps, group in (
         ("RequesterAssignment", "RequesterPs", "RequesterGroupId"),
