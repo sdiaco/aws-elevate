@@ -1,0 +1,120 @@
+"""infra/elevate-guardrails.yaml, the optional SCP stack of the management account (design
+§8.4, spikes S16, S21). Only template tests: activating SCPs in the test organization is
+the owner's call.
+
+Exemptions are exact role ARNs, or the deployer patterns the installer passes (reserved
+AWSReservedSSO_* names, which no one can create): a role named like a service role cannot
+bypass the policy (finding of the phase B2 review), and IAM on role/elevate/* is denied to
+everyone else, so no one can make or change such a role."""
+
+import json
+from pathlib import Path
+
+from cfnlint.decode import decode
+
+TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "infra" / "elevate-guardrails.yaml"
+TEMPLATE, _errors = decode(str(TEMPLATE_PATH))
+RESOURCES = TEMPLATE["Resources"]
+
+API_ROLE = {
+    "Fn::Sub": "arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/${StackName}-api"
+}
+DEPLOYERS = {"Ref": "DeployerRoleArns"}
+
+
+def as_list(value) -> list:
+    return value if isinstance(value, list) else [value]
+
+
+def policy() -> dict:
+    (scp,) = [r for r in RESOURCES.values() if r["Type"] == "AWS::Organizations::Policy"]
+    return scp
+
+
+def statements() -> dict[str, dict]:
+    return {s["Sid"]: s for s in policy()["Properties"]["Content"]["Statement"]}
+
+
+def exempt(statement: dict) -> list:
+    (key,) = statement["Condition"]["ArnNotLike"]
+    assert key == "aws:PrincipalArn"
+    return as_list(statement["Condition"]["ArnNotLike"][key])
+
+
+def actions(statement: dict) -> set[str]:
+    return set(as_list(statement["Action"]))
+
+
+def test_template_decodes_without_errors():
+    assert not _errors
+
+
+def test_one_scp_attached_to_the_service_account_only():
+    assert len(RESOURCES) == 1
+    props = policy()["Properties"]
+    assert props["Type"] == "SERVICE_CONTROL_POLICY"
+    assert props["TargetIds"] == [{"Ref": "ServiceAccountId"}]
+
+
+def test_every_statement_denies_all_but_exempt_principals():
+    for sid, s in statements().items():
+        assert s["Effect"] == "Deny", sid
+        assert set(s["Condition"]) == {"ArnNotLike"}, sid
+        assert exempt(s), sid
+
+
+def test_runtime_actions_are_left_only_to_the_api_role_and_the_deployers():
+    s = statements()["ProtectExecutions"]
+    assert actions(s) == {
+        "states:SendTaskSuccess",
+        "states:SendTaskFailure",
+        "states:SendTaskHeartbeat",
+        "states:StartExecution",
+        "states:StopExecution",
+        "states:RedriveExecution",
+    }
+    # SendTask* has no resource-level permissions.
+    assert s["Resource"] == "*"
+    principals = json.dumps(s["Condition"])
+    assert json.dumps(API_ROLE) in principals and json.dumps(DEPLOYERS) in principals
+
+
+def test_service_resources_and_roles_are_changed_only_by_the_deployers():
+    s = statements()
+    lambdas, machine, roles = s["ProtectFunctions"], s["ProtectStateMachine"], s["ProtectRoles"]
+    assert {
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+    } <= actions(lambdas)
+    assert actions(machine) == {"states:UpdateStateMachine", "states:DeleteStateMachine"}
+    assert actions(roles) == {"iam:*"}
+    assert roles["Resource"] == {
+        "Fn::Sub": "arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/*"
+    }
+    for statement in (lambdas, machine, roles):
+        assert exempt(statement) == [DEPLOYERS]
+
+
+def test_no_wildcard_exemption_besides_the_deployer_parameter():
+    for sid, s in statements().items():
+        for principal in exempt(s):
+            if principal == DEPLOYERS:
+                continue
+            assert "*" not in json.dumps(principal).replace("${AWS::Partition}", ""), sid
+
+
+def test_deployer_parameter_has_no_default():
+    params = TEMPLATE["Parameters"]
+    assert "Default" not in params["DeployerRoleArns"]
+    assert params["ServiceAccountId"]["AllowedPattern"] == "^[0-9]{12}$"
+    assert params["StackName"]["Default"] == "elevate"
+
+
+def test_policy_fits_the_scp_size_limit():
+    content = policy()["Properties"]["Content"]
+    # 5,120 characters; parameters add about 200 when substituted.
+    assert len(json.dumps(content, separators=(",", ":"))) < 4500
