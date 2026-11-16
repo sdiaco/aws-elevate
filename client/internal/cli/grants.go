@@ -80,8 +80,12 @@ func printGrants(e *Env, grants []api.Grant) {
 		if g.Privileged {
 			state += ", privileged"
 		}
+		until := g.ExpiresAt
+		if g.State == api.StatePending {
+			until = g.ApprovalExpiresAt // when the request times out
+		}
 		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.ID, state, rule, g.SourcePs.Name, g.Account,
-			g.Requester.UserName, when(g.ExpiresAt), g.Reason)
+			g.Requester.UserName, when(until), g.Reason)
 	}
 	w.Flush()
 }
@@ -191,7 +195,11 @@ func runShell(ctx context.Context, e *Env, args []string) error {
 	} else if g, err = onlyOpen(ctx, svc, isActive); err != nil {
 		return err
 	}
-	// The profile may come from another machine or the UI: write it again, it is stable.
+	// The grant may have just become active (after an approval): wait until AWS accepts the
+	// role. The profile may come from another machine or the UI: write it again, it is stable.
+	if err := b.WaitReady(ctx, g.Account, RoleName(g.ID)); err != nil {
+		return err
+	}
 	name, err := awsx.WriteProfile(e.ConfigFile, b.Source(), g.SourcePs.Name, g.Account, RoleName(g.ID))
 	if err != nil {
 		return err

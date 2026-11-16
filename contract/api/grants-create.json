@@ -44,7 +44,8 @@
       "ruleRemoved": false,
       "actions": [
         "cancel"
-      ]
+      ],
+      "approvalExpiresAt": "2026-11-15T10:30:00Z"
     }
   }
 }

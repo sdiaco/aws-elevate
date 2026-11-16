@@ -10,10 +10,11 @@ snapshot of the record, from which the events take their fields."""
 
 import json
 
+from .core.models import APPROVAL_TIMEOUT_SECONDS
+
 _LAMBDA = "arn:aws:states:::lambda:invoke"
 _LAMBDA_WAIT = "arn:aws:states:::lambda:invoke.waitForTaskToken"
 _PUT_EVENTS = "arn:aws:states:::events:putEvents"
-APPROVAL_TIMEOUT_SECONDS = 1800  # design §6.2
 
 _ENGINE_RETRY = [
     {

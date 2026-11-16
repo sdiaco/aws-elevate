@@ -37,7 +37,8 @@
       "revokeReason": null,
       "error": null,
       "ruleRemoved": false,
-      "actions": []
+      "actions": [],
+      "approvalExpiresAt": null
     }
   }
 }

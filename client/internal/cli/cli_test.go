@@ -326,7 +326,7 @@ func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
 	h.setUp(t)
 	h.svc.rules = []api.Rule{rule}
 	h.svc.grant = grantFor("abcde12345")
-	h.svc.states = []string{api.StatePending, api.StatePending, api.StateActivating, api.StateActive}
+	h.svc.states = []string{api.StateActivating, api.StateActivating, api.StateActivating, api.StateActive}
 
 	got := h.run("request", "ssm-prod", "--account", "prod", "--duration", "45m", "--reason", "incident 42", "--profile", "work")
 	if got != 0 {
@@ -344,9 +344,6 @@ func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
 	}
 	if h.out.String() != "export AWS_PROFILE=jit-ssm-write-222222222222\n" {
 		t.Errorf("stdout %q", h.out.String())
-	}
-	if !strings.Contains(h.errOut.String(), "approval by group leads") {
-		t.Errorf("stderr %q", h.errOut.String())
 	}
 	cfg, _ := os.ReadFile(h.env.ConfigFile)
 	if !strings.Contains(string(cfg), "sso_role_name = JIT-abcde12345") || !strings.Contains(string(cfg), "sso_session = corp") {
@@ -368,14 +365,36 @@ func TestRequestKeepsAnUnknownAccountAsTyped(t *testing.T) {
 	}
 }
 
-func TestRequestClosedWhileWaiting(t *testing.T) {
+func TestRequestPendingExitsAndSaysWhenItExpires(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
 	h.svc.grant = grantFor("abcde12345")
-	h.svc.grant.CloseReason = ptr("rejected")
-	h.svc.states = []string{api.StatePending, api.StateClosed}
+	h.svc.grant.ApprovalExpiresAt = ptr(time.Now().Add(29*time.Minute + 50*time.Second))
+	h.svc.states = []string{api.StatePending}
 	got := h.run("request", "ssm-prod", "--account", "prod", "--reason", "x", "--profile", "work")
-	if got != 1 || !strings.Contains(h.errOut.String(), "closed: rejected") {
+	if got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	msg := h.errOut.String()
+	for _, want := range []string{"abcde12345", "group leads", "expires in 30 min", "aws elevate shell abcde12345"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing %q in %q", want, msg)
+		}
+	}
+	if len(h.sleeps) != 0 || h.backend.readyRole != "" || h.out.Len() != 0 {
+		t.Errorf("waited: sleeps %v, ready %q, stdout %q", h.sleeps, h.backend.readyRole, h.out.String())
+	}
+}
+
+func TestRequestClosedWhileActivating(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.grant.CloseReason = ptr("failed")
+	h.svc.grant.Error = ptr("CreatePermissionSet: AccessDenied")
+	h.svc.states = []string{api.StateActivating, api.StateClosed}
+	got := h.run("request", "ssm-prod", "--account", "prod", "--reason", "x", "--profile", "work")
+	if got != 1 || !strings.Contains(h.errOut.String(), "closed: failed (CreatePermissionSet: AccessDenied)") {
 		t.Errorf("exit %d, %q", got, h.errOut.String())
 	}
 	if h.backend.readyRole != "" {
@@ -387,7 +406,7 @@ func TestRequestStopsWhenInterrupted(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
 	h.svc.grant = grantFor("abcde12345")
-	h.svc.states = []string{api.StatePending}
+	h.svc.states = []string{api.StateActivating}
 	h.env.Sleep = func(context.Context, time.Duration) error { return context.Canceled }
 	got := h.run("request", "ssm-prod", "--account", "prod", "--reason", "x", "--profile", "work")
 	if got != 1 || !strings.Contains(h.errOut.String(), "stopped waiting for abcde12345") {
@@ -419,6 +438,8 @@ func TestStatusShowsOwnGrantsAndOnlyApprovableRequests(t *testing.T) {
 	ownPending := grantFor("mine000002")
 	ownPending.State = api.StatePending
 	ownPending.Actions = []string{"view", "cancel"}
+	ownPending.ExpiresAt = nil
+	ownPending.ApprovalExpiresAt = ptr(time.Date(2026, 11, 15, 9, 30, 0, 0, time.Local))
 	h.svc.lists = map[string][]api.Grant{"mine": {own, ownPending}, "approvable": {toApprove, ownPending}}
 
 	if got := h.run("status", "--profile", "work"); got != 0 {
@@ -428,6 +449,9 @@ func TestStatusShowsOwnGrantsAndOnlyApprovableRequests(t *testing.T) {
 	_, approveSection, ok := strings.Cut(out, "To approve")
 	if !ok || !strings.Contains(approveSection, "other00001") || strings.Contains(approveSection, "mine000002") {
 		t.Errorf("output %q", out)
+	}
+	if row := lineWith(out, "mine000002"); !strings.Contains(row, "09:30") {
+		t.Errorf("pending row without its approval deadline: %q", out)
 	}
 	if !strings.Contains(out, "mine000001") || !strings.Contains(out, "privileged") {
 		t.Errorf("output %q", out)
@@ -563,6 +587,9 @@ func TestShellStartsWithTheGrantProfile(t *testing.T) {
 	if got := h.run("shell", "--profile", "work"); got != 0 {
 		t.Fatalf("exit %d: %s", got, h.errOut.String())
 	}
+	if h.backend.readyRole != "222222222222/JIT-actv000001" {
+		t.Errorf("did not wait for the role: %q", h.backend.readyRole)
+	}
 	want := "/bin/zsh,HOME=/home/u,AWS_PROFILE=jit-ssm-write-222222222222"
 	if strings.Join(h.shell, ",") != want {
 		t.Errorf("shell %v", h.shell)
@@ -628,4 +655,13 @@ func TestShellEnvDropsWhatOverridesTheProfile(t *testing.T) {
 	if strings.Join(got, ",") != "A=1,AWS_REGION=eu-west-1,AWS_PROFILE=jit" {
 		t.Errorf("env %v", got)
 	}
+}
+
+func lineWith(text, part string) string {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.Contains(l, part) {
+			return l
+		}
+	}
+	return ""
 }
