@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/sdiaco/aws-elevate/client/internal/version"
@@ -111,8 +112,8 @@ func header(body string, r *Release) {
 	}
 }
 
-// ClientUpdates are the releases newer than client whose client works with infra. A
-// release that does not state its minInfra is not proposed.
+// ClientUpdates are the releases newer than client whose client works with infra, newest
+// first. A release that does not state its minInfra is not proposed.
 func ClientUpdates(rels []Release, client, infra string) []Release {
 	var out []Release
 	for _, r := range rels {
@@ -120,10 +121,10 @@ func ClientUpdates(rels []Release, client, infra string) []Release {
 			out = append(out, r)
 		}
 	}
-	return out
+	return newestFirst(out)
 }
 
-// InfraUpdates are the releases newer than infra.
+// InfraUpdates are the releases newer than infra, newest first.
 func InfraUpdates(rels []Release, infra string) []Release {
 	var out []Release
 	for _, r := range rels {
@@ -131,7 +132,17 @@ func InfraUpdates(rels []Release, infra string) []Release {
 			out = append(out, r)
 		}
 	}
-	return out
+	return newestFirst(out)
+}
+
+// newestFirst sorts by version: GitHub lists by date, and a patch of an older line can
+// be published after a newer release. Versions here are already valid.
+func newestFirst(rels []Release) []Release {
+	slices.SortStableFunc(rels, func(a, b Release) int {
+		c, _ := version.Cmp(b.Version, a.Version)
+		return c
+	})
+	return rels
 }
 
 func newer(v, than string) bool {
