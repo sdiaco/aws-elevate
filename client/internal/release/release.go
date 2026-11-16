@@ -31,12 +31,19 @@ type Release struct {
 	MinClient string
 }
 
+// DefaultDownloadURL holds the files of each release under v<version>/.
+const DefaultDownloadURL = "https://github.com/sdiaco/aws-elevate/releases/download"
+
+// Lister reads the release list and downloads the files of a release.
 type Lister struct {
-	HTTP *http.Client
-	URL  string
+	HTTP        *http.Client
+	URL         string
+	DownloadURL string
 }
 
-func New() *Lister { return &Lister{HTTP: http.DefaultClient, URL: DefaultURL} }
+func New() *Lister {
+	return &Lister{HTTP: http.DefaultClient, URL: DefaultURL, DownloadURL: DefaultDownloadURL}
+}
 
 type githubRelease struct {
 	TagName    string `json:"tag_name"`

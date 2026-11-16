@@ -40,6 +40,8 @@ type Error struct {
 	Status  int
 	Code    string
 	Message string
+	// InfraVersion is the version the service declared in its answer, if any.
+	InfraVersion string
 }
 
 func (e *Error) Error() string {
@@ -197,7 +199,9 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	if resp.StatusCode >= 300 {
-		return decodeError(resp.StatusCode, raw)
+		e := decodeError(resp.StatusCode, raw)
+		e.InfraVersion = resp.Header.Get(InfraVersionHeader)
+		return e
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("unreadable answer from aws-elevate (HTTP %d): %w", resp.StatusCode, err)
@@ -223,7 +227,7 @@ func checkInfra(h http.Header) error {
 	return nil
 }
 
-func decodeError(status int, raw []byte) error {
+func decodeError(status int, raw []byte) *Error {
 	var ours errorBody
 	if json.Unmarshal(raw, &ours) == nil && ours.Error != "" {
 		return &Error{Status: status, Code: ours.Error, Message: ours.Message}

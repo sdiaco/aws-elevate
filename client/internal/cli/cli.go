@@ -30,6 +30,9 @@ type Env struct {
 	Open         func(ctx context.Context, profile string) (Backend, error)
 	Installer    func(ctx context.Context, profile, region string) (Installer, error)
 	Releases     func(ctx context.Context) ([]release.Release, error)
+	Download     func(ctx context.Context, version, goos, goarch string) ([]byte, error)
+	Executable   func() (string, error)
+	TempDir      string
 	Sleep        func(ctx context.Context, d time.Duration) error
 	Shell        func(shell string, env []string) (int, error)
 	SettingsPath string
@@ -56,6 +59,9 @@ func DefaultEnv() (*Env, error) {
 		Open:         Open,
 		Installer:    openInstaller,
 		Releases:     release.New().List,
+		Download:     release.New().Download,
+		Executable:   executable,
+		TempDir:      os.TempDir(),
 		Sleep:        awsx.Sleep,
 		Shell:        startShell,
 		SettingsPath: settings,
@@ -81,6 +87,7 @@ func init() {
 		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
 		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
 		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject]", runApprove},
+		"update":  {"Replace this executable with the newest version that works with your service", "update", runUpdate},
 		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},
 		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
 	}
