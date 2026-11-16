@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type Env struct {
 	OpenBrowser  func(url string) error
 	SettingsPath string
 	ConfigFile   string
+	CacheDir     string // per-profile caches, ~/.cache/aws-elevate
 	AliasFile    string
 }
 
@@ -71,7 +73,18 @@ func DefaultEnv() (*Env, error) {
 		SettingsPath: settings,
 		ConfigFile:   awsx.ConfigFile(),
 		AliasFile:    alias,
+		CacheDir:     cacheDir(),
 	}, nil
+}
+
+// cacheDir is ~/.cache/aws-elevate or its equivalent; empty when the system has none, and
+// then nothing is cached.
+func cacheDir() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "aws-elevate")
 }
 
 type command struct {

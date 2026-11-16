@@ -167,7 +167,8 @@ func TestCompareTwoVersionsRuleByRule(t *testing.T) {
 	contains(t, out, "Version 2 → 3",
 		"Added", "ssm-prod",
 		"Removed", "old-rule",
-		"Changed", "ssm-dev", "&#34;privileged&#34;: true",
+		"Changed", "ssm-dev", `<span class="del">  &#34;privileged&#34;: false</span>`, `<span class="add">  &#34;privileged&#34;: true</span>`,
+		`<span>  &#34;id&#34;: &#34;ssm-dev&#34;,</span>`,
 	)
 	out = h.get(t, "/versions/compare?id=3")
 	contains(t, out, `class="alert error"`, "Select two versions")

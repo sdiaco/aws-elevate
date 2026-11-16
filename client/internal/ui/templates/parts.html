@@ -30,3 +30,14 @@
 <thead><tr><th>Requested</th><th>Permission set</th><th>Account</th><th>State</th><th>Id</th></tr></thead>
 <tbody>{{range .Grants}}<tr><td><time datetime="{{iso .CreatedAt}}" title="{{exact .CreatedAt}}">{{ago .CreatedAt}}</time></td><td>{{.SourcePs.Name}}</td><td>{{.Account}}</td><td>{{template "state" .State}}{{with .CloseReason}} <span class="muted">{{.}}</span>{{end}}</td><td><button type="button" class="copy" data-copy="{{.ID}}" title="Copy">{{.ID}}</button></td></tr>{{end}}</tbody>
 </table></div>{{else}}<p class="muted">Nothing to show.</p>{{end}}{{end}}
+
+{{/* What changes between two rules documents, rule by rule. */}}
+{{define "changes"}}<div class="compare">
+{{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{end}}
+{{if .Other}}<div class="alert info" role="status">Fields outside the rules differ too.</div>{{end}}
+{{with .Added}}<h2>Added</h2>{{range .}}<details class="expand" open><summary>{{.ID}}</summary><pre>{{.After}}</pre></details>{{end}}{{end}}
+{{with .Removed}}<h2>Removed</h2>{{range .}}<details class="expand"><summary>{{.ID}}</summary><pre>{{.Before}}</pre></details>{{end}}{{end}}
+{{with .Changed}}<h2>Changed</h2>{{range .}}<details class="expand" open><summary>{{.ID}}</summary><div class="diff"><div><h3>{{$.OldLabel}}</h3><pre>{{range .BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
+{{end}}</pre></div><div><h3>{{$.NewLabel}}</h3><pre>{{range .AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
+{{end}}</pre></div></div></details>{{end}}{{end}}
+</div>{{end}}

@@ -12,7 +12,9 @@ import (
 // Service is the part of the api client the views use. Every decision comes from it:
 // the views show the actions each grant carries and nothing else.
 type Service interface {
+	Rules(ctx context.Context) (*api.RuleList, error)
 	RequestableRules(ctx context.Context) (*api.RuleList, error)
+	CheckRules(ctx context.Context, doc []byte) (*api.CheckResult, error)
 	Permissions(ctx context.Context, ruleID string) (*api.Permissions, error)
 	CreateGrant(ctx context.Context, req api.CreateRequest) (*api.Grant, error)
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)
@@ -35,6 +37,8 @@ type App struct {
 	Ready func(ctx context.Context, g api.Grant) (string, error)
 	// Console is the address that opens the AWS console with the grant's role.
 	Console func(g api.Grant) string
+	// Admin reads and writes AWS with the admin's credentials; nil for other roles.
+	Admin Admin
 }
 
 func (a *App) has(role string) bool { return slices.Contains(a.Me.Roles, role) }
@@ -65,6 +69,15 @@ func Pages(a *App) http.Handler {
 	mux.HandleFunc("GET /pending/history", a.requesterHistory)
 	mux.HandleFunc("GET /history", a.historyPage)
 	mux.HandleFunc("GET /history/export.csv", a.historyExport)
+	if a.has("admin") && a.Admin != nil {
+		mux.HandleFunc("GET /rules", a.rulesPage)
+		mux.HandleFunc("GET /rules/edit", a.ruleEdit)
+		mux.HandleFunc("POST /rules/edit", a.ruleSave)
+		mux.HandleFunc("POST /rules/delete", a.rulesDelete)
+		mux.HandleFunc("GET /rules/import", a.importPage)
+		mux.HandleFunc("POST /rules/import", a.importSubmit)
+		mux.HandleFunc("POST /rules/publish", a.publish)
+	}
 	if a.has("admin") {
 		mux.HandleFunc("GET /problems", a.problemsPage)
 		mux.HandleFunc("POST /problems/retry", a.retry)
@@ -98,6 +111,9 @@ func (a *App) nav() []NavGroup {
 	)
 	groups := []NavGroup{{Items: items}}
 	var admin []NavItem
+	if a.has("admin") && a.Admin != nil {
+		admin = append(admin, NavItem{Label: "Rules", Path: "/rules"})
+	}
 	if a.has("admin") {
 		admin = append(admin, NavItem{Label: "Problems", Path: "/problems"})
 	}

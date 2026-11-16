@@ -14,7 +14,6 @@ import (
 	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
-	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 )
 
 // ErrVersionConflict: another rules version was published after the one the save
@@ -71,31 +70,16 @@ func (a *Admin) StackStatus(ctx context.Context, stackID string) (string, error)
 	return string(out.Stacks[0].StackStatus), nil
 }
 
-// PermissionSetNames lists the permission sets of the Identity Center instance.
+// PermissionSetNames lists the names of the permission sets of the Identity Center
+// instance.
 func (a *Admin) PermissionSetNames(ctx context.Context) ([]string, error) {
-	client := ssoadmin.NewFromConfig(a.cfg)
-	inst, err := client.ListInstances(ctx, &ssoadmin.ListInstancesInput{})
+	sets, err := a.PermissionSets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(inst.Instances) == 0 {
-		return nil, errors.New("no IAM Identity Center instance visible from this account")
-	}
-	arn := inst.Instances[0].InstanceArn
-	var names []string
-	pages := ssoadmin.NewListPermissionSetsPaginator(client, &ssoadmin.ListPermissionSetsInput{InstanceArn: arn})
-	for pages.HasMorePages() {
-		page, err := pages.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, ps := range page.PermissionSets {
-			d, err := client.DescribePermissionSet(ctx, &ssoadmin.DescribePermissionSetInput{InstanceArn: arn, PermissionSetArn: aws.String(ps)})
-			if err != nil {
-				return nil, err
-			}
-			names = append(names, aws.ToString(d.PermissionSet.Name))
-		}
+	names := make([]string, len(sets))
+	for i, ps := range sets {
+		names[i] = ps.Name
 	}
 	return names, nil
 }
