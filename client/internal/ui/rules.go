@@ -145,8 +145,6 @@ type ruleView struct {
 	Accounts  []awsx.Named
 	Groups    []awsx.Named
 	PSMissing bool
-	// Contents is loaded from the service for a saved rule whose permission set is kept.
-	Contents string
 }
 
 func formOf(rule api.Rule) ruleForm {
@@ -200,14 +198,33 @@ func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, re
 		return
 	}
 	v.PSMissing = form.PS != "" && !slices.ContainsFunc(v.Sets, func(ps awsx.Named) bool { return ps.Name == form.PS })
-	if form.Orig != "" && !v.PSMissing {
-		v.Contents = "/request/permissions?rule=" + form.Orig
-	}
 	title := "New rule"
 	if form.Orig != "" {
 		title = "Rule " + form.Orig
 	}
 	a.show(w, http.StatusOK, "rule", title, "/rules", v, alerts...)
+}
+
+// psPermissions is "What it contains" of the permission set named in the form, read by the
+// service (design §7.5): the name comes from the cached list, the content never does.
+func (a *App) psPermissions(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("ps")
+	sets, err := a.Admin.PermissionSets(r.Context(), false)
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	i := slices.IndexFunc(sets, func(ps awsx.Named) bool { return ps.Name == name })
+	if i < 0 {
+		partError(w, fmt.Errorf("no permission set %s in Identity Center: choose one from the list", name))
+		return
+	}
+	p, err := a.Service.PermissionSetPermissions(r.Context(), sets[i].ID)
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	part(w, "permissions", p)
 }
 
 func readForm(r *http.Request) ruleForm {

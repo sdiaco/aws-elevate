@@ -30,6 +30,7 @@ _ROUTES = [
     ("POST", re.compile(rf"grants/{_ID}/redrive"), "grants", "redrive", None, 200),
     ("GET", re.compile(r"rules"), "rules", "list", "query", 200),
     ("GET", re.compile(r"rules/([^/]+)/permissions"), "rules", "permissions", None, 200),
+    ("GET", re.compile(r"permission-sets/permissions"), "rules", "ps_permissions", "query", 200),
     ("POST", re.compile(r"rules/check"), "rules", "check", "body", 200),
     ("GET", re.compile(r"config/versions"), "versions", "list", None, 200),
     ("GET", re.compile(r"config/versions/([0-9]{1,8})"), "versions", "get", None, 200),

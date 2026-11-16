@@ -62,6 +62,10 @@ func (f *fakeService) RequestableRules(ctx context.Context) (*api.RuleList, erro
 	return &api.RuleList{Rules: mine}, nil
 }
 
+func (f *fakeService) PermissionSetPermissions(ctx context.Context, arn string) (*api.Permissions, error) {
+	return f.Permissions(ctx, arn)
+}
+
 func (f *fakeService) Permissions(context.Context, string) (*api.Permissions, error) {
 	return &api.Permissions{}, f.err
 }

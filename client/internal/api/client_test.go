@@ -214,6 +214,14 @@ func TestRulesAndPermissions(t *testing.T) {
 	if p.Boundary == nil || p.Boundary.ManagedPolicyArn == nil {
 		t.Errorf("boundary %+v", p.Boundary)
 	}
+	arn := "arn:aws:sso:::permissionSet/ssoins-1/ps-1"
+	c, got = serve(t, 200, string(loadExample(t, "permission-sets-permissions").Response))
+	if _, err := c.PermissionSetPermissions(context.Background(), arn); err != nil {
+		t.Fatal(err)
+	}
+	if got.path != "/api/v1/permission-sets/permissions" || got.query != (url.Values{"arn": {arn}}).Encode() {
+		t.Errorf("sent %s?%s", got.path, got.query)
+	}
 }
 
 func TestCheckRules(t *testing.T) {

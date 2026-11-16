@@ -90,14 +90,17 @@ function poll(el, attempt) {
 }
 
 // Details read when opened: <details data-load="/address"> fills its
-// [data-load-target] with the HTML at that address, once.
+// [data-load-target] with the HTML at that address, once. With data-load-from="<input id>"
+// the address ends with that input's value, and changing the input reads it again.
 document.addEventListener("toggle", async (e) => {
   const d = e.target;
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.dataset.load || d.dataset.loaded) return;
   d.dataset.loaded = "1";
   const box = d.querySelector("[data-load-target]");
+  const from = d.dataset.loadFrom && document.getElementById(d.dataset.loadFrom);
+  const address = d.dataset.load + (from ? encodeURIComponent(from.value) : "");
   try {
-    const res = await fetch(d.dataset.load, { headers: { Accept: "text/html" } });
+    const res = await fetch(address, { headers: { Accept: "text/html" } });
     if (!res.ok) throw new Error(res.status);
     box.innerHTML = await res.text();
     tick();
@@ -106,6 +109,14 @@ document.addEventListener("toggle", async (e) => {
     delete d.dataset.loaded;
   }
 }, true); // toggle does not bubble
+
+document.addEventListener("change", (e) => {
+  document.querySelectorAll(`details[data-load-from="${e.target.id}"]`).forEach((d) => {
+    delete d.dataset.loaded;
+    d.querySelector("[data-load-target]").innerHTML = '<p class="muted">Loading…</p>';
+    d.open = false;
+  });
+});
 
 document.querySelectorAll("[data-list]").forEach(updateSelection);
 document.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));

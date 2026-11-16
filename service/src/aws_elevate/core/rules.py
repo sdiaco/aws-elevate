@@ -11,7 +11,7 @@ from .models import Account, Approval, Grant, Group, Identity, PermissionSetRef,
 SCHEMA_VERSION = 1
 MIN_SECONDS = 300
 MAX_SECONDS = 12 * 3600
-_PS_ARN = re.compile(r"^arn:aws[a-z-]*:sso:::permissionSet/ssoins-[0-9a-f]+/ps-[0-9a-f]+$")
+PS_ARN = re.compile(r"^arn:aws[a-z-]*:sso:::permissionSet/ssoins-[0-9a-f]+/ps-[0-9a-f]+$")
 _ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
 _RULE_FIELDS = (
     "id",
@@ -71,7 +71,7 @@ def _rule_errors(item, where: str) -> list[str]:
         errors.append(f"{where}.id: must be a non-empty string")
     errors += _ref_errors(item["group"], f"{where}.group", ("id", "name"))
     errors += _ref_errors(item["permissionSet"], f"{where}.permissionSet", ("arn", "name"))
-    if not errors and not _PS_ARN.match(item["permissionSet"]["arn"]):
+    if not errors and not PS_ARN.match(item["permissionSet"]["arn"]):
         errors.append(f"{where}.permissionSet.arn: not a permission set ARN")
     errors += _account_errors(item["accounts"], f"{where}.accounts")
     errors += _duration_errors(item["duration"], f"{where}.duration")

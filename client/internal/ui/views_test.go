@@ -50,6 +50,11 @@ func (f *fakeService) Permissions(_ context.Context, id string) (*api.Permission
 	}, nil
 }
 
+func (f *fakeService) PermissionSetPermissions(ctx context.Context, arn string) (*api.Permissions, error) {
+	f.calls = append(f.calls, "ps permissions "+arn)
+	return f.Permissions(ctx, "")
+}
+
 func (f *fakeService) CreateGrant(_ context.Context, req api.CreateRequest) (*api.Grant, error) {
 	f.created = &req
 	if f.createErr != nil {
