@@ -100,8 +100,14 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		{"RequesterGroupId", "Group that may request access (ElevateRequester)", requesterGroup, false},
 		{"AuditorGroupId", "Auditor group, optional", auditorGroup, true},
 	}
+	// With the required groups given as flags the install is unattended: an optional
+	// group not given as a flag means none.
+	unattended := *adminGroup != "" && *requesterGroup != ""
 	listed := false
 	for _, p := range picks {
+		if *p.name == "" && p.optional && unattended {
+			continue
+		}
 		if *p.name == "" && !listed {
 			printGroups(e.Stdout, groups)
 			listed = true
