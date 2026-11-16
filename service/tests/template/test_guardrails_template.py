@@ -63,20 +63,37 @@ def test_every_statement_denies_all_but_exempt_principals():
         assert exempt(s), sid
 
 
-def test_runtime_actions_are_left_only_to_the_api_role_and_the_deployers():
-    s = statements()["ProtectExecutions"]
+def runtime_exempt_ok(statement: dict) -> None:
+    principals = json.dumps(statement["Condition"])
+    assert json.dumps(API_ROLE) in principals and json.dumps(DEPLOYERS) in principals
+
+
+def test_task_tokens_are_left_only_to_the_api_role_and_the_deployers():
+    s = statements()["ProtectTaskTokens"]
     assert actions(s) == {
         "states:SendTaskSuccess",
         "states:SendTaskFailure",
         "states:SendTaskHeartbeat",
+    }
+    # SendTask* has no resource-level permissions (spike B2 tested Resource *).
+    assert s["Resource"] == "*"
+    runtime_exempt_ok(s)
+
+
+def test_executions_of_elevate_only_are_left_to_the_api_role_and_the_deployers():
+    # Other teams share the account (design §8.4): their state machines stay untouched.
+    s = statements()["ProtectExecutions"]
+    assert actions(s) == {
         "states:StartExecution",
         "states:StopExecution",
         "states:RedriveExecution",
     }
-    # SendTask* has no resource-level permissions.
-    assert s["Resource"] == "*"
-    principals = json.dumps(s["Condition"])
-    assert json.dumps(API_ROLE) in principals and json.dumps(DEPLOYERS) in principals
+    states = "arn:${AWS::Partition}:states:*:${ServiceAccountId}"
+    assert s["Resource"] == [
+        {"Fn::Sub": states + ":stateMachine:${StackName}-*"},
+        {"Fn::Sub": states + ":execution:${StackName}-*:*"},
+    ]
+    runtime_exempt_ok(s)
 
 
 def test_service_resources_and_roles_are_changed_only_by_the_deployers():
