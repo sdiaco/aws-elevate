@@ -142,6 +142,7 @@ class GrantRoutes:
             "rejectReason": g.reject_reason,
             "error": g.error,
             "ruleRemoved": g.rule_id not in rule_ids,
+            "starting": g.starting,
             "actions": sorted(actions(identity, g) - {"view"}),
             "approvalExpiresAt": _approval_expires_at(g),
         }
@@ -263,6 +264,8 @@ class GrantRoutes:
         grant = self._visible(identity, grant_id)
         if grant.state != State.PENDING:
             raise _conflict(f"grant {grant_id} is {grant.state}, no longer pending")
+        if grant.starting:
+            raise ApiError(409, "not_ready", "the request is still starting; retry in a moment")
         if not can(identity, action, grant):
             raise forbidden(f"you cannot {action} grant {grant_id}")
         return grant

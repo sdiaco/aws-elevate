@@ -182,9 +182,10 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 
 // requestRowOf is one row; its id opens the panel on the page at here.
 func (a *App) requestRowOf(g api.Grant, here string) Row {
-	row := Row{Key: g.ID, State: g.State, Cells: []Cell{
+	state := shownState(g)
+	row := Row{Key: g.ID, State: state, Cells: []Cell{
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
-		{State: g.State, Refresh: refreshOf(g)},
+		{State: state, Refresh: refreshOf(state, g.ID)},
 		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
@@ -197,25 +198,34 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	}
 	// Every row can be selected: a single selection opens its panel, as in the console.
 	row.ID = g.ID
-	if inMotion(g.State) {
+	if inMotion(state) {
 		row.Poll = "/requests/row/" + g.ID
 	}
 	return row
 }
 
+// shownState is the state on screen: "starting" for a request the service says cannot
+// be decided yet, otherwise the grant's state.
+func shownState(g api.Grant) string {
+	if g.Starting {
+		return "starting"
+	}
+	return g.State
+}
+
 // refreshOf is the address a pending row reads itself again from, on request.
-func refreshOf(g api.Grant) string {
-	if g.State != api.StatePending {
+func refreshOf(state, id string) string {
+	if state != api.StatePending {
 		return ""
 	}
-	return "/requests/row/" + g.ID + "?check=1"
+	return "/requests/row/" + id + "?check=1"
 }
 
 // inMotion states change within seconds without anyone on this page acting: the page asks
 // for them. A pending request waits for a person, up to 30 minutes: its row has a refresh
 // button instead.
 func inMotion(state string) bool {
-	return state == api.StateActivating || state == api.StateRevoking
+	return state == "starting" || state == api.StateActivating || state == api.StateRevoking
 }
 
 func withParam(path, key, value string) string {

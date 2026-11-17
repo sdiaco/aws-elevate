@@ -122,6 +122,7 @@ type Action struct {
 
 // stateLabels name the states of contract/vocabulary.json on screen.
 var stateLabels = map[string]string{
+	"starting":      "Starting", // pending, but the service cannot take a decision yet
 	"pending":       "Pending",
 	"activating":    "Activating",
 	"active":        "Active",

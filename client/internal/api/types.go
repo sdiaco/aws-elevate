@@ -64,6 +64,7 @@ type Grant struct {
 	RejectReason    *string       `json:"rejectReason"`
 	Error           *string       `json:"error"`
 	RuleRemoved     bool          `json:"ruleRemoved"`
+	Starting        bool          `json:"starting"`
 	// Actions the caller may take on this grant, decided by the service.
 	Actions []string `json:"actions"`
 	// When a pending request times out; null in every other state.

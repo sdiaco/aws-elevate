@@ -108,6 +108,12 @@ class Grant:
     # ARN of JIT-<id>, recorded as soon as it exists so revocation never has to search.
     ephemeral_ps_arn: str | None = None
 
+    @property
+    def starting(self) -> bool:
+        """Pending, but its execution has not stored the approval wait's token yet:
+        a decision cannot end the wait for a few seconds."""
+        return self.state == State.PENDING and self.task_token is None
+
 
 @dataclass(frozen=True)
 class ConfigVersion:

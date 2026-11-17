@@ -41,6 +41,7 @@
       "rejectReason": null,
       "error": null,
       "ruleRemoved": false,
+      "starting": false,
       "actions": [
         "revoke"
       ],

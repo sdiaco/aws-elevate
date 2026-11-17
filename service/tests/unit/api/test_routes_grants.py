@@ -61,7 +61,8 @@ def test_manual_request_is_recorded_pending_and_started(make, fx):
     assert grant["createdAt"] == "2026-11-15T10:00:00Z"
     assert grant["privileged"] is True
     assert grant["ruleRemoved"] is False
-    assert grant["actions"] == ["cancel"]
+    # The execution stores the wait's token a moment later: until then, no cancel.
+    assert (grant["starting"], grant["actions"]) == (True, [])
     assert sfn.started == [(grant["id"], "manual")]
     assert table.get(grant["id"]).state == State.PENDING
 
@@ -197,6 +198,19 @@ def test_stranger_cannot_see_or_approve(make, fx):
 def test_missing_grant_is_not_found(make, fx):
     routes, _, _ = make()
     assert error_of(lambda: routes.approve(fx.LEAD, "zzzzz23456")).code == "not_found"
+
+
+@pytest.mark.parametrize(
+    ("changes", "starting"),
+    [
+        ({"task_token": None}, True),
+        ({}, False),
+        ({"state": State.ACTIVE, "task_token": None}, False),
+    ],
+)
+def test_a_pending_grant_is_starting_until_its_wait_has_a_token(make, fx, changes, starting):
+    routes, _, _ = make(fx.make_grant(**changes))
+    assert routes.get(fx.LEAD, "abcde23456")["grant"]["starting"] is starting
 
 
 def test_approve_before_the_wait_has_its_token_is_not_ready(make, fx):
@@ -395,7 +409,8 @@ def test_grant_view_has_every_contract_key(make, fx):
         "id", "state", "closeReason", "ruleId", "approval", "configVersion", "requester",
         "approver", "approverGroup", "sourcePs", "account", "durationSeconds", "reason",
         "privileged", "createdAt", "activatedAt", "expiresAt", "closedAt", "revokedBy",
-        "revokeReason", "rejectReason", "error", "ruleRemoved", "actions", "approvalExpiresAt",
+        "revokeReason", "rejectReason", "error", "ruleRemoved", "starting", "actions",
+        "approvalExpiresAt",
     }  # fmt: skip
 
 

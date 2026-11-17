@@ -12,7 +12,9 @@ def actions(identity: Identity, grant: Grant) -> set[str]:
         return set()
     allowed = {"view"}
     if grant.state == State.PENDING:
-        if own:
+        if grant.starting:
+            pass  # no decision until the wait can receive it
+        elif own:
             allowed.add("cancel")
         elif approver:  # never one's own request, admin or not (design §3.3)
             allowed |= {"approve", "reject"}

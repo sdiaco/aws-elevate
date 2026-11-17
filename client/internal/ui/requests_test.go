@@ -149,6 +149,21 @@ func TestPendingRowsRefreshOnRequestAndMovingRowsPoll(t *testing.T) {
 	contains(t, out, `data-state="activating"`, `value="ask2345678" data-select aria-label`)
 }
 
+func TestAStartingRequestShowsStartingAndReadsItselfAgain(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	starting := grant("ask2345678", api.StatePending, other)
+	starting.Starting = true
+	h.svc.grants["ask2345678"] = starting
+	out := h.get(t, "/requests/row/ask2345678")
+	contains(t, out, `<span class="st st-starting">Starting</span>`, `data-poll="/requests/row/ask2345678"`, `data-state="starting"`)
+	lacks(t, out, "data-refresh")
+
+	h.svc.grants["ask2345678"] = grant("ask2345678", api.StatePending, other, "approve", "reject")
+	out = h.get(t, "/requests/row/ask2345678")
+	contains(t, out, `data-state="pending"`, `data-refresh="/requests/row/ask2345678?check=1"`)
+	lacks(t, out, "data-poll")
+}
+
 func TestTheBottomPanelIsClosedUntilARowIsChosen(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests?f=approve")

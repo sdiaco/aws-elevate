@@ -43,6 +43,7 @@
       "rejectReason": "not needed, use the read-only rule",
       "error": null,
       "ruleRemoved": false,
+      "starting": false,
       "actions": [],
       "approvalExpiresAt": null
     }
