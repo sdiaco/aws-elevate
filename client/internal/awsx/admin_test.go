@@ -92,7 +92,7 @@ func (f *fakeAdminAWS) serve(t *testing.T) *httptest.Server {
 
 func adminFor(srv *httptest.Server) *Admin {
 	cfg := aws.Config{Region: "eu-west-1", BaseEndpoint: aws.String(srv.URL)}
-	return NewAdmin(cfg, aws.Credentials{AccessKeyID: "AKID", SecretAccessKey: "secret"})
+	return NewAdmin(cfg, static(aws.Credentials{AccessKeyID: "AKID", SecretAccessKey: "secret"}))
 }
 
 func TestPublishRulesStartsFromTheGivenVersion(t *testing.T) {

@@ -28,9 +28,9 @@ type Admin struct {
 	now   func() time.Time
 }
 
-// NewAdmin signs every call with creds.
-func NewAdmin(cfg aws.Config, creds aws.Credentials) *Admin {
-	return &Admin{cfg: WithCredentials(cfg, creds), sleep: Sleep, now: time.Now}
+// NewAdmin signs every call with the credentials of creds.
+func NewAdmin(cfg aws.Config, creds aws.CredentialsProvider) *Admin {
+	return &Admin{cfg: WithProvider(cfg, creds), sleep: Sleep, now: time.Now}
 }
 
 // PublishRules creates a hosted configuration version. latest is the newest version

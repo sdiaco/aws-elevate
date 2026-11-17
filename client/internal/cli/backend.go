@@ -69,7 +69,7 @@ func (b *sdkBackend) Service(ctx context.Context, t awsx.Target) (Service, error
 	if err != nil {
 		return nil, err
 	}
-	return api.New(awsx.WithCredentials(b.cfg, creds), t.APIURL), nil
+	return api.New(awsx.WithProvider(b.cfg, creds), t.APIURL), nil
 }
 
 func (b *sdkBackend) Admin(ctx context.Context, t awsx.Target) (AdminAWS, error) {
@@ -80,10 +80,12 @@ func (b *sdkBackend) Admin(ctx context.Context, t awsx.Target) (AdminAWS, error)
 	return awsx.NewAdmin(b.cfg, creds), nil
 }
 
-func (b *sdkBackend) credentials(ctx context.Context, t awsx.Target) (aws.Credentials, error) {
-	creds, err := b.session.Portal.Credentials(ctx, t.Account, t.Role)
-	if err != nil {
-		return aws.Credentials{}, fmt.Errorf("get %s credentials in account %s: %w", t.Role, t.Account, err)
+// credentials renew themselves before they expire, for the interface that stays open;
+// the first set is read now so a missing role or session fails here, with its cause.
+func (b *sdkBackend) credentials(ctx context.Context, t awsx.Target) (aws.CredentialsProvider, error) {
+	p := awsx.RoleCredentials(b.session.Portal, t.Account, t.Role)
+	if _, err := p.Retrieve(ctx); err != nil {
+		return nil, fmt.Errorf("get %s credentials in account %s: %w", t.Role, t.Account, err)
 	}
-	return creds, nil
+	return p, nil
 }
