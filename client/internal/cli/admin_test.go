@@ -46,6 +46,7 @@ type publishCall struct {
 // fakeAdmin answers the admin AWS calls; the zero value is a healthy installation
 // except for what each test sets.
 type fakeAdmin struct {
+	accounts       []awsx.Named
 	published      []publishCall
 	publishN       int
 	publishErr     error
@@ -80,7 +81,7 @@ func (a *fakeAdmin) PermissionSets(context.Context) ([]awsx.Named, error) {
 	return a.permissionSets, nil
 }
 
-func (a *fakeAdmin) Accounts(context.Context) ([]awsx.Named, error) { return nil, nil }
+func (a *fakeAdmin) Accounts(context.Context) ([]awsx.Named, error) { return a.accounts, nil }
 
 func (a *fakeAdmin) Groups(context.Context) ([]awsx.Named, error) { return nil, nil }
 

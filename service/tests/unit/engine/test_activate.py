@@ -184,3 +184,12 @@ def test_reserved_source_is_refused_at_activation(build, grant, admin):
     with pytest.raises(ActivationFailed, match="reserved"):
         engine.activate("abcde23456")
     assert_failed(table, admin, "reserved")
+
+
+def test_reserved_account_is_refused_at_activation(build, grant, admin):
+    # A version published without the check still cannot target the management account or
+    # the service account (design §7.5).
+    engine, table = build(grant(), reserved=frozenset({"111111111111"}))
+    with pytest.raises(ActivationFailed, match="account 111111111111 is reserved"):
+        engine.activate("abcde23456")
+    assert_failed(table, admin, "reserved")

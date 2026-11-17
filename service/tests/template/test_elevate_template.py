@@ -511,6 +511,14 @@ def test_api_function_knows_what_the_admin_client_reads_with_its_own_credentials
     assert env["APPROVALS_TOPIC_ARN"] == {"Ref": "ApprovalsTopic"}
 
 
+@pytest.mark.parametrize("function", ["ApiFunction", "EngineFunction"])
+def test_api_and_engine_know_the_reserved_accounts(function):
+    # The check before publishing and the activation refuse them as targets (design §7.5).
+    env = RESOURCES[function]["Properties"]["Environment"]["Variables"]
+    assert env["MANAGEMENT_ACCOUNT_ID"] == {"Fn::GetAtt": ["Precheck", "ManagementAccountId"]}
+    assert env["SERVICE_ACCOUNT_ID"] == {"Ref": "AWS::AccountId"}
+
+
 def test_install_parameters():
     params = TEMPLATE["Parameters"]
     assert {"AdminGroupId", "RequesterGroupId"} <= set(params)

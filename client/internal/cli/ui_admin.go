@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
@@ -37,7 +38,32 @@ func (a *uiAdmin) PermissionSets(ctx context.Context, refresh bool) ([]awsx.Name
 	return a.cache.Get(ctx, refresh)
 }
 
-func (a *uiAdmin) Accounts(ctx context.Context) ([]awsx.Named, error) { return a.aws.Accounts(ctx) }
+// Accounts leaves out the account running aws-elevate, the account of its stack: a grant
+// there could tamper with it (design §7.5). The service refuses it as well; the management
+// account is already left out by awsx.
+func (a *uiAdmin) Accounts(ctx context.Context) ([]awsx.Named, error) {
+	all, err := a.aws.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	service := accountOf(a.inst.StackID)
+	var out []awsx.Named
+	for _, acc := range all {
+		if acc.ID != service {
+			out = append(out, acc)
+		}
+	}
+	return out, nil
+}
+
+// accountOf reads arn:aws:cloudformation:<region>:<account>:stack/….
+func accountOf(arn string) string {
+	parts := strings.Split(arn, ":")
+	if len(parts) < 5 {
+		return ""
+	}
+	return parts[4]
+}
 
 func (a *uiAdmin) Groups(ctx context.Context) ([]awsx.Named, error) { return a.aws.Groups(ctx) }
 

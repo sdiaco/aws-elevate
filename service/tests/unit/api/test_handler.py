@@ -314,6 +314,8 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "IDENTITY_STORE_ID": "d-1234567890",
         "REQUESTER_PS_NAME": "ElevateRequester",
         "ADMIN_PS_NAME": "ElevateAdmin",
+        "MANAGEMENT_ACCOUNT_ID": "999999999999",
+        "SERVICE_ACCOUNT_ID": "888888888888",
         "AUDITOR_GROUP_ID": "",
         "MAX_OPEN_GRANTS_PER_USER": "5",
         "SSO_INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
@@ -327,6 +329,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
     first = module._get_api()
     assert isinstance(first, Api)
     assert first._installation == INSTALLATION
+    assert first._targets["rules"]._reserved_accounts == {"999999999999", "888888888888"}
     assert module._get_api() is first
 
 

@@ -54,6 +54,9 @@ def _build_engine():
         ),
         sso_read=reader,
         sso_admin=SsoAdmin(sso, os.environ["INSTANCE_ARN"], reader),
+        reserved_accounts=frozenset(
+            {os.environ["MANAGEMENT_ACCOUNT_ID"], os.environ["SERVICE_ACCOUNT_ID"]}
+        ),
     )
 
 

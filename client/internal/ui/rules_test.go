@@ -56,6 +56,10 @@ func (f *fakeService) CheckRules(_ context.Context, doc []byte) (*api.CheckResul
 		id := "broken"
 		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "limits", Message: "ssm-write: inline policy too long"}}}, nil
 	}
+	if strings.Contains(string(doc), `"ElevateAdmin"`) {
+		id := "uses-reserved"
+		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "reserved", Message: "permission set ElevateAdmin is reserved to aws-elevate"}}}, nil
+	}
 	return &api.CheckResult{Valid: true}, nil
 }
 
@@ -218,6 +222,17 @@ func TestServiceErrorsKeepTheFormFilled(t *testing.T) {
 	if len(adm.published) != 0 {
 		t.Error("published")
 	}
+}
+
+func TestARefusedPermissionSetIsExplainedOnlyByTheService(t *testing.T) {
+	// Seen in the UI pass: a reserved set typed by hand got the service's "reserved" alert
+	// and, under the field, a false "no longer in Identity Center".
+	h, _ := rulesHarness()
+	form := postedRule("uses-reserved")
+	form.Set("ps", "ElevateAdmin")
+	out := h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out, "permission set ElevateAdmin is reserved to aws-elevate")
+	lacks(t, out, "no longer in Identity Center")
 }
 
 func TestConflictReviewsAgainAgainstTheNewVersion(t *testing.T) {

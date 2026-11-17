@@ -195,7 +195,11 @@ def _build_api() -> Api:
         max_open=int(os.environ["MAX_OPEN_GRANTS_PER_USER"]),
     )
     rules = RuleRoutes(
-        config=config, sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"])
+        config=config,
+        sso=SsoRead(boto3.client("sso-admin"), os.environ["SSO_INSTANCE_ARN"]),
+        reserved_accounts=frozenset(
+            {os.environ["MANAGEMENT_ACCOUNT_ID"], os.environ["SERVICE_ACCOUNT_ID"]}
+        ),
     )
     installation = {
         "stackId": os.environ["STACK_ID"],

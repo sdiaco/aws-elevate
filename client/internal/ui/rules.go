@@ -252,7 +252,10 @@ func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, re
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
-	v.PSMissing = form.PS != "" && !slices.ContainsFunc(v.Sets, func(ps awsx.Named) bool { return ps.Name == form.PS })
+	// When the service refused the form, its alert says why; the list here leaves out the
+	// reserved sets, so guessing "missing" from it would contradict the alert.
+	v.PSMissing = len(alerts) == 0 && form.PS != "" &&
+		!slices.ContainsFunc(v.Sets, func(ps awsx.Named) bool { return ps.Name == form.PS })
 	title := "New rule"
 	if form.Orig != "" {
 		title = "Rule " + form.Orig

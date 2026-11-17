@@ -82,6 +82,18 @@ func TestUINeedsSetup(t *testing.T) {
 	}
 }
 
+func TestUIAdminNeverOffersTheServiceAccount(t *testing.T) {
+	// A grant in the account running aws-elevate could tamper with it (design §7.5); the
+	// service refuses it too, the form just does not list it.
+	h := newHarness(t)
+	adm := &fakeAdmin{accounts: []awsx.Named{{ID: "111111111111", Name: "shared-services"}, {ID: "222222222222", Name: "prod"}}}
+	a := newUIAdmin(h.env, "work", adm, &api.Installation{StackID: "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1"})
+	got, err := a.Accounts(context.Background())
+	if err != nil || len(got) != 1 || got[0].ID != "222222222222" {
+		t.Errorf("%v %v", got, err)
+	}
+}
+
 func TestUIAdminPublishesOnTheInstallationAndCachesPermissionSetsPerProfile(t *testing.T) {
 	h := newHarness(t)
 	h.env.CacheDir = t.TempDir()
