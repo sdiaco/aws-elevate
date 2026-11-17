@@ -19,9 +19,10 @@
 <div class="choices">
 <label class="choice"><input type="radio" name="approval" value="auto"{{if eq .Form.Approval "auto"}} checked{{end}}> Automatic</label>
 <label class="choice"><input type="radio" name="approval" value="manual"{{if eq .Form.Approval "manual"}} checked{{end}}> Manual</label>
-</div></fieldset>
+</div>
+<span class="desc">Automatic: the access starts at once. Manual: a member of the approving group must approve it first.</span></fieldset>
 <div class="field" data-show-when="approval=manual"><label for="approver">Who approves</label>
-<select id="approver" name="approver"><option value="">No group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Approver}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>{{end}}
+<select id="approver" name="approver" required data-error="Choose who approves."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Approver}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>{{end}}
 
 {{define "rule-how"}}<div class="field"><div class="field-row">
 <div class="field"><label for="default">Proposed duration</label><input type="text" id="default" name="default" value="{{.Form.Default}}" required></div>

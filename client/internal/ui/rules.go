@@ -431,6 +431,9 @@ func (a *App) ruleOf(ctx context.Context, f ruleForm) (api.Rule, []string, error
 		problems = append(problems, "Durations look like 45m, 1h or 1h30m.")
 	}
 	rule.Duration = api.Duration{DefaultSeconds: def, MaxSeconds: max}
+	if f.Approval == "manual" && f.Approver == "" {
+		problems = append(problems, "Choose who approves.")
+	}
 	if f.Approver != "" {
 		if g, ok := find(groups, func(n awsx.Named) bool { return n.ID == f.Approver }); ok {
 			rule.ApproverGroup = &api.Ref{ID: g.ID, Name: g.Name}

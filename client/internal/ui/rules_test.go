@@ -420,3 +420,18 @@ func TestTheRuleFormDoesNotOfferReservedPermissionSets(t *testing.T) {
 	contains(t, out, `<option value="ssm-write">`)
 	lacks(t, out, `<option value="JIT-abcde23456">`, `<option value="ElevateAdmin">`)
 }
+
+func TestManualApprovalNeedsAGroupThatApproves(t *testing.T) {
+	h, adm := rulesHarness()
+	out := h.get(t, "/rules/edit")
+	contains(t, out, `<option value="">Choose a group</option>`, `name="approver" required data-error="Choose who approves."`,
+		"Automatic: the access starts at once.")
+	lacks(t, out, "No group")
+	form := postedRule("x")
+	form.Set("approver", "")
+	out = h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out, "Choose who approves.")
+	if len(adm.published) != 0 {
+		t.Error("published")
+	}
+}
