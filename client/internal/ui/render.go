@@ -62,6 +62,7 @@ type List struct {
 	Empty   string
 	First   string // address of the first page, when this is not it
 	Next    string // address of the next page
+	Reload  bool   // the list reads itself again while some rows change by themselves
 }
 
 // FilterGroup is one segmented control; its label names it for screen readers.
@@ -130,6 +131,10 @@ var stateLabels = map[string]string{
 	"revoking":      "Revoking",
 	"revoke_failed": "Revoke failed",
 	"closed":        "Closed",
+	// Rules (design §11.2): a version the service has not read yet, or a missing set.
+	"publishing": "Publishing",
+	"deleting":   "Deleting",
+	"ps_missing": "PS not found",
 }
 
 var funcs = template.FuncMap{

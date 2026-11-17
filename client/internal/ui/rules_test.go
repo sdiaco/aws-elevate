@@ -91,12 +91,31 @@ func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	h, _ := rulesHarness()
 	out := h.get(t, "/rules")
 	contains(t, h.get(t, "/rules/edit?id=ssm-prod"), "old-ps is no longer in Identity Center")
-	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", "PS not found", "privileged",
+	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", `<span class="st st-ps_missing">PS not found</span>`,
+		`<span class="st st-active">Active</span>`, "<th>Status</th>", "privileged",
 		"prod (222222222222)", "1h (max 4h)", "manual by leads", "auto",
 		`href="/rules/edit"`, "New rule", `href="/rules/import"`, `formaction="/rules/delete"`)
 	if strings.Count(out, "PS not found") != 1 {
 		t.Errorf("only ssm-prod lost its permission set:\n%s", out)
 	}
+	lacks(t, out, "data-reload")
+}
+
+func TestRulesNotYetInUseShowPublishingAndDeletingAndTheListReadsItselfAgain(t *testing.T) {
+	h, _ := rulesHarness()
+	five := 5
+	h.svc.versions.Versions = []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}
+	// Version 5 changes ssm-prod, adds ssm-new and removes ssm-dev; the service still uses 3.
+	h.svc.docs[five] = `{"schemaVersion":1,"rules":[` +
+		`{"id":"ssm-prod","group":{"id":"g-dev","name":"devs"},"permissionSet":{"arn":"arn:aws:sso:::permissionSet/ssoins-1/ps-1","name":"ssm-write"},"accounts":[{"id":"222222222222","name":"prod"}],"duration":{"defaultSeconds":3600,"maxSeconds":14400},"approval":"manual","approverGroup":{"id":"g-lead","name":"leads"},"privileged":true},` +
+		`{"id":"ssm-new","group":{"id":"g-dev","name":"devs"},"permissionSet":{"arn":"arn:aws:sso:::permissionSet/ssoins-1/ps-1","name":"ssm-write"},"accounts":[{"id":"111111111111","name":"dev"}],"duration":{"defaultSeconds":3600,"maxSeconds":7200},"approval":"auto","approverGroup":null,"privileged":false}]}`
+	out := h.get(t, "/rules")
+	if strings.Count(out, `<span class="st st-publishing">Publishing</span>`) != 2 {
+		t.Errorf("ssm-prod and ssm-new are publishing:\n%s", out)
+	}
+	contains(t, out, `<span class="st st-deleting">Deleting</span>`, "data-reload")
+	// A rule on its way out cannot be opened or selected: it is in no version to edit.
+	lacks(t, out, `href="/rules?open=ssm-dev"`, `value="ssm-dev"`, `class="st st-active"`)
 }
 
 func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
