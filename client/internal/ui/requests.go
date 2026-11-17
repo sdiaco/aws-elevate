@@ -38,7 +38,7 @@ func (a *App) requestFilters() []requestFilter {
 	return f
 }
 
-func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.Me.User.UserID }
+func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.me().User.UserID }
 
 // openGrants are the caller's open grants and those they see as approver or admin, each
 // once, the soonest to end first.

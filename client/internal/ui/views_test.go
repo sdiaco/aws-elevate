@@ -31,6 +31,16 @@ type fakeService struct {
 	versions    *api.ConfigVersions
 	docs        map[int]string // rules documents by version
 	afterAction string         // state returned by an action
+	me          *api.Me        // answer of GET /me when the interface refreshes the roles
+	meErr       error
+}
+
+func (f *fakeService) Me(context.Context) (*api.Me, error) {
+	f.calls = append(f.calls, "me")
+	if f.meErr != nil {
+		return nil, f.meErr
+	}
+	return f.me, nil
 }
 
 func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
