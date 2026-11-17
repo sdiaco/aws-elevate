@@ -16,9 +16,10 @@ maintainer's console access to the service account during tests): stack, code bu
 source permission set, the
 seeder Lambda (records written as the engine role, because the table policy admits no one
 else), the groups elevate-e2e-admins and elevate-e2e-requesters with the test user in
-both, with E2E_APPROVAL=1 the user elevate-e2e-approver in the admin group (a request
-cannot be approved by its requester; its first login is done by hand: one-time password
-from the console),
+both and elevate-e2e-auditors, with E2E_APPROVAL=1 the user elevate-e2e-approver in the
+admin group (a request cannot be approved by its requester), with E2E_USERS=1 also
+elevate-e2e-requester and elevate-e2e-auditor, one per group, for manual UI checks (each
+first login is done by hand: one-time password from the console),
 and the JIT-* permission sets the engine makes for e2e grants. The stack also
 creates the service permission sets ElevateRequester and ElevateAdmin, under their real
 names (the client looks them up by name; the maintainer approved it for the test
@@ -76,6 +77,11 @@ OTHER_RULE_ID = "e2e-other"  # a group the test user is not in
 ADMIN_GROUP = "elevate-e2e-admins"
 APPROVER_USER = "elevate-e2e-approver"
 REQUESTER_GROUP = "elevate-e2e-requesters"
+AUDITOR_GROUP = "elevate-e2e-auditors"
+REQUESTER_USER = "elevate-e2e-requester"
+AUDITOR_USER = "elevate-e2e-auditor"
+# Extra people for manual UI checks (E2E_USERS=1), one role each: user -> group.
+PEOPLE = {APPROVER_USER: ADMIN_GROUP, REQUESTER_USER: REQUESTER_GROUP, AUDITOR_USER: AUDITOR_GROUP}
 PROBE_ACTION = "iam:GetAccountSummary"
 
 SEEDER_CODE = """
@@ -93,6 +99,11 @@ def h(event, context):
 def approval_enabled() -> bool:
     """The approval by a second user runs only on request: its login is manual."""
     return os.environ.get("E2E_APPROVAL") == "1"
+
+
+def users_enabled() -> bool:
+    """E2E_USERS=1 also creates a pure requester and an auditor for manual UI checks."""
+    return os.environ.get("E2E_USERS") == "1"
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -169,29 +180,30 @@ def _add_member(session: boto3.Session, group: str, user: str) -> None:
             raise
 
 
-def ensure_approver(session: boto3.Session, admin_group: str) -> None:
+def ensure_person(session: boto3.Session, name: str, group: str) -> None:
     ids, store_id = _store(session)
-    user = find_user(session, APPROVER_USER)
+    user = find_user(session, name)
     if user is None:
         user = ids.create_user(
             IdentityStoreId=store_id,
-            UserName=APPROVER_USER,
-            DisplayName="elevate e2e approver",
-            Name={"GivenName": "elevate", "FamilyName": "e2e-approver"},
-            Emails=[{"Value": f"{APPROVER_USER}@example.com", "Type": "work", "Primary": True}],
+            UserName=name,
+            DisplayName=name.replace("-", " "),
+            Name={"GivenName": "elevate", "FamilyName": name.removeprefix("elevate-")},
+            Emails=[{"Value": f"{name}@example.com", "Type": "work", "Primary": True}],
         )["UserId"]
-        log(f"created user {APPROVER_USER}: set its password in the console and log in")
-    _add_member(session, admin_group, user)
+        log(f"created user {name}: set its password in the console and log in")
+    _add_member(session, group, user)
 
 
-def delete_approver(session: boto3.Session, failures: list) -> None:
+def delete_people(session: boto3.Session, failures: list) -> None:
     ids, store_id = _store(session)
-    user = find_user(session, APPROVER_USER)
-    if user is None:
-        return
-    _try(f"user {APPROVER_USER}", lambda: ids.delete_user(
-        IdentityStoreId=store_id, UserId=user), failures)  # fmt: skip
-    log(f"deleted user {APPROVER_USER}")
+    for name in PEOPLE:
+        user = find_user(session, name)
+        if user is None:
+            continue
+        _try(f"user {name}", lambda u=user: ids.delete_user(
+            IdentityStoreId=store_id, UserId=u), failures)  # fmt: skip
+        log(f"deleted user {name}")
 
 
 def find_group(session: boto3.Session, name: str) -> str | None:
@@ -209,28 +221,33 @@ def find_group(session: boto3.Session, name: str) -> str | None:
         return None
 
 
-def ensure_groups(session: boto3.Session) -> tuple[str, str]:
-    """(admin group id, requester group id), each with the test user as a member."""
+def ensure_groups(session: boto3.Session) -> dict[str, str]:
+    """Group ids by name. The test user is in the admin and requester groups; the auditor
+    group holds only the auditor of E2E_USERS=1."""
     ids, store_id = _store(session)
     user = e2e_user_id(session)
-    found = []
-    for name in (ADMIN_GROUP, REQUESTER_GROUP):
+    found = {}
+    for name in (ADMIN_GROUP, REQUESTER_GROUP, AUDITOR_GROUP):
         group = find_group(session, name)
         if group is None:
             group = ids.create_group(
                 IdentityStoreId=store_id, DisplayName=name, Description="aws-elevate e2e"
             )["GroupId"]
             log(f"created group {name}")
-        _add_member(session, group, user)
-        found.append(group)
-    if approval_enabled():
-        ensure_approver(session, found[0])
-    return found[0], found[1]
+        if name != AUDITOR_GROUP:
+            _add_member(session, group, user)
+        found[name] = group
+    if approval_enabled() or users_enabled():
+        ensure_person(session, APPROVER_USER, found[ADMIN_GROUP])
+    if users_enabled():
+        for name in (REQUESTER_USER, AUDITOR_USER):
+            ensure_person(session, name, found[PEOPLE[name]])
+    return found
 
 
 def delete_groups(session: boto3.Session, failures: list) -> None:
     ids, store_id = _store(session)
-    for name in (ADMIN_GROUP, REQUESTER_GROUP):
+    for name in (ADMIN_GROUP, REQUESTER_GROUP, AUDITOR_GROUP):
         group = find_group(session, name)
         if group is None:
             continue
@@ -324,13 +341,14 @@ def stack_up(session: boto3.Session) -> dict:
         install(session)
         return stack_outputs(session)
     bucket, key = upload(session)
-    admin_group, requester_group = ensure_groups(session)
+    groups = ensure_groups(session)
     params = [
         {"ParameterKey": "AlertEmail", "ParameterValue": env("ALERT_EMAIL", "user@example.com")},
         {"ParameterKey": "CodeBucket", "ParameterValue": bucket},
         {"ParameterKey": "CodeKey", "ParameterValue": key},
-        {"ParameterKey": "AdminGroupId", "ParameterValue": admin_group},
-        {"ParameterKey": "RequesterGroupId", "ParameterValue": requester_group},
+        {"ParameterKey": "AdminGroupId", "ParameterValue": groups[ADMIN_GROUP]},
+        {"ParameterKey": "RequesterGroupId", "ParameterValue": groups[REQUESTER_GROUP]},
+        {"ParameterKey": "AuditorGroupId", "ParameterValue": groups[AUDITOR_GROUP]},
     ]
     _update(cfn, params, template_url(session))
     return stack_outputs(session)
@@ -393,6 +411,7 @@ def install(session: boto3.Session) -> None:
             "--region", session.region_name, "--stack-name", STACK,
             "--template-url", template_url(session), "--code-bucket", bucket, "--code-key", key,
             "--admin-group", ADMIN_GROUP, "--requester-group", REQUESTER_GROUP,
+            "--auditor-group", AUDITOR_GROUP,
             "--email", env("ALERT_EMAIL", "user@example.com"),
         ]  # fmt: skip
         log(f"installing {STACK} {PREVIOUS_INFRA} with aws-elevate install")
@@ -721,7 +740,7 @@ def stack_down(session: boto3.Session) -> None:
             StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 90}
         )
     # The stack's group assignments are gone with it: the groups can go now.
-    delete_approver(session, failures)
+    delete_people(session, failures)
     delete_groups(session, failures)
     # Retained by the stack on purpose (design §12.3): remove them for the test stack.
     ddb = session.client("dynamodb")
