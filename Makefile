@@ -80,6 +80,7 @@ package:
 
 # End-to-end tests create only elevate-e2e* resources. Always finish with e2e-down.
 # The approval by a second user is opt-in (manual login): E2E_APPROVAL=1 make e2e-up e2e.
+# Manual UI checks with one user per role (approver, requester, auditor): E2E_USERS=1 make e2e-up.
 # A new stack is installed with the client, built in the container (Go is only there).
 e2e-up: dev-image
 	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
