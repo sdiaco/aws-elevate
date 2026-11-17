@@ -514,3 +514,12 @@ function fillAll(root) {
   });
 }
 fillAll(document);
+
+// Confirmation dialogs: the page and its form stay as they are behind them, and Esc or
+// "Go back" closes them. The opener gets the focus back.
+document.addEventListener("click", (e) => {
+  const open = e.target.closest("[data-dialog]");
+  if (open) document.getElementById(open.dataset.dialog).showModal();
+  const close = e.target.closest("dialog [data-close]");
+  if (close) close.closest("dialog").close();
+});

@@ -3,5 +3,15 @@
 <form method="post" class="form-actions">
 <input type="hidden" name="change" value="{{.Change}}">
 <input type="hidden" name="latest" value="{{.Latest}}">
-<a class="btn link" href="/rules">Cancel</a><button class="btn primary" formaction="/rules/publish">Publish</button>
+<a class="btn link" href="/rules">Cancel</a>
+{{- if .Replaces}}
+<input type="hidden" name="replaces" value="{{join .Replaces ","}}">
+<button type="button" class="btn primary" data-dialog="replace">Replace and publish…</button>
+<dialog id="replace" class="modal" aria-labelledby="replace-title">
+<h2 id="replace-title">Replace another admin's change?</h2>
+<p>Another admin changed these rules after you started. Publishing replaces their change with yours.</p>
+<ul class="ids">{{range .Replaces}}<li><code>{{.}}</code></li>{{end}}</ul>
+<div class="form-actions"><button type="button" class="btn link" data-close autofocus>Go back</button><button class="btn primary" name="confirmed" value="1" formaction="/rules/publish">Replace and publish</button></div>
+</dialog>
+{{- else}}<button class="btn primary" formaction="/rules/publish">Publish</button>{{end}}
 </form>{{end}}
