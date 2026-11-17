@@ -73,6 +73,7 @@ type List struct {
 	Columns []string
 	Rows    []Row
 	Actions []Action // with actions the rows can be selected; disabled until some are
+	Menu    bool     // the actions sit in an "Actions" menu, as EC2's Instance state
 	Tools   []Action // header links that need no selection
 	Empty   string
 	First   string // address of the first page, when this is not it

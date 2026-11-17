@@ -602,7 +602,7 @@ function fieldText(form, name) {
     } else if (el.type === "checkbox" || el.type === "radio") {
       // A single checkbox is a yes or no; checked is the only way a group says something.
       if (el.type === "checkbox" && els.length === 1) parts.push(el.checked ? "Yes" : "No");
-      else if (el.checked) parts.push(el.closest("label").textContent.trim());
+      else if (el.checked) parts.push(el.closest("label").textContent.replace(/\s+/g, " ").trim());
     } else if (el.value.trim()) {
       parts.push(el.value.trim());
     }
@@ -621,19 +621,25 @@ function showWhen(form) {
   });
 }
 
+// A summary follows the form as it is filled: [data-mirror="name …"] inside the form, or
+// anywhere with data-of="<form id>", shows those fields, or data-empty when they are.
 function mirror(form) {
   showWhen(form);
-  form.querySelectorAll("[data-mirror]").forEach((dd) => {
+  const dds = [...form.querySelectorAll("[data-mirror]")];
+  if (form.id) dds.push(...document.querySelectorAll(`[data-mirror][data-of="${form.id}"]`));
+  dds.forEach((dd) => {
     const names = dd.dataset.mirror.split(" ").filter((n) => !form.querySelector(`[data-show-when] [name="${n}"]`)?.closest("[data-show-when]").hidden);
-    dd.textContent = names.map((n) => fieldText(form, n)).filter(Boolean).join(" · ") || "-";
+    dd.textContent = names.map((n) => fieldText(form, n)).filter(Boolean).join(" · ") || dd.dataset.empty || "-";
   });
 }
 
-document.querySelectorAll("[data-mirror-form], form:has([data-show-when])").forEach((form) => {
-  mirror(form);
-  form.addEventListener("input", () => mirror(form));
-  form.addEventListener("change", () => mirror(form));
-});
+const mirrored = (form) => form?.matches?.("[data-mirror-form], form:has([data-show-when])") ||
+  (form?.id && document.querySelector(`[data-of="${form.id}"]`));
+document.querySelectorAll("form").forEach((form) => { if (mirrored(form)) mirror(form); });
+// Delegated: the New request form arrives after the page, when a rule is chosen.
+["input", "change"].forEach((type) => document.addEventListener(type, (e) => {
+  if (mirrored(e.target.form)) mirror(e.target.form);
+}));
 
 // Parts read after the page shows: [data-fill] is replaced by the HTML at its address,
 // once. The panel uses it for what takes AWS a few seconds, such as the CLI profile.
@@ -925,4 +931,36 @@ document.addEventListener("change", (e) => {
   box.querySelectorAll(".card").forEach((c) => c.classList.toggle("selected", c.querySelector("input").checked));
   const count = box.querySelector("[data-selected-count]");
   if (count) count.textContent = `Selected (${box.querySelectorAll(".card input:checked").length})`;
+});
+
+// An "Actions" menu (EC2's Instance state): [data-menu] opens the [role=menu] after it.
+// Its items are the list's actions, enabled by the selection as the buttons are.
+document.addEventListener("click", (e) => {
+  const opener = e.target.closest("[data-menu]");
+  document.querySelectorAll("[data-menu][aria-expanded=true]").forEach((b) => {
+    if (b === opener) return;
+    b.setAttribute("aria-expanded", "false");
+    b.nextElementSibling.hidden = true;
+  });
+  if (!opener) return;
+  const menu = opener.nextElementSibling;
+  menu.hidden = !menu.hidden;
+  opener.setAttribute("aria-expanded", String(!menu.hidden));
+  if (!menu.hidden) menu.querySelector("[role=menuitem]:not(:disabled)")?.focus();
+});
+
+document.addEventListener("keydown", (e) => {
+  const menu = e.target.closest?.("[role=menu]");
+  if (!menu) return;
+  const items = [...menu.querySelectorAll("[role=menuitem]:not(:disabled)")];
+  const at = items.indexOf(e.target);
+  if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
+  else if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    menu.hidden = true;
+    menu.previousElementSibling.setAttribute("aria-expanded", "false");
+    menu.previousElementSibling.focus();
+  }
 });

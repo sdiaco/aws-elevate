@@ -133,14 +133,17 @@ func TestAnAuditorSeesEveryOpenGrantWithoutActions(t *testing.T) {
 func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
-	// Only what is done on several rows sits in the header; every row can be selected to
-	// open its panel.
+	// What is done on several rows sits in the header's Actions menu, as EC2's Instance
+	// state; the decisions on one request stay in its panel.
 	contains(t, out,
 		`value="mine234567" data-select data-actions="revoke"`,
+		`value="own2345678" data-select data-actions="cancel"`,
 		`value="ask2345678" data-select aria-label`,
-		`formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`,
+		`<button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>`,
+		`role="menuitem" formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`,
+		`role="menuitem" formaction="/requests/cancel" disabled data-action="cancel" data-confirm>Cancel request…`,
 	)
-	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/cancel"`, `formaction="/requests/retry"`)
+	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/retry"`)
 }
 
 func TestPendingRowsRefreshOnRequestAndMovingRowsPoll(t *testing.T) {
@@ -358,6 +361,9 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 		`<input type="radio" name="account" value="222222222222" checked required data-error="Choose an account.">`,
 		`class="card-name">prod</span>`, `class="copy card-id" data-copy="222222222222"`,
 		`name="duration"`, `placeholder="1h"`, "Default 1h, at most 4h",
+		`<dd data-mirror="account" data-of="request">prod 222222222222</dd>`,
+		`<dd data-mirror="duration" data-of="request" data-empty="1h (default)">1h (default)</dd>`,
+		`<dd data-mirror="reason" data-of="request" class="clamp">-</dd>`,
 		`<textarea name="reason"`,
 		`data-load="/requests/permissions?rule=ssm-prod"`,
 		`href="/requests"`,

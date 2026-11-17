@@ -86,11 +86,12 @@ func ends(g api.Grant) time.Time {
 	return time.Time{}
 }
 
-// requestActions are the header buttons: only what is done on several rows at once. The
-// decisions on one request (approve, reject, cancel, retry) are in the panel, next to its
+// requestActions are the header's Actions menu: what is done on several rows at once.
+// The decisions on one request (approve, reject, retry) are in the panel, next to its
 // detail (design §11.2). Each is enabled only when every selected row allows it.
 var requestActions = []Action{
 	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true, Confirm: true},
+	{Label: "Cancel request…", Path: "/requests/cancel", Name: "cancel", Danger: true, Confirm: true},
 }
 
 // listView is a page of one list and its bottom panel: Requests, History, Rules and
@@ -167,7 +168,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	// disabled until the selected rows are all ones the service lets this user revoke. An
 	// auditor only reads, and gets no action at all (design §3.3).
 	if a.has("requester") || a.has("approver") || a.has("admin") {
-		l.Actions = requestActions
+		l.Actions, l.Menu = requestActions, true
 	}
 	for i := range l.Rows {
 		if l.Rows[i].Poll != "" {
