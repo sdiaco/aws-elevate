@@ -439,3 +439,28 @@ func TestManualApprovalNeedsAGroupThatApproves(t *testing.T) {
 		t.Error("published")
 	}
 }
+
+func TestEditingKeepsTheNamesOfUnchangedAccountsAndGroups(t *testing.T) {
+	// Organizations and Identity Center may rename an account or a group meanwhile: the
+	// review shows only what the admin changed, so the names in use stay.
+	base := json.RawMessage(`{"schemaVersion":1,"rules":[{"id":"r1","group":{"id":"g1","name":"old-devs"},` +
+		`"permissionSet":{"arn":"arn:ps","name":"ps"},"accounts":[{"id":"111111111111","name":"old-dev"}],` +
+		`"duration":{"defaultSeconds":3600,"maxSeconds":7200},"approval":"manual","approverGroup":{"id":"g2","name":"old-leads"},"privileged":false}]}`)
+	edited := api.Rule{
+		ID: "r1", Group: api.Ref{ID: "g1", Name: "devs"}, PermissionSet: api.PermissionSet{Arn: "arn:ps", Name: "ps"},
+		Accounts: []api.Ref{{ID: "111111111111", Name: "dev"}, {ID: "222222222222", Name: "prod"}},
+		Duration: api.Duration{DefaultSeconds: 3600, MaxSeconds: 3600}, Approval: "manual",
+		ApproverGroup: &api.Ref{ID: "g2", Name: "leads"},
+	}
+	raw, _ := json.Marshal(edited)
+	out, err := change{Kind: "put", Orig: "r1", Rule: raw}.apply(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{`"name":"old-devs"`, `"name":"old-dev"`, `"name":"old-leads"`, `"name":"prod"`, `"maxSeconds":3600`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s in %s", want, s)
+		}
+	}
+}

@@ -51,7 +51,11 @@ func (c change) apply(doc json.RawMessage) (json.RawMessage, error) {
 		if i < 0 {
 			rules = append(rules, c.Rule)
 		} else {
-			rules[i] = c.Rule
+			kept, err := keepNames(rules[i], c.Rule)
+			if err != nil {
+				return nil, err
+			}
+			rules[i] = kept
 		}
 	case "delete":
 		rules = slices.DeleteFunc(rules, func(raw json.RawMessage) bool { return slices.Contains(c.IDs, idOf(raw)) })
@@ -67,6 +71,31 @@ func (c change) apply(doc json.RawMessage) (json.RawMessage, error) {
 	}
 	top["rules"] = out
 	return json.Marshal(top)
+}
+
+// keepNames gives the edited rule the names in use of the accounts and groups it keeps:
+// Organizations or Identity Center may have renamed them meanwhile, and the review shows
+// only what the admin changed.
+func keepNames(old, edited json.RawMessage) (json.RawMessage, error) {
+	var was, now api.Rule
+	if err := json.Unmarshal(old, &was); err != nil {
+		return edited, nil // a rule in use that cannot be read keeps nothing
+	}
+	if err := json.Unmarshal(edited, &now); err != nil {
+		return nil, fmt.Errorf("the edited rule cannot be read: %w", err)
+	}
+	if now.Group.ID == was.Group.ID {
+		now.Group.Name = was.Group.Name
+	}
+	if now.ApproverGroup != nil && was.ApproverGroup != nil && now.ApproverGroup.ID == was.ApproverGroup.ID {
+		now.ApproverGroup.Name = was.ApproverGroup.Name
+	}
+	for i, acc := range now.Accounts {
+		if j := slices.IndexFunc(was.Accounts, func(a api.Ref) bool { return a.ID == acc.ID }); j >= 0 {
+			now.Accounts[i].Name = was.Accounts[j].Name
+		}
+	}
+	return json.Marshal(now)
 }
 
 // touches are the rule ids the change rewrites; nil means every rule.
