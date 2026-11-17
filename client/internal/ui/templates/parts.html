@@ -178,7 +178,7 @@
 
 {{/* What changes between two rules documents, rule by rule, always side by side. */}}
 {{define "changes"}}<div class="compare">
-{{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{end}}
+{{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{else}}<p class="change-count">{{len .Added}} added · {{len .Changed}} changed · {{len .Removed}} removed · {{.Unchanged}} unchanged</p>{{end}}
 {{if .Other}}<div class="alert info" role="status">Fields outside the rules differ too.</div>{{end}}
 {{range .Added}}{{template "rule-diff" (diff $ . "Added")}}{{end}}
 {{range .Removed}}{{template "rule-diff" (diff $ . "Removed")}}{{end}}

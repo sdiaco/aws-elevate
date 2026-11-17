@@ -199,7 +199,8 @@ func TestSavingARuleShowsTheChangesThenPublishesFromTheNewestVersion(t *testing.
 	h, adm := rulesHarness()
 	w := h.do(t, "POST", "/rules/edit", postedRule("db-prod"))
 	out := w.Body.String()
-	contains(t, out, "Review changes", "Added", "db-prod", `formaction="/rules/publish"`, "Publish")
+	contains(t, out, "Review changes", "Added", "db-prod", `formaction="/rules/publish"`, "Publish",
+		"1 added · 0 changed · 0 removed · 2 unchanged")
 	if len(adm.published) != 0 || h.svc.calls[len(h.svc.calls)-1] != "check" {
 		t.Fatalf("published before confirmation, calls %v", h.svc.calls)
 	}

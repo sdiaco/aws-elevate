@@ -190,6 +190,7 @@ type compareView struct {
 	Old, New                int
 	OldLabel, NewLabel      string
 	Added, Removed, Changed []ruleChange
+	Unchanged               int  // rules read and left as they are
 	Other                   bool // a field outside the rules changed
 }
 
@@ -250,6 +251,8 @@ func diffRules(old, new json.RawMessage) (compareView, error) {
 			rc := ruleChange{ID: id, Before: indent(b), After: indent(after.rules[id])}
 			rc.BeforeLines, rc.AfterLines = markLines(rc.Before, rc.After)
 			view.Changed = append(view.Changed, rc)
+		default:
+			view.Unchanged++
 		}
 	}
 	for _, id := range before.order {
