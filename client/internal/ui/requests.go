@@ -89,10 +89,11 @@ var requestActions = []Action{
 // listView is a page of one list and its bottom panel: Requests, History, Rules and
 // Config versions.
 type listView struct {
-	List  List
-	Flash *flash
-	Panel panelSlot
-	Alert *Alert
+	List   List
+	Flash  *flash
+	Notice *notice
+	Panel  panelSlot
+	Alert  *Alert
 }
 
 // panelSlot is the bottom panel of a page, closed until a row is chosen (design §11.1):
@@ -146,27 +147,18 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		l.Filters = []FilterGroup{group}
 	}
-	given := map[string]bool{}
 	for _, g := range kept {
 		l.Rows = append(l.Rows, a.requestRowOf(g, here))
-		for _, act := range g.Actions {
-			given[act] = true
+	}
+	// The selection column is always there, as in the console: Revoke stays disabled until
+	// the selected rows are all ones the service lets this user revoke.
+	l.Actions = requestActions
+	for i := range l.Rows {
+		if l.Rows[i].Poll != "" {
+			l.Rows[i].Poll += "?check=1"
 		}
 	}
-	for _, act := range requestActions {
-		if given[act.Name] {
-			l.Actions = append(l.Actions, act)
-		}
-	}
-	if len(l.Actions) > 0 {
-		// A fresh row must keep the selection column of this table.
-		for i := range l.Rows {
-			if l.Rows[i].Poll != "" {
-				l.Rows[i].Poll += "?check=1"
-			}
-		}
-	}
-	v := listView{List: l}
+	v := listView{List: l, Notice: a.noticeOf(r)}
 	if id := r.URL.Query().Get("sent"); id != "" {
 		if d, err := a.Service.Grant(r.Context(), id); err != nil {
 			v.Alert = &Alert{Kind: "error", Text: err.Error()}
@@ -192,7 +184,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 func (a *App) requestRowOf(g api.Grant, here string) Row {
 	row := Row{Key: g.ID, State: g.State, Cells: []Cell{
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
-		{State: g.State},
+		{State: g.State, Refresh: refreshOf(g)},
 		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
@@ -211,9 +203,19 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	return row
 }
 
-// inMotion states change without anyone on this page acting: the page asks for them.
+// refreshOf is the address a pending row reads itself again from, on request.
+func refreshOf(g api.Grant) string {
+	if g.State != api.StatePending {
+		return ""
+	}
+	return "/requests/row/" + g.ID + "?check=1"
+}
+
+// inMotion states change within seconds without anyone on this page acting: the page asks
+// for them. A pending request waits for a person, up to 30 minutes: its row has a refresh
+// button instead.
 func inMotion(state string) bool {
-	return state == api.StatePending || state == api.StateActivating || state == api.StateRevoking
+	return state == api.StateActivating || state == api.StateRevoking
 }
 
 func withParam(path, key, value string) string {
@@ -376,49 +378,62 @@ func (a *App) revoke(w http.ResponseWriter, r *http.Request) {
 		a.showConfirm(w, r, r.PostForm["id"], "/requests/revoke", Alert{Kind: "error", Text: "A reason is required."})
 		return
 	}
-	a.results(w, r, func(ctx context.Context, id string) (*api.Grant, error) {
+	a.results(w, r, "revocation started", func(ctx context.Context, id string) (*api.Grant, error) {
 		return a.Service.Revoke(ctx, id, reason)
 	})
 }
 
-func (a *App) approve(w http.ResponseWriter, r *http.Request) { a.results(w, r, a.Service.Approve) }
-func (a *App) reject(w http.ResponseWriter, r *http.Request)  { a.results(w, r, a.Service.Reject) }
-func (a *App) cancel(w http.ResponseWriter, r *http.Request)  { a.results(w, r, a.Service.Cancel) }
-func (a *App) retry(w http.ResponseWriter, r *http.Request)   { a.results(w, r, a.Service.Redrive) }
-
-// results runs one action on each selected grant and shows each outcome (design §11.1).
-func (a *App) results(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, id string) (*api.Grant, error)) {
-	if err := r.ParseForm(); err != nil {
-		a.fail(w, "Results", "/requests", err)
-		return
-	}
-	l := List{
-		Title: "Results", Columns: []string{"Outcome", "Requester", "Permission set", "Account", "Id"},
-		Tools: []Action{{Label: "Back to requests", Path: "/requests"}},
-	}
-	for _, id := range r.PostForm["id"] {
-		g, err := act(r.Context(), id)
-		if err != nil {
-			l.Rows = append(l.Rows, Row{Cells: []Cell{{Text: err.Error()}, {}, {}, {}, {Copy: id}}})
-			continue
-		}
-		l.Rows = append(l.Rows, outcomeRowOf(*g))
-	}
-	a.show(w, http.StatusOK, "list", "Results", "/requests", l)
+func (a *App) approve(w http.ResponseWriter, r *http.Request) {
+	a.results(w, r, "approved", a.Service.Approve)
+}
+func (a *App) reject(w http.ResponseWriter, r *http.Request) {
+	a.results(w, r, "rejected", a.Service.Reject)
+}
+func (a *App) cancel(w http.ResponseWriter, r *http.Request) {
+	a.results(w, r, "cancelled", a.Service.Cancel)
+}
+func (a *App) retry(w http.ResponseWriter, r *http.Request) {
+	a.results(w, r, "revocation retried", a.Service.Redrive)
 }
 
-func outcomeRowOf(g api.Grant) Row {
-	row := Row{State: g.State, Cells: []Cell{
-		{State: g.State, Text: closeReason(g), Muted: true},
-		{Text: g.Requester.UserName},
-		{Text: g.SourcePs.Name},
-		{Text: g.Account},
-		{Copy: g.ID},
-	}}
-	if g.State == api.StateRevoking || g.State == api.StateActivating {
-		row.Poll = "/requests/outcome/" + g.ID
+// results runs one action on each selected grant and goes back to Requests, which shows
+// the outcome at its top: one line, plus one line per grant the service refused. The rows
+// show each grant's new state.
+func (a *App) results(w http.ResponseWriter, r *http.Request, done string, act func(ctx context.Context, id string) (*api.Grant, error)) {
+	if err := r.ParseForm(); err != nil {
+		a.fail(w, "Requests", "/requests", err)
+		return
 	}
-	return row
+	ids := r.PostForm["id"]
+	var ok []string
+	var failed []string
+	for _, id := range ids {
+		if _, err := act(r.Context(), id); err != nil {
+			failed = append(failed, id+": "+err.Error())
+			continue
+		}
+		ok = append(ok, id)
+	}
+	a.redirectWithNotice(w, r, "/requests", outcomeNotice(ok, failed, done))
+}
+
+// outcomeNotice sums up an action on some grants.
+func outcomeNotice(ok, failed []string, done string) notice {
+	switch {
+	case len(failed) == 0 && len(ok) == 1:
+		return notice{Kind: "success", Text: "Request " + ok[0] + ": " + done + "."}
+	case len(failed) == 0:
+		return notice{Kind: "success", Text: fmt.Sprintf("%s: %s.", count(len(ok), "request", "requests"), done)}
+	case len(ok) == 0 && len(failed) == 1:
+		return notice{Kind: "error", Text: "Request " + failed[0]}
+	case len(ok) == 0:
+		return notice{Kind: "error", Text: count(len(failed), "request", "requests") + " failed.", Items: failed}
+	}
+	return notice{
+		Kind:  "warning",
+		Text:  fmt.Sprintf("%s: %s. %d failed.", count(len(ok), "request", "requests"), done, len(failed)),
+		Items: failed,
+	}
 }
 
 // closeReason is the reason next to a closed state, " expired" or "".
@@ -426,11 +441,16 @@ func closeReason(g api.Grant) string {
 	if g.CloseReason == nil {
 		return ""
 	}
-	return " " + strings.ReplaceAll(*g.CloseReason, "_", " ")
+	return " " + reasonLabel(*g.CloseReason)
 }
 
-func (a *App) outcomeRow(w http.ResponseWriter, r *http.Request) {
-	a.freshRow(w, r, outcomeRowOf, "")
+// reasonLabel is a close reason in words. A request nobody approved in time says so: the
+// bare "timed out" does not tell the requester what timed out.
+func reasonLabel(reason string) string {
+	if reason == "timed_out" {
+		return "not approved in time"
+	}
+	return strings.ReplaceAll(reason, "_", " ")
 }
 
 func errorOf(g api.Grant) string {

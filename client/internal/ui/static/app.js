@@ -75,31 +75,64 @@ function tick() {
 // data-state changes the waits start again from 2 seconds: the next step may be quick.
 const pollDelays = [2000, 4000, 8000, 16000, 30000];
 
+// replace swaps el for the HTML at address, keeping its selection and the open-row mark.
+// It returns the new element and whether its state moved.
+async function replace(el, address) {
+  const res = await fetch(address, { headers: { Accept: "text/html" } });
+  if (!res.ok) throw new Error(res.status);
+  const tpl = document.createElement("template");
+  tpl.innerHTML = (await res.text()).trim();
+  const next = tpl.content.firstElementChild;
+  const moved = next.dataset.state !== el.dataset.state;
+  const box = el.querySelector("[data-select]");
+  const kept = next.querySelector("[data-select]");
+  if (box && kept) kept.checked = box.checked;
+  if (el.classList.contains("open")) next.classList.add("open");
+  el.replaceWith(next);
+  const list = next.closest("[data-list]");
+  if (list) updateSelection(list);
+  tick();
+  return { next, moved };
+}
+
 function poll(el, attempt) {
   const delay = pollDelays[Math.min(attempt, pollDelays.length - 1)];
   setTimeout(async () => {
     if (!el.isConnected) return; // the page around it changed
     try {
-      const res = await fetch(el.dataset.poll, { headers: { Accept: "text/html" } });
-      if (!res.ok) throw new Error(res.status);
-      const tpl = document.createElement("template");
-      tpl.innerHTML = (await res.text()).trim();
-      const next = tpl.content.firstElementChild;
-      const moved = next.dataset.state !== el.dataset.state;
-      const box = el.querySelector("[data-select]");
-      const kept = next.querySelector("[data-select]");
-      if (box && kept) kept.checked = box.checked;
-      if (el.classList.contains("open")) next.classList.add("open");
-      el.replaceWith(next);
-      const list = next.closest("[data-list]");
-      if (list) updateSelection(list);
-      tick();
+      const { next, moved } = await replace(el, el.dataset.poll);
       if (next.dataset.poll) poll(next, moved ? 0 : attempt + 1);
     } catch {
       el.title = "Status not refreshed: reload the page";
     }
   }, delay);
 }
+
+// Refresh: a [data-refresh] button reads its row or flash again once. A pending request
+// waits for a person, so the page does not ask on its own; when the state moves on to one
+// that changes by itself, the polling takes over.
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-refresh]");
+  if (!btn) return;
+  const el = btn.closest("tr, .flash");
+  btn.disabled = true;
+  btn.classList.add("busy");
+  try {
+    const { next } = await replace(el, btn.dataset.refresh);
+    if (next.dataset.poll) poll(next, 0);
+  } catch {
+    btn.disabled = false;
+    btn.classList.remove("busy");
+    btn.title = "Not refreshed: try again, or reload the page";
+  }
+});
+
+// Closing: a [data-dismiss] button removes the notice or flash it sits in. Only finished
+// outcomes have one: a request still moving keeps its flash.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-dismiss]");
+  if (btn) btn.closest(".flash")?.remove();
+});
 
 // fill puts the HTML at an address into box; it says so in the box when it fails.
 async function fill(box, address) {
@@ -367,3 +400,45 @@ function start(root) {
 
 start(document);
 setInterval(tick, 1000);
+
+// Summary of a form: each [data-mirror="name ..."] shows what the named fields hold now,
+// as their labels read: the chosen option, the checked boxes, the text typed.
+function fieldText(form, name) {
+  const els = [...form.elements].filter((el) => el.name === name);
+  const parts = [];
+  for (const el of els) {
+    if (el instanceof HTMLSelectElement) {
+      if (el.value) parts.push(el.selectedOptions[0].textContent.trim());
+    } else if (el.type === "checkbox" || el.type === "radio") {
+      if (el.checked) parts.push(el.type === "checkbox" && els.length === 1 ? "Yes" : el.closest("label").textContent.trim());
+    } else if (el.value.trim()) {
+      parts.push(el.value.trim());
+    }
+  }
+  return parts.join(", ");
+}
+
+// Fields shown only with one choice: [data-show-when="name=value"].
+function showWhen(form) {
+  form.querySelectorAll("[data-show-when]").forEach((el) => {
+    const [name, value] = el.dataset.showWhen.split("=");
+    const picked = [...form.elements].find((f) => f.name === name && f.checked);
+    el.hidden = !picked || picked.value !== value;
+    // A hidden field is not sent: the service sees only what the form shows.
+    el.querySelectorAll("input, select, textarea").forEach((f) => { f.disabled = el.hidden; });
+  });
+}
+
+function mirror(form) {
+  showWhen(form);
+  form.querySelectorAll("[data-mirror]").forEach((dd) => {
+    const names = dd.dataset.mirror.split(" ").filter((n) => !form.querySelector(`[data-show-when] [name="${n}"]`)?.closest("[data-show-when]").hidden);
+    dd.textContent = names.map((n) => fieldText(form, n)).filter(Boolean).join(" · ") || "-";
+  });
+}
+
+document.querySelectorAll("[data-mirror-form], form:has([data-show-when])").forEach((form) => {
+  mirror(form);
+  form.addEventListener("input", () => mirror(form));
+  form.addEventListener("change", () => mirror(form));
+});

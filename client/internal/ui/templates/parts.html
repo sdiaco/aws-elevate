@@ -22,15 +22,31 @@
 {{define "copy-button"}}<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy" title="Copy"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg></button>{{end}}
 
 {{/* The request just sent, followed at the top of Requests (design §11.1). */}}
-{{define "flash"}}<div class="flash {{.Kind}}" role="status"{{if .Poll}} data-poll="{{.Poll}}" data-state="{{.Grant.State}}"{{end}}>
-<div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}<span class="flash-icon" aria-hidden="true"></span>{{end}}
-<span><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span></div>
+{{define "refresh-button"}}<button type="button" class="icon-btn small" data-refresh="{{.}}" aria-label="Refresh" title="Refresh"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>{{end}}
+
+{{define "dismiss-button"}}<button type="button" class="icon-btn small" data-dismiss aria-label="Dismiss" title="Dismiss"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>{{end}}
+
+{{/* The status icon of a flash: drawn, so it stays centred whatever the font. */}}
+{{define "flash-icon"}}<svg class="flash-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>
+{{- if eq . "success"}}<path d="M5 8.2l2 2 4-4.2"/>{{else if eq . "error"}}<path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/>{{else if eq . "warning"}}<path d="M8 4.8v3.8M8 11h.01"/>{{else}}<path d="M8 7.4v3.8M8 5h.01"/>{{end}}</svg>{{end}}
+
+{{define "flash"}}<div class="flash {{.Kind}}" role="status" data-state="{{.Grant.State}}"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
+<div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}{{template "flash-icon" .Kind}}{{end}}
+<span class="flash-text"><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span>
+{{- with .Refresh}}{{template "refresh-button" .}}{{end}}
+{{- if or (eq .Kind "success") (eq .Kind "error")}}{{template "dismiss-button"}}{{end}}</div>
 {{with .Error}}<p class="flash-body">{{.}}</p>{{end}}
 {{if eq .Grant.State "active"}}<div class="flash-body">
 {{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 {{template "command" (print "aws elevate shell " .Grant.ID)}}
 {{if .Ready}}{{template "command" (print "export AWS_PROFILE=" .Profile)}}{{end}}
 </div>{{end}}
+</div>{{end}}
+
+{{/* The outcome of an action, once, at the top of the page it returned to. */}}
+{{define "notice"}}<div class="flash {{.Kind}}" role="status">
+<div class="flash-head">{{template "flash-icon" .Kind}}<span class="flash-text">{{.Text}}</span>{{template "dismiss-button"}}</div>
+{{with .Items}}<ul class="flash-body flash-list">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
 </div>{{end}}
 
 {{/* The bottom panel (console split panel): closed until a row is chosen, then filled
@@ -74,7 +90,7 @@
 {{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
 {{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
 {{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}
-{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{exact .}}{{with $g.CloseReason}} · {{.}}{{end}}</dd></div>{{end}}
+{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{exact .}}{{with $g.CloseReason}} · {{reasonLabel .}}{{end}}</dd></div>{{end}}
 {{with $g.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $g.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
 {{if ne $g.State "revoke_failed"}}{{with $g.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}{{end}}
 <div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{$g.ID}}" title="Copy">{{$g.ID}}</button></dd></div>

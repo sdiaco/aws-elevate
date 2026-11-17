@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -129,21 +130,23 @@ func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/cancel"`, `formaction="/requests/retry"`)
 }
 
-func TestRowsInMotionPollTheirState(t *testing.T) {
+func TestPendingRowsRefreshOnRequestAndMovingRowsPoll(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
-	contains(t, out, `data-poll="/requests/row/ask2345678?check=1" data-state="pending"`)
-	lacks(t, out, `data-poll="/requests/row/mine234567`)
+	// A pending request waits for a person: a button reads it again, no timer does.
+	contains(t, out, `data-refresh="/requests/row/ask2345678?check=1"`)
+	lacks(t, out, `data-poll="/requests/row/ask2345678`, `data-poll="/requests/row/mine234567`)
 
 	out = h.get(t, "/requests/row/ask2345678?check=1")
 	if !strings.HasPrefix(out, "<tr") {
 		t.Fatalf("not a row: %s", out)
 	}
-	contains(t, out, `data-poll="/requests/row/ask2345678?check=1"`, `value="ask2345678" data-select`)
-	h.svc.grants["ask2345678"] = grant("ask2345678", api.StateActive, other)
+	contains(t, out, `value="ask2345678" data-select`)
+	h.svc.grants["ask2345678"] = grant("ask2345678", api.StateActivating, other)
 	out = h.get(t, "/requests/row/ask2345678?check=1")
-	lacks(t, out, "data-poll")
-	contains(t, out, `data-state="active"`, `value="ask2345678" data-select aria-label`)
+	contains(t, out, `data-poll="/requests/row/ask2345678?check=1"`)
+	lacks(t, out, "data-refresh")
+	contains(t, out, `data-state="activating"`, `value="ask2345678" data-select aria-label`)
 }
 
 func TestTheBottomPanelIsClosedUntilARowIsChosen(t *testing.T) {
@@ -203,17 +206,29 @@ func TestThePanelOfOwnActiveGrantOpensTheConsole(t *testing.T) {
 	lacks(t, out, "Open in console", "aws elevate shell")
 }
 
-func TestApproveRejectAndCancelShowEachOutcome(t *testing.T) {
+// followed is the page a redirect after an action leads to.
+func followed(t *testing.T, h *harness, w *httptest.ResponseRecorder, prefix string) string {
+	t.Helper()
+	loc := w.Header().Get("Location")
+	if w.Code != 303 || !strings.HasPrefix(loc, prefix+"?notice=") {
+		t.Fatalf("%d %q %s", w.Code, loc, w.Body)
+	}
+	out := h.get(t, loc)
+	lacks(t, h.get(t, loc), `class="flash`) // the notice shows once
+	return out
+}
+
+func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	h.svc.afterAction = api.StateActivating
 	w := h.do(t, "POST", "/requests/approve", url.Values{"id": {"ask2345678"}})
-	contains(t, w.Body.String(), "Results", "ask2345678", "Activating", `data-poll="/requests/outcome/ask2345678"`, `href="/requests"`)
+	contains(t, followed(t, h, w, "/requests"), `class="flash success"`, "Request ask2345678: approved.", "data-dismiss")
 
 	out := h.get(t, "/requests/reject?id=ask2345678")
 	contains(t, out, `<form method="post" action="/requests/reject">`, `value="ask2345678"`, "Reject 1 request")
 	h.svc.afterAction = api.StateClosed
 	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}})
-	contains(t, w.Body.String(), "ask2345678", "Closed")
+	contains(t, followed(t, h, w, "/requests"), "Request ask2345678: rejected.")
 
 	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
@@ -242,19 +257,15 @@ func TestRevokeAsksForReasonAndShowsEachOutcome(t *testing.T) {
 	if strings.Join(h.svc.calls, ",") != "revoke done early mine234567,revoke done early their23456" {
 		t.Errorf("calls %v", h.svc.calls)
 	}
-	contains(t, w.Body.String(), `data-poll="/requests/outcome/mine234567"`, "state_conflict: grant their23456 is closed")
-
-	h.svc.grants["mine234567"] = grant("mine234567", api.StateRevoking, me)
-	out = h.get(t, "/requests/outcome/mine234567")
-	contains(t, out, `data-poll="/requests/outcome/mine234567"`)
-	lacks(t, out, `class="check"`)
+	contains(t, followed(t, h, w, "/requests"), `class="flash warning"`,
+		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed")
 }
 
 func TestRetryRunsTheFailedRevocationAgain(t *testing.T) {
 	h := requestsHarness("admin")
 	h.svc.afterAction = api.StateRevoking
 	w := h.do(t, "POST", "/requests/retry", url.Values{"id": {"fail234567"}})
-	contains(t, w.Body.String(), "fail234567", "Revoking")
+	contains(t, followed(t, h, w, "/requests"), "Request fail234567: revocation retried.")
 	if h.svc.calls[len(h.svc.calls)-1] != "redrive fail234567" {
 		t.Errorf("calls %v", h.svc.calls)
 	}
@@ -337,7 +348,8 @@ func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 	}
 
 	out := h.get(t, "/requests?sent=new4567890")
-	contains(t, out, `class="flash info"`, `data-poll="/requests/flash/new4567890"`, "Waiting for approval by leads", `class="spinner"`)
+	contains(t, out, `class="flash info"`, `data-refresh="/requests/flash/new4567890"`, "Waiting for approval by leads")
+	lacks(t, out, `data-poll="/requests/flash/`, `class="spinner"`, "data-dismiss")
 	lacks(t, out, "console?account_id")
 }
 
@@ -389,4 +401,21 @@ func TestTheFlashOfAClosedOrUnreadyRequest(t *testing.T) {
 	h.svc.grants["new4567890"] = grant("new4567890", api.StateActive, me)
 	out = h.get(t, "/requests/flash/new4567890")
 	contains(t, out, `class="flash error"`, "role not accepted after 60s", "aws elevate shell new4567890")
+}
+
+func TestTheSelectionColumnIsThereEvenWithNothingToRevoke(t *testing.T) {
+	h := newHarness("requester")
+	h.svc.lists["mine"] = []api.Grant{grant("own2345678", api.StatePending, me, "cancel")}
+	out := h.get(t, "/requests")
+	contains(t, out, `data-select-all`, `value="own2345678" data-select`,
+		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`)
+}
+
+func TestARequestNobodyApprovedInTimeSaysSo(t *testing.T) {
+	g := grant("old2345678", api.StateClosed, me)
+	reason := "timed_out"
+	g.CloseReason = &reason
+	if got := outcome(g); !strings.Contains(got, "not approved in time") {
+		t.Errorf("outcome %q", got)
+	}
 }

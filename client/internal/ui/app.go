@@ -45,6 +45,7 @@ type App struct {
 	Updates *Updates
 
 	skippedWelcome atomic.Bool // the admin skipped the first run in this session
+	notices        notices     // outcomes waiting for the page after a redirect
 }
 
 func (a *App) has(role string) bool { return slices.Contains(a.Me.Roles, role) }
@@ -64,7 +65,6 @@ func Pages(a *App) http.Handler {
 	mux.HandleFunc("GET /requests/flash/{id}", a.flashPart)
 	mux.HandleFunc("GET /requests/row/{id}", a.requestRow)
 	mux.HandleFunc("GET /panel/{id}", a.panelPart)
-	mux.HandleFunc("GET /requests/outcome/{id}", a.outcomeRow)
 	mux.HandleFunc("POST /requests/approve", a.approve)
 	mux.HandleFunc("GET /requests/reject", a.rejectConfirm)
 	mux.HandleFunc("POST /requests/reject", a.reject)
@@ -188,7 +188,7 @@ func can(g api.Grant, action string) bool { return slices.Contains(g.Actions, ac
 func outcome(g api.Grant) string {
 	text := stateLabels[g.State]
 	if g.CloseReason != nil {
-		text += ", " + strings.ReplaceAll(*g.CloseReason, "_", " ")
+		text += ", " + reasonLabel(*g.CloseReason)
 	}
 	if g.Error != nil {
 		text += " (" + *g.Error + ")"

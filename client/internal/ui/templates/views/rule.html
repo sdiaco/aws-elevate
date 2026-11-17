@@ -1,9 +1,22 @@
 {{define "content"}}<div class="page-head"><h1>{{if .Form.Orig}}Rule {{.Form.Orig}}{{else}}New rule{{end}}</h1></div>
-<div class="box form-box"><form method="post" action="/rules/edit">
+<form method="post" action="/rules/edit" id="rule" class="launch rule-launch" data-mirror-form>
 <input type="hidden" name="orig" value="{{.Form.Orig}}">
-{{template "rule-what" .}}
-{{template "rule-where" .}}
-{{template "rule-who" .}}
-{{template "rule-how" .}}
+<div class="launch-main">
+<section class="box"><h2>Name and permission set</h2><p class="desc">What the rule gives.</p>{{template "rule-what" .}}</section>
+<section class="box"><h2>Where</h2><p class="desc">The accounts where it can be given.</p>{{template "rule-where" .}}</section>
+<section class="box"><h2>Who</h2><p class="desc">Who can ask, and who decides.</p>{{template "rule-who" .}}</section>
+<section class="box"><h2>Duration</h2><p class="desc">How long the access lasts.</p>{{template "rule-how" .}}</section>
+</div>
+<aside class="box launch-summary"><h2>Summary</h2>
+<dl class="kv">
+<div><dt>Name</dt><dd data-mirror="id">{{or .Form.ID "-"}}</dd></div>
+<div><dt>Permission set</dt><dd data-mirror="ps">{{or .Form.PS "-"}}</dd></div>
+<div><dt>Accounts</dt><dd data-mirror="account">-</dd></div>
+<div><dt>Who can request</dt><dd data-mirror="group">-</dd></div>
+<div><dt>Approval</dt><dd data-mirror="approval approver">-</dd></div>
+<div><dt>Duration</dt><dd data-mirror="default max">-</dd></div>
+<div><dt>Privileged</dt><dd data-mirror="privileged">-</dd></div>
+</dl>
 <div class="form-actions"><a class="btn link" href="/rules">Cancel</a><button class="btn primary">Review changes</button></div>
-</form></div>{{end}}
+</aside>
+</form>{{end}}
