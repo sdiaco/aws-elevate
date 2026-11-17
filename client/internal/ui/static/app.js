@@ -154,13 +154,16 @@ function sync(next) {
   });
 }
 
-async function replace(el, address, follow = true) {
+// With hold, an unchanged element is swapped only once hold resolves, so a quick answer
+// does not make "Checking…" flash.
+async function replace(el, address, follow = true, hold = null) {
   const res = await fetch(address, { headers: { Accept: "text/html" } });
   if (!res.ok) throw new Error(res.status);
   const tpl = document.createElement("template");
   tpl.innerHTML = (await res.text()).trim();
   const next = tpl.content.firstElementChild;
   const moved = next.dataset.state !== el.dataset.state;
+  if (hold && !moved) await hold;
   const box = el.querySelector("[data-select]");
   const kept = next.querySelector("[data-select]");
   if (box && kept) kept.checked = box.checked;
@@ -271,7 +274,8 @@ document.addEventListener("click", async (e) => {
   btn.after(note);
   hidden.forEach((h) => { h.hidden = true; });
   try {
-    const { next, moved } = await replace(el, btn.dataset.refresh);
+    const hold = new Promise((done) => setTimeout(done, 800));
+    const { next, moved } = await replace(el, btn.dataset.refresh, true, hold);
     followPanel(next, moved);
     if (next.dataset.poll) return poll(next, 0);
     // A state waits for a person: asking again within seconds only costs calls.
