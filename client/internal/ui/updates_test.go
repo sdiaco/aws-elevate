@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
@@ -134,7 +135,7 @@ func TestPreviewRefusesAMalformedVersion(t *testing.T) {
 func TestUpdatesWithoutAnyReleaseSaysSoCalmly(t *testing.T) {
 	h, _, _ := updatesHarness(true)
 	h.app.Updates.Releases = func(context.Context) ([]release.Release, error) { return nil, nil }
-	out := h.get(t, "/updates")
+	out, _, _ := strings.Cut(h.get(t, "/updates"), `<template id="closed-alert">`)
 	contains(t, out, `class="alert info"`, "No release published yet.", "Client ")
 	lacks(t, out, `class="alert error"`, "is up to date", "newest that works")
 }

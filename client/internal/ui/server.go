@@ -67,7 +67,11 @@ func token() (string, error) {
 // StartURL is the address to open in the browser. It works once.
 func (s *Server) StartURL() string { return "http://" + s.host + "/start?k=" + s.secret }
 
-// Serve answers until ctx ends or no authenticated request arrives for the idle time.
+// ErrIdle ends Serve when no authenticated request arrived for the idle time.
+var ErrIdle = errors.New("closed without activity")
+
+// Serve answers until ctx ends or no authenticated request arrives for the idle time,
+// then returns nil or ErrIdle.
 func (s *Server) Serve(ctx context.Context) error {
 	srv := &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}
 	failed := make(chan error, 1)
@@ -75,6 +79,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	timer := time.NewTimer(s.idle)
 	defer timer.Stop()
+	var stopped error
 	for waiting := true; waiting; {
 		select {
 		case <-s.active:
@@ -85,7 +90,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		case <-ctx.Done():
 			waiting = false
 		case <-timer.C:
-			waiting = false
+			waiting, stopped = false, ErrIdle
 		case err := <-failed:
 			return fmt.Errorf("UI server: %w", err)
 		}
@@ -98,7 +103,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err := <-failed; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("UI server: %w", err)
 	}
-	return nil
+	return stopped
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +131,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
 	case s.active <- struct{}{}:
 	default: // a signal is already waiting
+	}
+	if r.URL.Path == "/alive" { // the open page says it is still there
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	s.content.ServeHTTP(w, r)
 }

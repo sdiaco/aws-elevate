@@ -48,6 +48,8 @@ type App struct {
 	Admin Admin
 	// Updates lists releases and updates the client; nil turns the Updates view off.
 	Updates *Updates
+	// Reopen is the command that opens the interface again once it has closed.
+	Reopen string
 
 	skippedWelcome atomic.Bool // the admin skipped the first run in this session
 	notices        notices     // outcomes waiting for the page after a redirect
@@ -212,11 +214,17 @@ func (a *App) nav() []NavGroup {
 	return groups
 }
 
+// closedAlert is what the page shows when the interface no longer answers.
+func (a *App) closedAlert() Alert {
+	return Alert{Kind: "error", Text: "This interface has stopped (after 30 minutes without use, or from the terminal). Run this command to open it again:", Command: a.Reopen}
+}
+
 // show renders a view inside the base layout.
 func (a *App) show(w http.ResponseWriter, status int, view, title, path string, content any, alerts ...Alert) {
 	p := Page{
 		Title: title, Path: path, Nav: a.nav(), User: a.me().User.UserName,
 		Roles: strings.Join(a.me().Roles, ", "), Alerts: append(a.rolesAlert(), alerts...), Content: content,
+		Closed: a.closedAlert(),
 	}
 	if err := renderPage(w, status, view, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

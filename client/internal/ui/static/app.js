@@ -972,3 +972,19 @@ document.addEventListener("keydown", (e) => {
     menu.previousElementSibling.focus();
   }
 });
+
+// The local server closes after 30 minutes without requests. A page left open and visible
+// says it is still there every 5 minutes (a call to this computer only, nothing to AWS);
+// when the server no longer answers, the page says so and how to open it again.
+let closedShown = false;
+async function alive() {
+  if (closedShown || document.visibilityState !== "visible") return;
+  let ok = false;
+  try { ok = (await fetch("/alive", { cache: "no-store" })).ok; } catch { /* closed */ }
+  if (ok) return;
+  closedShown = true;
+  const notice = document.getElementById("closed-alert")?.content.cloneNode(true);
+  if (notice) document.querySelector("main")?.prepend(notice);
+}
+setInterval(alive, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", alive);

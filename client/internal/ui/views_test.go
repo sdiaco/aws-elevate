@@ -334,3 +334,12 @@ func TestAnUnknownAddressShowsAPageInTheInterface(t *testing.T) {
 		contains(t, w.Body.String(), `class="nav"`, "Page not found", `href="/requests"`)
 	}
 }
+
+func TestEveryPageCarriesTheNoticeForAClosedInterface(t *testing.T) {
+	h := newHarness("requester")
+	h.app.Reopen = "aws elevate ui --profile work"
+	out := h.get(t, "/requests")
+	contains(t, out, `<template id="closed-alert">`,
+		"This interface has stopped (after 30 minutes without use, or from the terminal). Run this command to open it again:",
+		"aws elevate ui --profile work")
+}

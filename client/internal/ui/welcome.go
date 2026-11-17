@@ -47,7 +47,7 @@ func (a *App) welcome(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "Your first rule", "/rules", err)
 		return
 	}
-	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Content: v, Bare: true}
+	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Content: v, Bare: true, Closed: a.closedAlert()}
 	if err := renderPage(w, http.StatusOK, "welcome", p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
