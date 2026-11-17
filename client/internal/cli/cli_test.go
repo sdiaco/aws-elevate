@@ -742,3 +742,35 @@ func lineWith(text, part string) string {
 	}
 	return ""
 }
+
+func TestRequestWithoutAccountUsesTheOnlyOneOfTheRule(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.rules = []api.Rule{rule}
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActive}
+	if got := h.run("request", "ssm-prod", "--reason", "x", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	if h.svc.created.Account != "222222222222" {
+		t.Errorf("created %+v", *h.svc.created)
+	}
+}
+
+func TestRequestWithoutAccountOnSeveralSaysWhichToAdd(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	several := rule
+	several.Accounts = []api.Ref{{ID: "222222222222", Name: "prod"}, {ID: "333333333333", Name: "stage"}}
+	h.svc.rules = []api.Rule{several}
+	if got := h.run("request", "ssm-prod", "--reason", "x", "--profile", "work"); got == 0 {
+		t.Fatal("exit 0")
+	}
+	if h.svc.created != nil {
+		t.Error("sent to the service")
+	}
+	want := "ssm-prod has several accounts: add --account with one of prod (222222222222), stage (333333333333)"
+	if !strings.Contains(h.errOut.String(), want) {
+		t.Errorf("stderr %q", h.errOut.String())
+	}
+}

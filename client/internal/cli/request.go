@@ -19,7 +19,7 @@ func RoleName(grantID string) string { return "JIT-" + grantID }
 
 func runRequest(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "request")
-	account := f.String("account", "", "target account, id or name")
+	account := f.String("account", "", "target account, id or name (default: the only account of the rule)")
 	duration := f.String("duration", "", "how long, for example 45m or 2h (default: the rule's)")
 	reason := f.String("reason", "", "why you need it")
 	rest, err := f.parse(args)
@@ -47,9 +47,13 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 		return nil
 	}
 
+	acc, err := accountID(rules.Rules, rest[0], *account)
+	if err != nil {
+		return err
+	}
 	req := api.CreateRequest{
 		RuleID:          rest[0],
-		Account:         accountID(rules.Rules, rest[0], *account),
+		Account:         acc,
 		DurationSeconds: seconds,
 		Reason:          *reason,
 	}
@@ -106,19 +110,30 @@ func waitActive(ctx context.Context, e *Env, svc Service, g *api.Grant) (*api.Gr
 }
 
 // accountID turns an account name of the rule into its id; anything else goes to the
-// service as typed, which decides whether it is allowed.
-func accountID(rules []api.Rule, ruleID, account string) string {
+// service as typed, which decides whether it is allowed. Without --account, the only
+// account of the rule is the one meant, as in the interface.
+func accountID(rules []api.Rule, ruleID, account string) (string, error) {
 	for _, r := range rules {
 		if r.ID != ruleID {
 			continue
 		}
+		if account == "" {
+			if len(r.Accounts) == 1 {
+				return r.Accounts[0].ID, nil
+			}
+			names := make([]string, len(r.Accounts))
+			for i, a := range r.Accounts {
+				names[i] = a.Name + " (" + a.ID + ")"
+			}
+			return "", fmt.Errorf("%s has several accounts: add --account with one of %s: %w", ruleID, strings.Join(names, ", "), errUsage)
+		}
 		for _, a := range r.Accounts {
 			if a.Name == account {
-				return a.ID
+				return a.ID, nil
 			}
 		}
 	}
-	return account
+	return account, nil
 }
 
 func printRules(e *Env, rules []api.Rule) {
@@ -141,7 +156,7 @@ func printRules(e *Env, rules []api.Rule) {
 			short(r.Duration.DefaultSeconds), short(r.Duration.MaxSeconds), approval)
 	}
 	w.Flush()
-	fmt.Fprintln(e.Stdout, "\nRequest with: aws elevate request <rule> --account <id|name> --reason \"…\" [--duration 45m]")
+	fmt.Fprintln(e.Stdout, "\nRequest with: aws elevate request <rule> --reason \"…\" [--account <id|name>] [--duration 45m]")
 }
 
 // parseDuration reads 45m, 2h or 1h30m; empty means the rule default.
