@@ -35,8 +35,9 @@ const emptyDoc = `{"schemaVersion":1,"rules":[]}`
 // maxImport bounds an imported file; a rules document is a few kilobytes.
 const maxImport = 1 << 20
 
-// base is the starting point of a change: the document in use and the newest version
-// number, valid or not, which AppConfig wants as the version a publication starts from.
+// base is the starting point of a change: the newest valid document and the newest
+// version number, valid or not, which AppConfig wants as the version a publication
+// starts from.
 type base struct {
 	Doc    json.RawMessage
 	From   *int // version of Doc; nil before the first one
@@ -48,15 +49,20 @@ func (a *App) base(ctx context.Context) (base, error) {
 	if err != nil {
 		return base{}, err
 	}
-	b := base{Doc: json.RawMessage(emptyDoc), From: v.Current}
+	// Not v.Current: for about 30 seconds after a publish the service still uses the
+	// previous version, and a change built on it would drop the newer one's changes.
+	b := base{Doc: json.RawMessage(emptyDoc)}
 	for _, info := range v.Versions {
-		if b.Latest == nil || info.Number > *b.Latest {
-			n := info.Number
+		n := info.Number
+		if b.Latest == nil || n > *b.Latest {
 			b.Latest = &n
 		}
+		if info.Valid && (b.From == nil || n > *b.From) {
+			b.From = &n
+		}
 	}
-	if v.Current != nil {
-		doc, err := a.Service.ConfigVersion(ctx, *v.Current)
+	if b.From != nil {
+		doc, err := a.Service.ConfigVersion(ctx, *b.From)
 		if err != nil {
 			return base{}, err
 		}

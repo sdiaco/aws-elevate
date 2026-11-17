@@ -261,6 +261,43 @@ func TestConflictReviewsAgainAgainstTheNewVersion(t *testing.T) {
 	}
 }
 
+func TestAChangeBuildsOnTheNewestValidVersionBeforeTheServiceReadsIt(t *testing.T) {
+	// For about 30 seconds after a publish the service still uses the older version:
+	// building on it would publish over the newer one and drop its changes.
+	h, adm := rulesHarness()
+	three := 3
+	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}}
+	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":14400`, `"maxSeconds":12600`, 1)
+	out := h.do(t, "POST", "/rules/edit", url.Values{
+		"orig": {"ssm-dev"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+		"default": {"1h"}, "max": {"3h"}, "approval": {"auto"},
+	}).Body.String()
+	if hidden(out, "latest") != "5" {
+		t.Fatalf("latest %q", hidden(out, "latest"))
+	}
+	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {"5"}})
+	if len(adm.published) != 1 || !strings.Contains(adm.published[0], `"maxSeconds":12600`) {
+		t.Fatalf("version 5's change to ssm-prod lost: %v", adm.published)
+	}
+}
+
+func TestConflictBeforeTheServiceReadsTheNewVersionComparesWithIt(t *testing.T) {
+	h, adm := rulesHarness()
+	out := h.do(t, "POST", "/rules/edit", url.Values{
+		"orig": {"ssm-dev"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+		"default": {"1h"}, "max": {"3h"}, "approval": {"auto"},
+	}).Body.String()
+	change := hidden(out, "change")
+	// Version 5 changed ssm-dev too, and the service still uses version 3.
+	three := 3
+	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}}
+	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":7200`, `"maxSeconds":3600`, 1)
+	adm.conflict = true
+	out = h.do(t, "POST", "/rules/publish", url.Values{"change": {change}, "latest": {"4"}}).Body.String()
+	contains(t, out, "also changed ssm-dev: publishing replaces their change", "3600")
+	lacks(t, out, "7200")
+}
+
 func TestDeletingRules(t *testing.T) {
 	h, adm := rulesHarness()
 	out := h.do(t, "POST", "/rules/delete", url.Values{"id": {"ssm-prod"}}).Body.String()
