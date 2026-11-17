@@ -56,6 +56,8 @@ def test_handler_wires_the_engine_once_from_the_environment(monkeypatch):
         "TABLE_NAME": "elevate-grants",
         "APPCONFIG_APPLICATION_ID": "app1234",
         "APPCONFIG_PROFILE_ID": "prof123",
+        "MANAGEMENT_ACCOUNT_ID": "999999999999",
+        "SERVICE_ACCOUNT_ID": "888888888888",
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(module, "_engine", None)
@@ -63,6 +65,7 @@ def test_handler_wires_the_engine_once_from_the_environment(monkeypatch):
         module.handler({"action": "nope"}, None)
     first = module._engine
     assert isinstance(first, Engine)
+    assert first._reserved_accounts == {"999999999999", "888888888888"}
     with pytest.raises(ValueError):
         module.handler({"action": "nope"}, None)
     assert module._engine is first

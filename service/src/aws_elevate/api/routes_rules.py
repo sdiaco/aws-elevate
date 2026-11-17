@@ -79,10 +79,26 @@ def _content(source: SourcePs) -> dict:
     }
 
 
+def _reserved_account_errors(rule: Rule, reserved: frozenset[str]) -> list[dict]:
+    # A grant in the management or the service account could tamper with aws-elevate
+    # itself (design §7.5).
+    return [
+        _entry(
+            rule.id,
+            "reserved",
+            f"account {a.id} ({a.name}) is reserved to aws-elevate (management or service "
+            "account): manage it with Identity Center assignments",
+        )
+        for a in rule.accounts
+        if a.id in reserved
+    ]
+
+
 class RuleRoutes:
-    def __init__(self, config, sso):
+    def __init__(self, config, sso, reserved_accounts: frozenset[str]):
         self._config = config
         self._sso = sso
+        self._reserved_accounts = reserved_accounts
 
     def _visible(self, identity: Identity, rules: list[Rule]) -> list[Rule]:
         if identity.is_admin or identity.is_auditor:
@@ -151,6 +167,7 @@ class RuleRoutes:
             arn = rule.permission_set.arn
             if arn not in sources:
                 sources[arn] = self._read(arn)
+            errors += _reserved_account_errors(rule, self._reserved_accounts)
             errors += _rule_errors(rule, sources[arn])
         return {"valid": not errors, "errors": errors}
 

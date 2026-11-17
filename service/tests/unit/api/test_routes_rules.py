@@ -25,9 +25,10 @@ DOC_ARN = VALID_DOC["rules"][0]["permissionSet"]["arn"]
 
 @pytest.fixture
 def make(fx):
-    def build(*sources, config=None):
+    def build(*sources, config=None, reserved=frozenset({"999999999999", "888888888888"})):
         sso = fx.FakeSso(*sources)
-        return RuleRoutes(config=config or fx.FakeConfig(), sso=sso), sso
+        routes = RuleRoutes(config=config or fx.FakeConfig(), sso=sso, reserved_accounts=reserved)
+        return routes, sso
 
     return build
 
@@ -310,3 +311,15 @@ def test_a_reserved_permission_set_cannot_be_a_source(make, fx, name):
     assert body["valid"] is False
     assert {e["code"] for e in body["errors"]} == {"reserved"}
     assert name in body["errors"][0]["message"]
+
+
+def test_a_reserved_account_cannot_be_a_target(make, fx):
+    # The management account and the service account: a grant there could tamper with
+    # aws-elevate itself (design §7.5).
+    doc = copy.deepcopy(VALID_DOC)
+    rule_id = doc["rules"][1]["id"]
+    routes, _ = make(fx.source_ps(arn=DOC_ARN), reserved=frozenset({"222222222222"}))
+    body = routes.check(fx.ADMIN, {"doc": doc})
+    assert body["valid"] is False
+    assert [(e["ruleId"], e["code"]) for e in body["errors"]] == [(rule_id, "reserved")]
+    assert "account 222222222222" in body["errors"][0]["message"]

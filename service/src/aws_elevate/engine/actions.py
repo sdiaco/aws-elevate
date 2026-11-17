@@ -44,9 +44,11 @@ class Engine:
         rules,
         sso_read,
         sso_admin,
+        reserved_accounts: frozenset[str],
         clock: Callable[[], datetime] | None = None,
     ):
         self._table = table
+        self._reserved_accounts = reserved_accounts
         self._rules = rules
         self._read = sso_read
         self._admin = sso_admin
@@ -122,6 +124,13 @@ class Engine:
         errors = coherence_errors(grant, find_rule(doc, grant.rule_id))
         if errors:
             raise ActivationFailed("; ".join(errors))
+        # A version published without the check must still not reach the management or the
+        # service account: a grant there could tamper with aws-elevate (design §7.5).
+        if grant.account in self._reserved_accounts:
+            raise ActivationFailed(
+                f"account {grant.account} is reserved to aws-elevate (management or service "
+                "account)"
+            )
         try:
             source = self._read.read_source(grant.source_ps.arn)
         except PsNotFound as err:

@@ -58,7 +58,7 @@ def run(event=EVENT, sso=None, org=None):
     return body
 
 
-def test_success_returns_instance_data():
+def test_success_returns_instance_data_and_the_management_account():
     body = run()
     assert body["Status"] == "SUCCESS"
     assert body["PhysicalResourceId"] == "elevate-precheck"
@@ -66,6 +66,8 @@ def test_success_returns_instance_data():
         "InstanceArn": INSTANCE["InstanceArn"],
         "InstanceId": "ssoins-1111111111111111",
         "IdentityStoreId": "d-1111111111",
+        # api and engine refuse it as a grant target (design §7.5).
+        "ManagementAccountId": "222222222222",
     }
 
 

@@ -23,6 +23,8 @@ from aws_elevate.engine.actions import Engine
 START = datetime(2026, 11, 15, 10, 0, 0, tzinfo=UTC)
 SRC_ARN = "arn:aws:sso:::permissionSet/ssoins-1/ps-1"
 JIT_ARN = "arn:aws:sso:::permissionSet/ssoins-1/ps-jit"
+# Management and service accounts (design §7.5); never the grant targets of these tests.
+RESERVED = frozenset({"999999999999", "888888888888"})
 
 RULE_DOC = {
     "id": "backend-ssm-prod",
@@ -182,13 +184,14 @@ def admin():
 def build(clock, admin):
     """build(*grants, rules=..., source=...) -> (engine, table)."""
 
-    def _build(*grants, rules=None, source=SOURCE, existing=None):
+    def _build(*grants, rules=None, source=SOURCE, existing=None, reserved=RESERVED):
         table = FakeTable(*grants)
         engine = Engine(
             table=table,
             rules=rules or FakeRules(),
             sso_read=FakeRead(source, existing),
             sso_admin=admin,
+            reserved_accounts=reserved,
             clock=clock,
         )
         return engine, table

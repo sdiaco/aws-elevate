@@ -27,7 +27,8 @@ def check(sso, org, account: str) -> dict:
             "Identity Center home region"
         )
     instance = instances[0]
-    if org.describe_organization()["Organization"]["MasterAccountId"] == account:
+    management = org.describe_organization()["Organization"]["MasterAccountId"]
+    if management == account:
         raise CheckFailed(
             "this is the management account: deploy in the Identity Center delegated "
             "administrator account instead"
@@ -43,6 +44,7 @@ def check(sso, org, account: str) -> dict:
         "InstanceArn": instance["InstanceArn"],
         "InstanceId": instance["InstanceArn"].rsplit("/", 1)[1],
         "IdentityStoreId": instance["IdentityStoreId"],
+        "ManagementAccountId": management,
     }
 
 
