@@ -50,6 +50,7 @@ Parameters:
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
   HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
+  HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -1551,6 +1552,18 @@ Resources:
       PermissionSetArn: !GetAtt AdminPs.PermissionSetArn
       PrincipalType: GROUP
       PrincipalId: !Ref AdminGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref AWS::AccountId
+
+  # Auditors only read, but they still need ElevateRequester to call the API (design §3.3).
+  AuditorAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      PermissionSetArn: !GetAtt RequesterPs.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref AuditorGroupId
       TargetType: AWS_ACCOUNT
       TargetId: !Ref AWS::AccountId
 

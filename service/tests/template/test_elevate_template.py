@@ -482,10 +482,20 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
     assert read["Resource"] == {"Fn::Sub": f"arn:${{AWS::Partition}}:s3:::{release_bucket}/*"}
 
 
+def test_auditors_get_api_access_only_when_the_group_is_given():
+    # An auditor only reads (design §3.3), but without ElevateRequester cannot call the API
+    # at all: seen in the UI pass with an auditor outside the requesters group.
+    assert TEMPLATE["Conditions"]["HasAuditors"] == {
+        "Fn::Not": [{"Fn::Equals": [{"Ref": "AuditorGroupId"}, ""]}]
+    }
+    assert RESOURCES["AuditorAssignment"]["Condition"] == "HasAuditors"
+
+
 def test_service_permission_sets_are_assigned_to_the_groups_by_id_in_this_account():
     for assignment, ps, group in (
         ("RequesterAssignment", "RequesterPs", "RequesterGroupId"),
         ("AdminAssignment", "AdminPs", "AdminGroupId"),
+        ("AuditorAssignment", "RequesterPs", "AuditorGroupId"),
     ):
         props = RESOURCES[assignment]["Properties"]
         assert props["PermissionSetArn"] == {"Fn::GetAtt": [ps, "PermissionSetArn"]}
