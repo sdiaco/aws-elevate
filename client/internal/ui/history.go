@@ -40,10 +40,9 @@ func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQue
 func (a *App) seesAll() bool { return a.has("admin") || a.has("auditor") }
 
 type historyView struct {
-	List   List
-	Detail *api.GrantDetail
-	Close  string
-	Alert  *Alert
+	List  List
+	Panel *panel
+	Alert *Alert
 }
 
 func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +61,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "History", Search: true, Empty: "No grant in this period.",
-		Columns: []string{"Requested", "Requester", "Permission set", "Account", "Outcome", "Id", ""},
+		Columns: []string{"Id", "Requested", "Requester", "Permission set", "Account", "Outcome"},
 		Tools:   []Action{{Label: "Export CSV", Path: "/history/export.csv?" + base}},
 	}
 	if a.seesAll() {
@@ -78,13 +77,12 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	l.Filters = append(l.Filters, group)
 	for _, g := range page.Items {
 		l.Rows = append(l.Rows, Row{Cells: []Cell{
+			{Text: g.ID, Href: "/history?" + here + "&open=" + g.ID},
 			{At: g.CreatedAt},
 			{Text: g.Requester.UserName},
 			{Text: g.SourcePs.Name, Tags: tags(g)},
 			{Text: g.Account},
 			{State: g.State, Text: closeReason(g), Muted: true},
-			{Copy: g.ID},
-			{Text: "Details", Href: "/history?" + here + "&open=" + g.ID},
 		}})
 	}
 	if page.Cursor != nil {
@@ -93,14 +91,14 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	if cursor != "" {
 		l.First = "/history?" + base
 	}
-	v := historyView{List: l, Close: "/history?" + here}
+	v := historyView{List: l}
 	// The detail is read only when opened (design §11.1).
 	if id := r.URL.Query().Get("open"); id != "" {
-		d, err := a.Service.Grant(r.Context(), id)
+		p, err := a.panel(r.Context(), id, "/history?"+here)
 		if err != nil {
 			v.Alert = &Alert{Kind: "error", Text: err.Error()}
 		} else {
-			v.Detail = d
+			v.Panel = p
 		}
 	}
 	a.show(w, http.StatusOK, "history", "History", "/history", v)

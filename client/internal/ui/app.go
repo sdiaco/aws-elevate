@@ -54,24 +54,25 @@ func Pages(a *App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", staticFiles())
 	mux.HandleFunc("GET /{$}", a.home)
+	mux.HandleFunc("GET /requests", a.requestsPage)
 	if a.has("requester") {
-		mux.HandleFunc("GET /request", a.requestPage)
-		mux.HandleFunc("POST /request", a.requestSubmit)
+		mux.HandleFunc("GET /requests/new", a.newRequestPage)
+		mux.HandleFunc("POST /requests/new", a.newRequestSubmit)
 	}
-	mux.HandleFunc("GET /request/permissions", a.permissions)
-	mux.HandleFunc("GET /request/{id}", a.progressPage)
-	mux.HandleFunc("GET /request/{id}/progress", a.progressPart)
-	mux.HandleFunc("GET /active", a.activePage)
-	mux.HandleFunc("GET /active/row/{id}", a.activeRow)
-	mux.HandleFunc("GET /active/revoke", a.revokeConfirm)
-	mux.HandleFunc("POST /active/revoke", a.revokeSubmit)
-	mux.HandleFunc("GET /active/outcome/{id}", a.outcomeRow)
-	mux.HandleFunc("GET /pending", a.pendingPage)
-	mux.HandleFunc("POST /pending/approve", a.approve)
-	mux.HandleFunc("GET /pending/reject", a.rejectConfirm)
-	mux.HandleFunc("POST /pending/reject", a.reject)
-	mux.HandleFunc("GET /pending/cancel", a.cancelConfirm)
-	mux.HandleFunc("POST /pending/cancel", a.cancel)
+	mux.HandleFunc("GET /requests/permissions", a.permissions)
+	mux.HandleFunc("GET /requests/flash/{id}", a.flashPart)
+	mux.HandleFunc("GET /requests/row/{id}", a.requestRow)
+	mux.HandleFunc("GET /requests/outcome/{id}", a.outcomeRow)
+	mux.HandleFunc("POST /requests/approve", a.approve)
+	mux.HandleFunc("GET /requests/reject", a.rejectConfirm)
+	mux.HandleFunc("POST /requests/reject", a.reject)
+	mux.HandleFunc("GET /requests/cancel", a.cancelConfirm)
+	mux.HandleFunc("POST /requests/cancel", a.cancel)
+	mux.HandleFunc("GET /requests/revoke", a.revokeConfirm)
+	mux.HandleFunc("POST /requests/revoke", a.revoke)
+	if a.has("admin") {
+		mux.HandleFunc("POST /requests/retry", a.retry)
+	}
 	mux.HandleFunc("GET /history", a.historyPage)
 	mux.HandleFunc("GET /history/export.csv", a.historyExport)
 	if a.has("admin") && a.Admin != nil {
@@ -90,10 +91,6 @@ func Pages(a *App) http.Handler {
 		mux.HandleFunc("GET /updates", a.updatesPage)
 		mux.HandleFunc("POST /updates/client", a.updateClient)
 		mux.HandleFunc("POST /updates/preview", a.preview)
-	}
-	if a.has("admin") {
-		mux.HandleFunc("GET /problems", a.problemsPage)
-		mux.HandleFunc("POST /problems/retry", a.retry)
 	}
 	if a.has("admin") || a.has("auditor") {
 		mux.HandleFunc("GET /versions", a.versionsPage)
@@ -114,30 +111,17 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/welcome", http.StatusSeeOther)
 		return
 	}
-	to := "/active"
-	if a.has("requester") {
-		to = "/request"
-	}
-	http.Redirect(w, r, to, http.StatusSeeOther)
+	http.Redirect(w, r, "/requests", http.StatusSeeOther)
 }
 
 func (a *App) nav() []NavGroup {
-	var items []NavItem
-	if a.has("requester") {
-		items = append(items, NavItem{Label: "Request", Path: "/request"})
-	}
-	items = append(items,
-		NavItem{Label: "Active", Path: "/active"},
-		NavItem{Label: "Pending", Path: "/pending"},
-		NavItem{Label: "History", Path: "/history"},
-	)
-	groups := []NavGroup{{Items: items}}
+	groups := []NavGroup{{Items: []NavItem{
+		{Label: "Requests", Path: "/requests"},
+		{Label: "History", Path: "/history"},
+	}}}
 	var admin []NavItem
 	if a.has("admin") && a.Admin != nil {
 		admin = append(admin, NavItem{Label: "Rules", Path: "/rules"})
-	}
-	if a.has("admin") {
-		admin = append(admin, NavItem{Label: "Problems", Path: "/problems"})
 	}
 	if a.has("admin") || a.has("auditor") {
 		admin = append(admin, NavItem{Label: "Config versions", Path: "/versions"})

@@ -77,9 +77,11 @@ type Filter struct {
 }
 
 type Row struct {
-	ID    string // the value sent by the actions; empty for a row that cannot be selected
-	Poll  string // address of the row's fresh HTML while its state can still change
-	Cells []Cell
+	ID      string   // the value sent by the actions; empty for a row that cannot be selected
+	Actions []string // the named actions this row allows
+	State   string   // the grant state, so the page sees when a polled row moves on
+	Poll    string   // address of the row's fresh HTML while its state can still change
+	Cells   []Cell
 }
 
 // rowCtx renders one row inside its table: with or without the selection column.
@@ -103,11 +105,14 @@ type Cell struct {
 }
 
 // Action is a header button. Destructive actions are normal buttons, as in the console;
-// the others are primary.
+// the others are primary. A named action is enabled only when every selected row allows
+// it; a tool (a link that needs no selection) is primary only when asked.
 type Action struct {
-	Label  string
-	Path   string
-	Danger bool
+	Label   string
+	Path    string
+	Name    string
+	Danger  bool
+	Primary bool
 }
 
 // stateLabels name the states of contract/vocabulary.json on screen.
@@ -130,6 +135,8 @@ var funcs = template.FuncMap{
 	"can":        can,
 	"has":        func(list []string, s string) bool { return slices.Contains(list, s) },
 	"indent":     indent,
+	"join":       strings.Join,
+	"tags":       tags,
 	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
 	"columns": func(l List) int {
 		if len(l.Actions) > 0 {

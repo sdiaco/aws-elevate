@@ -80,7 +80,7 @@ func TestRulesViewIsForAdminsWithAWSAccess(t *testing.T) {
 		}
 	}
 	h, _ := rulesHarness()
-	contains(t, h.get(t, "/active"), `href="/rules"`)
+	contains(t, h.get(t, "/requests"), `href="/rules"`)
 }
 
 func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {

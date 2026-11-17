@@ -54,7 +54,7 @@ func TestUpdatesIsForAdminsOnly(t *testing.T) {
 		}
 	}
 	h, _, _ := updatesHarness(true)
-	contains(t, h.get(t, "/active"), `href="/updates"`)
+	contains(t, h.get(t, "/requests"), `href="/updates"`)
 }
 
 func TestUpdatesListClientAndInfrastructureReleases(t *testing.T) {

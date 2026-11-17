@@ -58,7 +58,7 @@ func TestFirstRunIsForAdminsOnly(t *testing.T) {
 	if w := h.do(t, "GET", "/welcome", nil); w.Code != 404 {
 		t.Fatalf("/welcome as requester: %d", w.Code)
 	}
-	if w := h.do(t, "GET", "/", nil); w.Header().Get("Location") != "/request" {
+	if w := h.do(t, "GET", "/", nil); w.Header().Get("Location") != "/requests" {
 		t.Fatalf("home as requester: %q", w.Header().Get("Location"))
 	}
 }
