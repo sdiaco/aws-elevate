@@ -115,6 +115,7 @@ func Pages(a *App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", staticFiles())
 	mux.HandleFunc("GET /{$}", a.home)
+	mux.HandleFunc("/", a.notFound) // any other address, or a method its address does not take
 	mux.HandleFunc("GET /requests", a.requestsPage)
 	mux.HandleFunc("GET /requests/new", a.only(a.canRequest, a.newRequestPage))
 	mux.HandleFunc("POST /requests/new", a.only(a.canRequest, a.newRequestSubmit))
@@ -162,11 +163,16 @@ func Pages(a *App) http.Handler {
 func (a *App) only(allowed func() bool, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !allowed() {
-			http.NotFound(w, r)
+			a.notFound(w, r)
 			return
 		}
 		h(w, r)
 	}
+}
+
+// notFound is the interface's own page for an address it does not serve.
+func (a *App) notFound(w http.ResponseWriter, _ *http.Request) {
+	a.show(w, http.StatusNotFound, "notfound", "Page not found", "", nil)
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {

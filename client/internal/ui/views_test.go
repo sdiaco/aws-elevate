@@ -319,3 +319,14 @@ func TestRequestsShowTheRequesterOnlyToWhoSeesOthersRequests(t *testing.T) {
 	lacks(t, requestsHarness("requester").get(t, "/requests"), `<th>Requester</th>`)
 	contains(t, requestsHarness("requester", "approver").get(t, "/requests"), `<th>Requester</th>`)
 }
+
+func TestAnUnknownAddressShowsAPageInTheInterface(t *testing.T) {
+	h := newHarness("auditor")
+	for _, path := range []string{"/rules/new", "/requests/new", "/rules/delete"} {
+		w := h.do(t, "GET", path, nil)
+		if w.Code != 404 {
+			t.Errorf("%s: %d", path, w.Code)
+		}
+		contains(t, w.Body.String(), `class="nav"`, "Page not found", `href="/requests"`)
+	}
+}
