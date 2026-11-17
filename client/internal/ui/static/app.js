@@ -455,15 +455,23 @@ document.addEventListener("keydown", (e) => {
 
 // A choice that changes part of the page: <input data-swap="/address?x=" data-swap-into="id"
 // data-swap-url="/page?x="> fills that element with the HTML for the chosen value and
-// updates the page address. Without the script, the form's own button sends it.
+// updates the page address. Fields marked [data-keep] keep what was typed in them.
+// Without the script, the form's own button sends it.
 document.addEventListener("change", async (e) => {
   const input = e.target;
   if (!input.matches("[data-swap]")) return;
   const value = encodeURIComponent(input.value);
   const into = document.getElementById(input.dataset.swapInto);
   input.closest("tbody")?.querySelectorAll("tr").forEach((tr) => tr.classList.toggle("selected", tr.contains(input)));
-  if (into && (await fill(into, input.dataset.swap + value))) {
+  if (!into) return;
+  const kept = new Map([...into.querySelectorAll("[data-keep]")].map((f) => [f.name, f.value]));
+  if (await fill(into, input.dataset.swap + value)) {
     history.replaceState(null, "", input.dataset.swapUrl + value);
+    into.querySelectorAll("[data-keep]").forEach((f) => {
+      if (!kept.get(f.name)) return;
+      f.value = kept.get(f.name);
+      f.dispatchEvent(new Event("input", { bubbles: true }));
+    });
   }
 });
 

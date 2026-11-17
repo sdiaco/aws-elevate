@@ -382,7 +382,7 @@ func TestChoosingARuleFetchesOnlyItsForm(t *testing.T) {
 	if !strings.HasPrefix(out, `<form method="post" action="/requests/new"`) {
 		t.Fatalf("not the form: %s", out)
 	}
-	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`)
+	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`, `<textarea name="reason" id="reason" rows="3" required data-keep>`)
 	lacks(t, out, `class="nav"`)
 	out = h.get(t, "/requests/new/form?rule=nope")
 	contains(t, out, "Choose a rule to see its details", `<button class="btn primary" disabled>`)
