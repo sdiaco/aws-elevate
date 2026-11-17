@@ -30,7 +30,7 @@ func TestEveryUserViewAnswers(t *testing.T) {
 
 func TestNavigationHasRequestsAndHistory(t *testing.T) {
 	out := newHarness("requester").get(t, "/requests")
-	contains(t, out, `href="/requests" aria-current="page"`, `href="/history"`, `user@example.com · requester`,
+	contains(t, out, `href="/requests" aria-current="page"`, `href="/history"`, `<span class="nav-user-name">user@example.com</span><span class="nav-user-roles">requester</span>`,
 		`href="/requests/new"`)
 
 	auditor := newHarness("auditor")

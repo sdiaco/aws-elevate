@@ -426,3 +426,5 @@ tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
 .field-error { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--error); }
 .field-error .flash-icon { flex: none; width: 14px; height: 14px; margin-top: 1px; stroke: var(--error); }
 [aria-invalid="true"] { border-color: var(--error) !important; }
+.nav-user-name { display: block; color: var(--text); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.nav-user-roles { display: block; }

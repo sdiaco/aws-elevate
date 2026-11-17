@@ -95,7 +95,7 @@ func TestBaseShowsTheNavigationAndTheCurrentView(t *testing.T) {
 		`<a href="/request">Request</a>`,
 		`<div class="nav-group">Admin</div>`,
 		`<span class="count warn">1</span>`,
-		`user@example.com · admin`,
+		`<span class="nav-user-name">user@example.com</span><span class="nav-user-roles">admin</span>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
