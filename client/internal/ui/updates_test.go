@@ -130,3 +130,20 @@ func TestPreviewRefusesAMalformedVersion(t *testing.T) {
 		t.Fatalf("status %d, previewed %v", w.Code, admin.previewed)
 	}
 }
+
+func TestUpdatesWithoutAnyReleaseSaysSoCalmly(t *testing.T) {
+	h, _, _ := updatesHarness(true)
+	h.app.Updates.Releases = func(context.Context) ([]release.Release, error) { return nil, nil }
+	out := h.get(t, "/updates")
+	contains(t, out, `class="alert info"`, "No release published yet.", "Client ")
+	lacks(t, out, `class="alert error"`, "is up to date", "newest that works")
+}
+
+func TestUpdatesKeepsTheInstalledVersionsWhenTheReleasesCannotBeRead(t *testing.T) {
+	h, _, _ := updatesHarness(true)
+	h.app.Updates.Releases = func(context.Context) ([]release.Release, error) {
+		return nil, errors.New("read the releases: 404: the repository is not reachable")
+	}
+	out := h.get(t, "/updates")
+	contains(t, out, `class="alert error"`, "the repository is not reachable", "Client ", "infrastructure ")
+}
