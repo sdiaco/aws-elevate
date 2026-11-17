@@ -225,19 +225,6 @@ td.check input, th.check input { display: block; }
 .copy.copied::after { content: " ✓"; color: var(--success); }
 pre { background: var(--surface-soft); border-radius: 4px; padding: 12px 16px; overflow-x: auto; margin: 0 0 16px; }
 
-/* Two columns: a list and its detail, or the rules and the form (Request). */
-.split { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 16px; align-items: start; }
-.split.wide { grid-template-columns: minmax(0, 1fr); }
-.split.wide:has(> aside) { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
-@media (max-width: 1000px) { .split, .split.wide:has(> aside) { grid-template-columns: minmax(0, 1fr); } }
-.rules { padding: 12px 0 8px; }
-.rules h2 { padding: 0 20px; }
-.rules > p { padding: 0 20px; }
-.rule-item { display: block; padding: 8px 20px; border-left: 2px solid transparent; text-decoration: none; color: var(--text); }
-.rule-item span { display: block; font-size: 12px; line-height: 16px; }
-.rule-item .tag { display: inline; }
-.rule-item:hover { background: var(--surface-soft); color: var(--text-strong); }
-.rule-item[aria-current="true"] { border-left-color: var(--selected-border); background: var(--selected-bg); color: var(--text-strong); }
 .box > h2 + p.muted { margin: -8px 0 16px; }
 select { min-width: min(320px, 100%); }
 #duration { width: 160px; }
@@ -251,21 +238,37 @@ details.expand > summary + * { margin-top: 12px; }
 td.wrap { white-space: normal; }
 td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 
-/* Progress of a request: steps, then the ready command. */
-.steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
-.steps li { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
-.steps li::before { content: ""; width: 14px; height: 14px; flex: none; border: 1.5px solid currentColor; border-radius: 50%; display: inline-grid; place-items: center; font-size: 9px; font-weight: 700; }
-.steps li.done { color: var(--text); }
-.steps li.done::before { content: "✓"; color: var(--success); }
-.steps li.current { color: var(--text-strong); font-weight: 600; }
-.steps li.current::before { color: var(--info); border-right-color: transparent; animation: spin .8s linear infinite; }
-.steps li.failed { color: var(--error); }
-.steps li.failed::before { content: "✕"; }
-@media (prefers-reduced-motion: reduce) { .steps li::before { animation: none !important; } }
-.progress pre { margin: 4px 0 0; }
-.progress .field + .field { margin-top: 12px; }
+/* The request just sent, at the top of Requests (console flashbar), and the spinner of
+   whatever is still moving. */
+.flash { border-left: 2px solid var(--info); background: var(--alert-info); color: var(--text-strong); border-radius: 2px; padding: 8px 16px; margin-bottom: 16px; }
+.flash.success { border-color: var(--success); background: var(--alert-success); }
+.flash.error { border-color: var(--error); background: var(--alert-error); }
+.flash-head { display: flex; align-items: center; gap: 8px; }
+.flash-icon::before { content: "i"; display: inline-grid; place-items: center; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 700; }
+.flash.success .flash-icon { color: var(--success); }
+.flash.success .flash-icon::before { content: "✓"; }
+.flash.error .flash-icon { color: var(--error); }
+.flash.error .flash-icon::before { content: "✕"; }
+.flash-body { margin: 8px 0 0 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.flash-body pre, .panel-use pre { margin: 0; padding: 4px 12px; }
+.spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--info); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 
-/* Cards of the Pending view and key-value pairs. */
+/* The detail of one row at the bottom of the page (console split panel). The page keeps
+   room below the table so the panel never hides its last rows. */
+.split-panel { position: fixed; left: 250px; right: 0; bottom: 0; z-index: 10; max-height: 45vh; display: flex; flex-direction: column; background: var(--surface); border-top: 1px solid var(--divider); }
+.split-panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 24px; border-bottom: 1px solid var(--divider); }
+.split-panel-head h2 { margin: 0 4px 0 0; }
+.panel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.split-panel-body { overflow: auto; padding: 16px 24px 20px; }
+.split-panel .kv { margin-bottom: 4px; }
+.split-panel h3 { margin: 20px 0 8px; }
+.panel-use { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.btn.icon { padding: 4px 8px; }
+.main:has(.split-panel) { padding-bottom: calc(45vh + 40px); }
+@media (max-width: 800px) { .split-panel { left: 0; max-height: 60vh; } .main:has(.split-panel) { padding-bottom: calc(60vh + 40px); } }
+
+/* Key-value pairs and sections. */
 .section { margin-top: 32px; }
 p.desc { margin: 4px 0 12px; color: var(--text-2); }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -276,13 +279,9 @@ p.desc { margin: 4px 0 12px; color: var(--text-2); }
 [data-step] h2 { margin: 0 0 4px; }
 [data-step] > .desc { margin: 0 0 16px; }
 form:not(:has([data-step][hidden])) [data-step] + [data-step] { margin-top: 32px; }
-.card + .card { margin-top: 16px; }
-.card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 12px; }
-.card-head h2, .card-head h3 { margin: 0; flex: 1; }
 .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 20px; margin: 0; }
 .kv dt { font-size: 12px; line-height: 16px; color: var(--text-2); }
 .kv dd { margin: 2px 0 0; overflow-wrap: anywhere; }
-.detail .kv { grid-template-columns: minmax(0, 1fr); }
 .timeline { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .timeline time { color: var(--text-2); font-size: 12px; }
 .confirm .ids { margin: 0 0 16px; padding-left: 20px; }

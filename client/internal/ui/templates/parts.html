@@ -15,15 +15,52 @@
 <details class="expand"><summary>Full JSON</summary><pre>{{indent .Inline}}</pre></details>{{end}}
 </div>{{end}}
 
-{{define "progress"}}<div class="box progress"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
-<ol class="steps">{{range .Steps}}<li class="{{.Status}}">{{.Label}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</li>{{end}}</ol>
-{{with .Alert}}{{template "alert" .}}{{end}}
-{{if eq .Grant.State "active"}}<div class="field"><label>Open a shell with it</label>
-<pre><button type="button" class="copy" data-copy="aws elevate shell {{.Grant.ID}}" title="Copy">aws elevate shell {{.Grant.ID}}</button></pre></div>
-{{if .Ready}}<div class="field"><label>Or use the profile</label>
-<pre><button type="button" class="copy" data-copy="export AWS_PROFILE={{.Profile}}" title="Copy">export AWS_PROFILE={{.Profile}}</button></pre></div>{{end}}
-<div class="form-actions">{{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a>{{else}}<button type="button" class="btn primary" disabled>Open in console</button>{{end}}</div>
-{{end}}</div>{{end}}
+{{/* The request just sent, followed at the top of Requests (design §11.1). */}}
+{{define "flash"}}<div class="flash {{.Kind}}" role="status"{{if .Poll}} data-poll="{{.Poll}}" data-state="{{.Grant.State}}"{{end}}>
+<div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}<span class="flash-icon" aria-hidden="true"></span>{{end}}
+<span><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span></div>
+{{with .Error}}<p class="flash-body">{{.}}</p>{{end}}
+{{if eq .Grant.State "active"}}<div class="flash-body">
+<pre><button type="button" class="copy" data-copy="aws elevate shell {{.Grant.ID}}" title="Copy">aws elevate shell {{.Grant.ID}}</button></pre>
+{{if .Ready}}<pre><button type="button" class="copy" data-copy="export AWS_PROFILE={{.Profile}}" title="Copy">export AWS_PROFILE={{.Profile}}</button></pre>
+<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a>{{end}}
+</div>{{end}}
+</div>{{end}}
+
+{{/* The detail of one grant at the bottom of the page, as the console's split panel. */}}
+{{define "panel"}}{{$g := .Detail.Grant}}<section class="split-panel" aria-label="Grant {{$g.ID}}">
+<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
+<form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$g.ID}}">
+{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel…</a>{{end}}
+{{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}">Revoke…</a>{{end}}
+{{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
+{{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}">Reject…</a>{{end}}
+{{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
+</form>
+<a class="btn icon" href="{{.Close}}" aria-label="Close">✕</a></div>
+<div class="split-panel-body">
+{{if eq $g.State "revoke_failed"}}<div class="alert error" role="status">The revocation failed: {{with $g.Error}}{{.}}{{end}}. Still usable for {{with $g.ExpiresAt}}<time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time>{{end}}.</div>{{end}}
+{{if .Console}}<div class="panel-use">
+<pre><button type="button" class="copy" data-copy="aws elevate shell {{$g.ID}}" title="Copy">aws elevate shell {{$g.ID}}</button></pre>
+<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a></div>{{end}}
+<dl class="kv cols">
+<div><dt>Requester</dt><dd>{{$g.Requester.UserName}}</dd></div>
+<div><dt>Permission set</dt><dd>{{$g.SourcePs.Name}}</dd></div>
+<div><dt>Account</dt><dd>{{$g.Account}}</dd></div>
+<div><dt>Reason</dt><dd>{{$g.Reason}}</dd></div>
+<div><dt>Rule</dt><dd>{{$g.RuleID}} · config v{{$g.ConfigVersion}}</dd></div>
+<div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
+<div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
+<div><dt>Requested</dt><dd><time datetime="{{iso $g.CreatedAt}}" title="{{exact $g.CreatedAt}}">{{ago $g.CreatedAt}}</time></dd></div>
+{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}</dd></div>{{end}}
+{{with $g.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $g.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
+{{if ne $g.State "revoke_failed"}}{{with $g.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}{{end}}
+</dl>
+{{if not $g.RuleRemoved}}<details class="expand" data-load="/requests/permissions?rule={{$g.RuleID}}"><summary>What it gives</summary><div data-load-target><p class="muted">Loading…</p></div></details>{{end}}
+<h3>Timeline</h3>
+<ol class="timeline">{{range .Detail.Timeline}}<li><time datetime="{{iso .At}}">{{exact .At}}</time> {{template "state" .State}}{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</li>{{end}}</ol>
+</div>
+</section>{{end}}
 
 {{/* What changes between two rules documents, rule by rule. */}}
 {{define "changes"}}<div class="compare">

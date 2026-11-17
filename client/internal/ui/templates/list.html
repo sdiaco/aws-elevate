@@ -3,7 +3,7 @@
      selected and send the selected ids as id=… to their address. */}}
 {{define "list"}}<form class="list" data-list method="get">
 <div class="list-head"><h1>{{.Title}} <span class="counter">({{len .Rows}}{{if .Next}}+{{end}})</span></h1>
-{{if or .Actions .Tools}}<div class="actions">{{range .Tools}}<a class="btn" href="{{.Path}}">{{.Label}}</a>{{end}}{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}" disabled data-action>{{.Label}}<span data-selected-count></span></button>{{end}}</div>{{end}}
+{{if or .Actions .Tools}}<div class="actions">{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}" disabled data-action="{{.Name}}">{{.Label}}<span data-selected-count></span></button>{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
 </div>
 {{if or .Search .Filters}}<div class="list-tools">
 {{if .Search}}<input type="search" data-search placeholder="Search this page" aria-label="Search this page">{{end}}
@@ -22,7 +22,7 @@
 {{if or .First .Next}}<div class="pager">{{if .First}}<a class="btn" href="{{.First}}">Newest</a>{{end}}{{if .Next}}<a class="btn" href="{{.Next}}">Next page</a>{{end}}</div>{{end}}
 </form>{{end}}
 
-{{define "row"}}<tr data-row{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
+{{define "row"}}<tr data-row{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
 
 {{define "cell"}}{{if .State}}{{template "state" .State}}{{end}}
 {{- if .Href}}<a href="{{.Href}}"{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}>{{.Text}}</span>{{end}}

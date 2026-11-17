@@ -4,7 +4,9 @@
 "use strict";
 
 // Selection: [data-select-all] toggles the [data-select] boxes of its list; the
-// header actions [data-action] are enabled only with a selection and show its size.
+// header actions [data-action] are enabled only with a selection and show its size. A
+// named action (data-action="revoke") also needs every selected row to allow it, as its
+// data-actions lists.
 function updateSelection(list) {
   const boxes = [...list.querySelectorAll("[data-select]")];
   const picked = boxes.filter((b) => b.checked);
@@ -15,7 +17,9 @@ function updateSelection(list) {
     all.indeterminate = picked.length > 0 && picked.length < boxes.length;
   }
   list.querySelectorAll("[data-action]").forEach((btn) => {
-    btn.disabled = picked.length === 0;
+    const name = btn.dataset.action;
+    const allowed = !name || picked.every((b) => (b.dataset.actions || "").split(" ").includes(name));
+    btn.disabled = picked.length === 0 || !allowed;
     btn.querySelector("[data-selected-count]").textContent = picked.length ? ` (${picked.length})` : "";
   });
 }
@@ -66,8 +70,9 @@ function tick() {
 }
 
 // Polling: an element with data-poll is replaced by the HTML at that address after
-// 2, 4, 8 and then every 8 seconds, until the replacement has no data-poll.
-const pollDelays = [2000, 4000, 8000];
+// 2, 4, 8, 16 and then every 30 seconds, until the replacement has no data-poll. When its
+// data-state changes the waits start again from 2 seconds: the next step may be quick.
+const pollDelays = [2000, 4000, 8000, 16000, 30000];
 
 function poll(el, attempt) {
   const delay = pollDelays[Math.min(attempt, pollDelays.length - 1)];
@@ -78,11 +83,15 @@ function poll(el, attempt) {
       const tpl = document.createElement("template");
       tpl.innerHTML = (await res.text()).trim();
       const next = tpl.content.firstElementChild;
+      const moved = next.dataset.state !== el.dataset.state;
+      const box = el.querySelector("[data-select]");
+      const kept = next.querySelector("[data-select]");
+      if (box && kept) kept.checked = box.checked;
       el.replaceWith(next);
       const list = next.closest("[data-list]");
       if (list) updateSelection(list);
       tick();
-      if (next.dataset.poll) poll(next, attempt + 1);
+      if (next.dataset.poll) poll(next, moved ? 0 : attempt + 1);
     } catch {
       el.title = "Status not refreshed: reload the page";
     }
@@ -142,6 +151,11 @@ function steps(form) {
   });
   show();
 }
+
+// A choice that is a navigation: <input data-autosubmit> sends its form when changed.
+document.addEventListener("change", (e) => {
+  if (e.target.matches("[data-autosubmit]")) e.target.form.requestSubmit();
+});
 
 document.querySelectorAll("form[data-steps]").forEach(steps);
 document.querySelectorAll("[data-list]").forEach(updateSelection);

@@ -131,7 +131,7 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 		`<time data-until datetime="` + until.UTC().Format(time.RFC3339) + `" title="` + until.Local().Format("2006-01-02 15:04:05") + `">38 min</time>`,
 		`>4 min ago</time>`,
 		`<button type="button" class="copy" data-copy="k3f9x2m7qa"`,
-		`<button class="btn" formaction="/revoke" disabled data-action>Revoke…<span data-selected-count></span></button>`,
+		`<button class="btn" formaction="/revoke" disabled data-action="">Revoke…<span data-selected-count></span></button>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
@@ -157,7 +157,7 @@ func TestListWithoutActionsOrRows(t *testing.T) {
 	if !strings.Contains(withActions, `colspan="3"`) {
 		t.Errorf("the empty row does not span the selection column:\n%s", withActions)
 	}
-	if !strings.Contains(withActions, `<button class="btn primary" formaction="/approve" disabled data-action>`) {
+	if !strings.Contains(withActions, `<button class="btn primary" formaction="/approve" disabled data-action="">`) {
 		t.Errorf("a non-destructive action is not the primary button:\n%s", withActions)
 	}
 }

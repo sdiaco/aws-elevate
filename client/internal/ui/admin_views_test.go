@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"encoding/json"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +35,6 @@ func (f *fakeService) ConfigVersion(_ context.Context, n int) (*api.ConfigVersio
 
 func TestAdminViewsFollowTheRoles(t *testing.T) {
 	for path, allowed := range map[string][]string{
-		"/problems": {"admin"},
 		"/versions": {"admin", "auditor"},
 	} {
 		for _, role := range []string{"requester", "approver", "admin", "auditor"} {
@@ -54,11 +52,9 @@ func TestAdminViewsFollowTheRoles(t *testing.T) {
 			}
 		}
 	}
-	contains(t, newHarness("admin").get(t, "/active"), "Administration", `href="/problems"`, `href="/versions"`)
-	out := newHarness("auditor").get(t, "/active")
-	contains(t, out, `href="/versions"`)
-	lacks(t, out, `href="/problems"`)
-	lacks(t, newHarness("requester").get(t, "/active"), "Administration")
+	contains(t, newHarness("admin").get(t, "/requests"), "Administration", `href="/versions"`)
+	contains(t, newHarness("auditor").get(t, "/requests"), `href="/versions"`)
+	lacks(t, newHarness("requester").get(t, "/requests"), "Administration")
 }
 
 func failedRevoke(id string, actions ...string) api.Grant {
@@ -66,53 +62,6 @@ func failedRevoke(id string, actions ...string) api.Grant {
 	msg := "DeleteAccountAssignment: AccessDenied"
 	g.Error = &msg
 	return g
-}
-
-func TestProblemsListFailedRevocationsWithTimeLeftAndRetry(t *testing.T) {
-	h := newHarness("admin")
-	h.svc.lists["all"] = []api.Grant{
-		failedRevoke("fail234567", "redrive"),
-		failedRevoke("seen234567"),
-		grant("act2345678", api.StateActive, other, "revoke"),
-	}
-	out := h.get(t, "/problems")
-	contains(t, out,
-		"Revocations failed (2)", "Activations failed, 7 days",
-		"DeleteAccountAssignment: AccessDenied",
-		`<time data-until`, "Still usable for",
-		`value="fail234567"`, `formaction="/problems/retry"`, "Retry",
-	)
-	lacks(t, out, `value="seen234567"`, "act2345678")
-	if q := h.svc.queries[0]; q.Scope != "all" || !q.Open {
-		t.Errorf("query %+v", q)
-	}
-
-	h.svc.grants["fail234567"] = failedRevoke("fail234567", "redrive")
-	h.svc.afterAction = api.StateRevoking
-	w := h.do(t, "POST", "/problems/retry", url.Values{"id": {"fail234567"}})
-	contains(t, w.Body.String(), "Retry results", "fail234567", "Revoking")
-	if h.svc.calls[len(h.svc.calls)-1] != "redrive fail234567" {
-		t.Errorf("calls %v", h.svc.calls)
-	}
-}
-
-func TestProblemsListFailedActivationsOfTheLastWeek(t *testing.T) {
-	h := newHarness("admin")
-	failed := grant("bad2345678", api.StateClosed, other)
-	reason, msg := "failed", "limits: inline policy too long"
-	failed.CloseReason, failed.Error = &reason, &msg
-	expired := grant("old2345678", api.StateClosed, other)
-	gone := "expired"
-	expired.CloseReason = &gone
-	h.svc.lists["all"] = []api.Grant{failed, expired}
-	out := h.get(t, "/problems?f=activations")
-	contains(t, out, "bad2345678", "limits: inline policy too long")
-	lacks(t, out, "old2345678", `formaction="/problems/retry"`)
-	q := h.svc.queries[len(h.svc.queries)-1]
-	from, err := time.Parse(time.RFC3339, q.From)
-	if q.Scope != "all" || q.Open || err != nil || time.Since(from) < 7*24*time.Hour-time.Minute || time.Since(from) > 7*24*time.Hour+time.Minute {
-		t.Errorf("query %+v", q)
-	}
 }
 
 func versionsFixture(h *harness) {
