@@ -148,7 +148,8 @@ func TestRuleFormSaysWhichAccountsAreNeverListed(t *testing.T) {
 
 func TestNewRuleFormShowsWhatThePermissionSetContains(t *testing.T) {
 	h, _ := rulesHarness()
-	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`)
+	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`,
+		`<dd data-mirror="privileged">No</dd>`) // the summary says no, not "-"
 	lacks(t, h.get(t, "/rules/edit"), "shows once the rule is saved")
 }
 

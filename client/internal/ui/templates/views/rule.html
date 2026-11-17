@@ -15,7 +15,7 @@
 <div><dt>Who can request</dt><dd data-mirror="group">-</dd></div>
 <div><dt>Approval</dt><dd data-mirror="approval approver">-</dd></div>
 <div><dt>Duration</dt><dd data-mirror="default max">-</dd></div>
-<div><dt>Privileged</dt><dd data-mirror="privileged">-</dd></div>
+<div><dt>Privileged</dt><dd data-mirror="privileged">{{if .Form.Privileged}}Yes{{else}}No{{end}}</dd></div>
 </dl>
 <div class="form-actions"><a class="btn link" href="/rules">Cancel</a><button class="btn primary">Review changes</button></div>
 </aside>

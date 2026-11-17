@@ -596,7 +596,9 @@ function fieldText(form, name) {
     if (el instanceof HTMLSelectElement) {
       if (el.value) parts.push(el.selectedOptions[0].textContent.trim());
     } else if (el.type === "checkbox" || el.type === "radio") {
-      if (el.checked) parts.push(el.type === "checkbox" && els.length === 1 ? "Yes" : el.closest("label").textContent.trim());
+      // A single checkbox is a yes or no; checked is the only way a group says something.
+      if (el.type === "checkbox" && els.length === 1) parts.push(el.checked ? "Yes" : "No");
+      else if (el.checked) parts.push(el.closest("label").textContent.trim());
     } else if (el.value.trim()) {
       parts.push(el.value.trim());
     }
