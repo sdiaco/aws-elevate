@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,7 +13,8 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// versionsPage lists the rules versions with author and validity (design §7.3).
+// versionsPage lists the rules versions with author and validity (design §7.3); a
+// version opens in the bottom panel.
 func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 	v, err := a.Service.ConfigVersions(r.Context())
 	if err != nil {
@@ -21,7 +23,7 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Config versions", Search: true, Empty: "No rules version published yet.",
-		Columns: []string{"Version", "Author", "Published", "Validity", ""},
+		Columns: []string{"Version", "Author", "Published", "Validity"},
 	}
 	for _, info := range v.Versions {
 		n := strconv.Itoa(info.Number)
@@ -41,49 +43,81 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 		if v.Current != nil && *v.Current == info.Number {
 			tags = []string{"in use"}
 		}
-		l.Rows = append(l.Rows, Row{ID: n, Cells: []Cell{
-			{Text: "Version " + n, Href: "/versions/" + n, Tags: tags}, author, published, validity,
-			{Text: "Export", Href: "/versions/" + n + "/export.json"},
+		l.Rows = append(l.Rows, Row{ID: n, Key: n, Cells: []Cell{
+			{Text: "Version " + n, Href: "/versions?open=" + n, Panel: "/versions/" + n + "/panel", Tags: tags},
+			author, published, validity,
 		}})
 	}
 	if len(l.Rows) > 1 {
-		l.Actions = []Action{{Label: "Compare", Path: "/versions/compare"}}
+		l.Actions = []Action{{Label: "Compare", Path: "/versions/compare", Name: "compare", Count: 2}}
+		for i := range l.Rows {
+			l.Rows[i].Actions = []string{"compare"}
+		}
 	}
-	a.show(w, http.StatusOK, "list", "Config versions", "/versions", l)
+	view := listView{List: l}
+	if open := r.URL.Query().Get("open"); open != "" {
+		n, err := strconv.Atoi(open)
+		if err == nil {
+			view.Panel.Version, err = a.versionPanel(r.Context(), n, v.Current)
+		}
+		if err != nil {
+			view.Alert = &Alert{Kind: "error", Text: err.Error()}
+		} else {
+			markOpen(view.List.Rows, open)
+		}
+	}
+	a.show(w, http.StatusOK, "listpanel", "Config versions", "/versions", view)
 }
 
-type versionView struct {
-	Info api.VersionInfo
-	Doc  string
+// versionPanel is one rules version at the bottom of Config versions.
+type versionPanel struct {
+	Info    api.VersionInfo
+	Doc     string
+	Current int // the version in use, 0 when none is
 }
 
-func (a *App) version(w http.ResponseWriter, r *http.Request) (*api.ConfigVersion, bool) {
+func (a *App) versionPanel(ctx context.Context, n int, current *int) (*versionPanel, error) {
+	v, err := a.Service.ConfigVersion(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+	p := &versionPanel{Info: v.Version, Doc: indent(v.Doc)}
+	if current != nil {
+		p.Current = *current
+	}
+	return p, nil
+}
+
+// versionPanelPart is the panel of one version alone, fetched when a row is chosen.
+func (a *App) versionPanelPart(w http.ResponseWriter, r *http.Request) {
 	n, err := strconv.Atoi(r.PathValue("n"))
 	if err != nil {
 		http.NotFound(w, r)
-		return nil, false
-	}
-	v, err := a.Service.ConfigVersion(r.Context(), n)
-	if err != nil {
-		a.fail(w, "Config versions", "/versions", err)
-		return nil, false
-	}
-	return v, true
-}
-
-func (a *App) versionPage(w http.ResponseWriter, r *http.Request) {
-	v, ok := a.version(w, r)
-	if !ok {
 		return
 	}
-	title := fmt.Sprintf("Version %d", v.Version.Number)
-	a.show(w, http.StatusOK, "version", title, "/versions", versionView{Info: v.Version, Doc: indent(v.Doc)})
+	list, err := a.Service.ConfigVersions(r.Context())
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	p, err := a.versionPanel(r.Context(), n, list.Current)
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	part(w, "panel", panelSlot{Version: p})
 }
 
 // versionExport downloads a version as a file that admin import takes back (design §7.4).
 func (a *App) versionExport(w http.ResponseWriter, r *http.Request) {
-	v, ok := a.version(w, r)
-	if !ok {
+	n, err := strconv.Atoi(r.PathValue("n"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	v, err := a.Service.ConfigVersion(r.Context(), n)
+	if err != nil {
+		a.fail(w, "Config versions", "/versions", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -105,10 +139,19 @@ type line struct {
 	Changed bool
 }
 
+// lines splits a text into its lines; an empty text has none, so a rule missing on one
+// side shows as an empty column.
+func lines(text string) []string {
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
+}
+
 // markLines marks the lines of each side that are not in their longest common
 // subsequence: what was removed on the left, what was added on the right.
 func markLines(before, after string) ([]line, []line) {
-	a, b := strings.Split(before, "\n"), strings.Split(after, "\n")
+	a, b := lines(before), lines(after)
 	lcs := make([][]int, len(a)+1)
 	for i := range lcs {
 		lcs[i] = make([]int, len(b)+1)
@@ -200,7 +243,9 @@ func diffRules(old, new json.RawMessage) (compareView, error) {
 		b, ok := before.rules[id]
 		switch {
 		case !ok:
-			view.Added = append(view.Added, ruleChange{ID: id, After: indent(after.rules[id])})
+			rc := ruleChange{ID: id, After: indent(after.rules[id])}
+			rc.BeforeLines, rc.AfterLines = markLines("", rc.After)
+			view.Added = append(view.Added, rc)
 		case !jsonEqual(b, after.rules[id]):
 			rc := ruleChange{ID: id, Before: indent(b), After: indent(after.rules[id])}
 			rc.BeforeLines, rc.AfterLines = markLines(rc.Before, rc.After)
@@ -209,7 +254,9 @@ func diffRules(old, new json.RawMessage) (compareView, error) {
 	}
 	for _, id := range before.order {
 		if _, ok := after.rules[id]; !ok {
-			view.Removed = append(view.Removed, ruleChange{ID: id, Before: indent(before.rules[id])})
+			rc := ruleChange{ID: id, Before: indent(before.rules[id])}
+			rc.BeforeLines, rc.AfterLines = markLines(rc.Before, "")
+			view.Removed = append(view.Removed, rc)
 		}
 	}
 	view.Other = !jsonEqual(restOld, restNew)

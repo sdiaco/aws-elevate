@@ -1,6 +1,6 @@
-// The little JavaScript of the interface (design §11.1): selection, countdowns,
-// polling of grants in transition, details read when opened and copyable ids.
-// Everything else is server pages.
+// The JavaScript of the interface (design §11.1): plain, no framework, no build. Pages
+// come from the server and work without it; the script spares reloads (panel, filters,
+// pages, rule choice), counts down, polls grants in transition and copies.
 "use strict";
 
 // Selection: [data-select-all] toggles the [data-select] boxes of its list; the
@@ -19,7 +19,8 @@ function updateSelection(list) {
   list.querySelectorAll("[data-action]").forEach((btn) => {
     const name = btn.dataset.action;
     const allowed = !name || picked.every((b) => (b.dataset.actions || "").split(" ").includes(name));
-    btn.disabled = picked.length === 0 || !allowed;
+    const exact = Number(btn.dataset.count) || 0;
+    btn.disabled = picked.length === 0 || !allowed || (exact > 0 && picked.length !== exact);
     btn.querySelector("[data-selected-count]").textContent = picked.length ? ` (${picked.length})` : "";
   });
 }
@@ -77,6 +78,7 @@ const pollDelays = [2000, 4000, 8000, 16000, 30000];
 function poll(el, attempt) {
   const delay = pollDelays[Math.min(attempt, pollDelays.length - 1)];
   setTimeout(async () => {
+    if (!el.isConnected) return; // the page around it changed
     try {
       const res = await fetch(el.dataset.poll, { headers: { Accept: "text/html" } });
       if (!res.ok) throw new Error(res.status);
@@ -184,15 +186,46 @@ document.addEventListener("change", (e) => {
   }
 });
 
-// Closing the panel folds it to its header; the close link works without the script.
+// Closing the panel hides it until a row is chosen again; deselecting a row keeps it, as
+// in the console. The close link works without the script.
 document.addEventListener("click", (e) => {
   const close = e.target.closest("[data-panel-close]");
-  if (!close) return;
+  if (!close || e.button !== 0) return;
   e.preventDefault();
-  const panel = close.closest("[data-panel-slot]");
-  panel.classList.toggle("folded");
-  close.setAttribute("aria-label", panel.classList.contains("folded") ? "Open" : "Close");
+  const empty = document.createElement("section");
+  empty.className = "split-panel";
+  empty.hidden = true;
+  empty.setAttribute("data-panel-slot", "");
+  close.closest("[data-panel-slot]").replaceWith(empty);
+  document.querySelectorAll("tr.open").forEach((tr) => tr.classList.remove("open"));
+  history.replaceState(null, "", close.href);
 });
+
+// Filters and pages of a list change the page without reloading it: the new page's main
+// area replaces this one, and the browser's back button returns to the previous.
+async function go(address, push) {
+  const main = document.querySelector("main.main");
+  try {
+    const res = await fetch(address, { headers: { Accept: "text/html" } });
+    if (!res.ok || res.redirected) throw new Error(res.status);
+    const next = new DOMParser().parseFromString(await res.text(), "text/html").querySelector("main.main");
+    if (!next) throw new Error("no page");
+    main.replaceChildren(...next.childNodes);
+    if (push) history.pushState(null, "", address);
+    start(main);
+  } catch {
+    location.href = address;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const link = e.target.closest(".segmented a, .pager a");
+  if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  go(link.href, true);
+});
+
+window.addEventListener("popstate", () => go(location.href, false));
 
 // Resize: dragging the handle sets the panel height, remembered by this browser only.
 function setPanelHeight(px) {
@@ -252,6 +285,52 @@ document.addEventListener("change", (e) => {
   });
 });
 
+// A table to choose from, searched and shown a page at a time: <div data-paginate="8">
+// with an [data-filter] input, a [data-pager] and the rows in its tbody. The page with the
+// chosen row shows first. Without the script every row shows.
+function paginate(box) {
+  const size = Number(box.dataset.paginate);
+  const rows = [...box.querySelectorAll("tbody tr")];
+  const filter = box.querySelector("[data-filter]");
+  const pager = box.querySelector("[data-pager]");
+  const none = box.querySelector("[data-no-match]");
+  let page = 0;
+  const matching = () => {
+    const words = filter.value.toLowerCase().trim().split(/\s+/);
+    return rows.filter((tr) => words.every((w) => tr.textContent.toLowerCase().includes(w)));
+  };
+  const show = () => {
+    const shown = matching();
+    const pages = Math.max(1, Math.ceil(shown.length / size));
+    page = Math.min(page, pages - 1);
+    rows.forEach((tr) => { tr.hidden = true; tr.classList.remove("last-shown"); });
+    const now = shown.slice(page * size, page * size + size);
+    now.forEach((tr) => { tr.hidden = false; });
+    // Rows hidden after it would leave the last one shown without its bottom line.
+    now.at(-1)?.classList.add("last-shown");
+    none.hidden = shown.length > 0;
+    pager.replaceChildren();
+    if (pages < 2) return;
+    const button = (label, to, name) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      if (name) b.setAttribute("aria-label", name);
+      if (to === page) b.setAttribute("aria-current", "true");
+      b.disabled = to < 0 || to >= pages;
+      b.addEventListener("click", () => { page = to; show(); });
+      pager.append(b);
+    };
+    button("‹", page - 1, "Previous page");
+    for (let i = 0; i < pages; i++) button(String(i + 1), i);
+    button("›", page + 1, "Next page");
+  };
+  const chosen = rows.findIndex((tr) => tr.querySelector("input:checked"));
+  if (chosen > 0) page = Math.floor(chosen / size);
+  filter.addEventListener("input", () => { page = 0; show(); });
+  show();
+}
+
 // A form in steps: <form data-steps> shows one [data-step] section at a time, and Next
 // moves on only when the fields of the current one are valid. Without this script every
 // step shows at once and the form still works.
@@ -277,8 +356,14 @@ function steps(form) {
   show();
 }
 
-document.querySelectorAll("form[data-steps]").forEach(steps);
-document.querySelectorAll("[data-list]").forEach(updateSelection);
-document.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));
-tick();
+// start wires the parts of a page, or of the part of it just replaced.
+function start(root) {
+  root.querySelectorAll("form[data-steps]").forEach(steps);
+  root.querySelectorAll("[data-paginate]").forEach(paginate);
+  root.querySelectorAll("[data-list]").forEach(updateSelection);
+  root.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));
+  tick();
+}
+
+start(document);
 setInterval(tick, 1000);

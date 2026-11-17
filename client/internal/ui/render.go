@@ -116,6 +116,7 @@ type Action struct {
 	Name    string
 	Danger  bool
 	Primary bool
+	Count   int // the action needs exactly this many rows, when not 0
 }
 
 // stateLabels name the states of contract/vocabulary.json on screen.
@@ -141,12 +142,33 @@ var funcs = template.FuncMap{
 	"join":       strings.Join,
 	"tags":       tags,
 	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
+	"policyName": policyName,
+	"policyDoc":  policyDoc,
+	"diff": func(v compareView, c ruleChange, kind string) ruleDiff {
+		return ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
+	},
 	"columns": func(l List) int {
 		if len(l.Actions) > 0 {
 			return len(l.Columns) + 1
 		}
 		return len(l.Columns)
 	},
+}
+
+// policyName is the name of a managed policy from its ARN, without its path.
+func policyName(arn string) string { return arn[strings.LastIndex(arn, "/")+1:] }
+
+// policyDoc is the AWS reference page of an AWS managed policy (design §7.5: a link, its
+// content is not read).
+func policyDoc(arn string) string {
+	return "https://docs.aws.amazon.com/aws-managed-policy/latest/reference/" + policyName(arn) + ".html"
+}
+
+// ruleDiff is one rule of a comparison with the labels of its two sides.
+type ruleDiff struct {
+	Change             ruleChange
+	Kind               string
+	OldLabel, NewLabel string
 }
 
 // parts are the shared templates; templates holds one set per view: the base layout, the

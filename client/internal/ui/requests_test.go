@@ -146,14 +146,14 @@ func TestRowsInMotionPollTheirState(t *testing.T) {
 	contains(t, out, `data-state="active"`, `value="ask2345678" data-select aria-label`)
 }
 
-func TestTheBottomPanelIsAlwaysThereAndFollowsTheChosenRow(t *testing.T) {
+func TestTheBottomPanelIsClosedUntilARowIsChosen(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests?f=approve")
 	contains(t, out,
-		`<section class="split-panel" data-panel-slot`, "Select a request above",
+		`<section class="split-panel" data-panel-slot hidden></section>`,
 		`href="/requests?f=approve&amp;open=ask2345678" data-panel="/panel/ask2345678?from=requests"`,
-		`data-panel-resize`,
 	)
+	lacks(t, out, `data-panel-resize`)
 	lacks(t, out, "get ask2345678")
 
 	out = h.get(t, "/requests?f=approve&open=ask2345678")
@@ -279,7 +279,9 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 	out = h.get(t, "/requests/new?rule=ssm-prod")
 	contains(t, out,
 		`id="rule-ssm-prod" checked`,
-		`<form method="post" action="/requests/new" class="box">`,
+		`<form method="post" action="/requests/new" class="box launch-details" id="request">`,
+		`<button class="btn primary" form="request">Submit request</button>`,
+		`data-paginate="8"`, `data-filter`, `data-pager`,
 		`<input type="hidden" name="rule" value="ssm-prod">`,
 		`<option value="222222222222" selected>prod (222222222222)</option>`,
 		`name="duration"`, `placeholder="1h"`, "Default 1h, at most 4h",
@@ -296,22 +298,25 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 
 func TestChoosingARuleFetchesOnlyItsForm(t *testing.T) {
 	h := newHarness("requester")
-	contains(t, h.get(t, "/requests/new"), `data-swap="/requests/new/form?rule="`, `data-swap-into="request-form"`, `<div id="request-form">`)
+	contains(t, h.get(t, "/requests/new"), `data-swap="/requests/new/form?rule="`, `data-swap-into="request-form"`, `<div id="request-form" class="launch-slot">`)
 	out := h.get(t, "/requests/new/form?rule=ssm-prod")
 	if !strings.HasPrefix(out, `<form method="post" action="/requests/new"`) {
 		t.Fatalf("not the form: %s", out)
 	}
 	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`)
 	lacks(t, out, `class="nav"`)
-	if out := h.get(t, "/requests/new/form?rule=nope"); strings.TrimSpace(out) != "" {
-		t.Errorf("form of an unknown rule: %s", out)
-	}
+	out = h.get(t, "/requests/new/form?rule=nope")
+	contains(t, out, "Choose a rule to see its details", `<button class="btn primary" disabled>`)
+	lacks(t, out, "<form")
 }
 
 func TestWhatYouWillGetIsAFragment(t *testing.T) {
 	h := newHarness("requester")
 	out := h.get(t, "/requests/permissions?rule=ssm-prod")
 	contains(t, out, "AmazonSSMReadOnlyAccess", "ssm:PutParameter", "arn:aws:ssm:*:*:parameter/app/*", "&#34;Version&#34;: &#34;2012-10-17&#34;")
+	// Managed policies are a table like the inline one, linked to the AWS reference.
+	contains(t, out, "<th>Policy</th><th>Type</th>", "<td>AWS managed</td>",
+		`href="https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonSSMReadOnlyAccess.html"`)
 	lacks(t, out, `class="nav"`)
 
 	h.svc.permsErr = &api.Error{Status: 404, Code: "not_found", Message: "permission set ssm-write no longer exists"}

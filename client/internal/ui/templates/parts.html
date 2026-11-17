@@ -1,22 +1,25 @@
 {{/* Pieces a page fetches into itself: they render alone, without the layout. */}}
 
 {{define "permissions"}}<div class="perms">
-{{if .Managed}}<h3>AWS managed policies</h3>
-<ul>{{range .Managed}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}
-{{if .CustomerManaged}}<h3>Customer managed policies</h3>
-<ul>{{range .CustomerManaged}}<li><code>{{.Path}}{{.Name}}</code></li>{{end}}</ul>{{end}}
-{{with .Boundary}}<h3>Permissions boundary</h3>
-<p>{{with .ManagedPolicyArn}}<code>{{.}}</code>{{end}}{{with .CustomerManagedPolicy}}<code>{{.Path}}{{.Name}}</code>{{end}}</p>{{end}}
+{{if or .Managed .CustomerManaged .Boundary}}<h3>Policies</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Policy</th><th>Type</th></tr></thead>
+<tbody>{{range .Managed}}<tr><td><a href="{{policyDoc .}}" target="_blank" rel="noopener noreferrer">{{policyName .}} ↗</a></td><td>AWS managed</td></tr>{{end}}
+{{range .CustomerManaged}}<tr><td><code>{{.Path}}{{.Name}}</code></td><td>Customer managed</td></tr>{{end}}
+{{with .Boundary}}<tr><td>{{with .ManagedPolicyArn}}<a href="{{policyDoc .}}" target="_blank" rel="noopener noreferrer">{{policyName .}} ↗</a>{{end}}{{with .CustomerManagedPolicy}}<code>{{.Path}}{{.Name}}</code>{{end}}</td><td>Permissions boundary</td></tr>{{end}}</tbody>
+</table></div>{{end}}
 {{if .InlineSummary}}<h3>Inline policy</h3>
 <div class="table-wrap"><table>
 <thead><tr><th>Effect</th><th>Actions</th><th>Resources</th></tr></thead>
 <tbody>{{range .InlineSummary}}<tr><td>{{.Effect}}{{if .Conditions}} <span class="tag">conditions</span>{{end}}</td><td class="wrap">{{range .Actions}}<code>{{.}}</code> {{end}}</td><td class="wrap">{{range .Resources}}<code>{{.}}</code> {{end}}</td></tr>{{end}}</tbody>
 </table></div>
 <details class="expand"><summary>Full JSON</summary><pre>{{indent .Inline}}</pre></details>{{end}}
+{{if not (or .Managed .CustomerManaged .Boundary .InlineSummary)}}<p class="muted">The permission set has no policy.</p>{{end}}
 </div>{{end}}
 
 {{/* A command to copy, shown where it must be easy to find. */}}
-{{define "command"}}<div class="command"><code>{{.}}</code><button type="button" class="btn" data-copy="{{.}}">Copy</button></div>{{end}}
+{{define "command"}}<div class="command"><code>{{.}}</code>{{template "copy-button" .}}</div>{{end}}
+{{define "copy-button"}}<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy" title="Copy"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg></button>{{end}}
 
 {{/* The request just sent, followed at the top of Requests (design §11.1). */}}
 {{define "flash"}}<div class="flash {{.Kind}}" role="status"{{if .Poll}} data-poll="{{.Poll}}" data-state="{{.Grant.State}}"{{end}}>
@@ -30,11 +33,16 @@
 </div>{{end}}
 </div>{{end}}
 
-{{/* The bottom panel (console split panel): always on the page, filled with the chosen
-     grant. Its tabs are Details and Permissions; the decisions on the grant are here. */}}
-{{define "panel"}}<section class="split-panel" data-panel-slot aria-label="Details">
+{{/* The bottom panel (console split panel): closed until a row is chosen, then filled
+     with that grant, rule or version. Its header has the decisions on the item. */}}
+{{define "panel"}}{{if or .Panel .Rule .Version}}<section class="split-panel" data-panel-slot aria-label="Details">
 <div class="split-panel-handle" data-panel-resize role="separator" aria-orientation="horizontal" aria-label="Resize" tabindex="0"></div>
-{{with .Panel}}{{$g := .Grant}}<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
+{{with .Panel}}{{template "grant-panel" .}}{{end}}{{with .Rule}}{{template "rule-panel" .}}{{end}}{{with .Version}}{{template "version-panel" .}}{{end}}
+</section>{{else}}<section class="split-panel" data-panel-slot hidden></section>{{end}}{{end}}
+
+{{define "panel-close"}}<a class="icon-btn" href="{{.}}" data-panel-close aria-label="Close" title="Close"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg></a>{{end}}
+
+{{define "grant-panel"}}{{$g := .Grant}}<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
 <form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$g.ID}}">
 {{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel request…</a>{{end}}
 {{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}">Revoke…</a>{{end}}
@@ -43,7 +51,7 @@
 {{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
 {{with .Console}}<a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 </form>
-<a class="btn icon" href="{{.Close}}" data-panel-close aria-label="Close">✕</a></div>
+{{template "panel-close" .Close}}</div>
 <div class="tabs" data-tabs>
 <div class="tab-list" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="details">Details</button>{{if not $g.RuleRemoved}}<button type="button" role="tab" aria-selected="false" data-tab="permissions">Permissions</button>{{end}}</div>
 <div class="split-panel-body">
@@ -62,7 +70,7 @@
 <div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
 <div><dt>Requested</dt><dd>{{exact $g.CreatedAt}}</dd></div>
-{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.Panel.ApprovedAt.IsZero}} · {{exact $.Panel.ApprovedAt}}{{end}}</dd></div>{{end}}
+{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{exact $.ApprovedAt}}{{end}}</dd></div>{{end}}
 {{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
 {{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
 {{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}
@@ -73,14 +81,58 @@
 </dl></div>
 </div>
 {{if not $g.RuleRemoved}}<div role="tabpanel" data-tabpanel="permissions" data-load="/requests/permissions?rule={{$g.RuleID}}" hidden><div class="box" data-load-target><p class="muted">Loading…</p></div></div>{{end}}
-</div></div>
-{{else}}<div class="split-panel-head"><h2>Details</h2></div>
-<div class="split-panel-body"><p class="muted">{{.Empty}}</p></div>{{end}}
-</section>{{end}}
+</div></div>{{end}}
 
-{{/* The details of a new request, for the rule chosen above (fetched when it changes). */}}
-{{define "requestform"}}{{with .Rule}}<form method="post" action="/requests/new" class="box">
-<h2>2. Details</h2>
+{{define "rule-panel"}}{{$r := .Rule}}<div class="split-panel-head"><h2>{{$r.ID}}</h2>{{if $r.Privileged}}<span class="tag">privileged</span>{{end}}{{if .PSMissing}} <span class="tag">PS not found</span>{{end}}
+<form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$r.ID}}">
+<button class="btn" formaction="/rules/delete">Delete…</button>
+<a class="btn primary" href="/rules/edit?id={{$r.ID}}">Edit</a>
+</form>
+{{template "panel-close" "/rules"}}</div>
+<div class="tabs" data-tabs>
+<div class="tab-list" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="details">Details</button>{{if not .PSMissing}}<button type="button" role="tab" aria-selected="false" data-tab="permissions">Permissions</button>{{end}}</div>
+<div class="split-panel-body">
+<div role="tabpanel" data-tabpanel="details">
+{{if .PSMissing}}<div class="alert error" role="status">The permission set {{$r.PermissionSet.Name}} is no longer in Identity Center: edit the rule and choose another one.</div>{{end}}
+<div class="box"><h3>Details</h3>
+<dl class="kv cols4">
+<div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div>
+<div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div>
+<div><dt>Accounts</dt><dd>{{.Accounts}}</dd></div>
+<div><dt>Approval</dt><dd>{{.Approval}}</dd></div>
+<div><dt>Default duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div>
+<div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div>
+<div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div>
+</dl></div>
+</div>
+{{if not .PSMissing}}<div role="tabpanel" data-tabpanel="permissions" data-load="/rules/ps-permissions?ps={{$r.PermissionSet.Name}}" hidden><div class="box" data-load-target><p class="muted">Loading…</p></div></div>{{end}}
+</div></div>{{end}}
+
+{{define "version-panel"}}{{$v := .Info}}<div class="split-panel-head"><h2>Version {{$v.Number}}</h2>{{if eq $v.Number .Current}}<span class="tag">in use</span>{{end}}{{if not $v.Valid}} <span class="tag">not valid</span>{{end}}
+<div class="panel-actions">
+{{if and .Current (ne $v.Number .Current)}}<a class="btn" href="/versions/compare?id={{$v.Number}}&amp;id={{.Current}}">Compare with in use</a>{{end}}
+<a class="btn primary" href="/versions/{{$v.Number}}/export.json">Export</a>
+</div>
+{{template "panel-close" "/versions"}}</div>
+<div class="tabs" data-tabs>
+<div class="tab-list" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="details">Details</button><button type="button" role="tab" aria-selected="false" data-tab="document">Document</button></div>
+<div class="split-panel-body">
+<div role="tabpanel" data-tabpanel="details">
+<div class="box"><h3>Details</h3>
+<dl class="kv cols4">
+<div><dt>Author</dt><dd>{{with $v.Author}}{{.}}{{else}}<span class="muted">author being verified</span>{{end}}</dd></div>
+<div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{exact .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
+<div><dt>Validity</dt><dd>{{if $v.Valid}}Valid{{else}}Not valid, ignored{{end}}</dd></div>
+{{with $v.Errors}}<div><dt>Errors</dt><dd>{{range .}}<span class="tag">{{.}}</span> {{end}}</dd></div>{{end}}
+</dl></div>
+</div>
+<div role="tabpanel" data-tabpanel="document" hidden><div class="box"><h3>Document</h3><pre>{{.Doc}}</pre></div></div>
+</div></div>{{end}}
+
+{{/* The details of a new request for the rule chosen above, and the summary beside them
+     (fetched when the rule changes). */}}
+{{define "requestform"}}{{with .Rule}}<form method="post" action="/requests/new" class="box launch-details" id="request">
+<h2>Details</h2>
 <input type="hidden" name="rule" value="{{.ID}}">
 <div class="field"><label for="account">Account</label>
 <select id="account" name="account" required>{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
@@ -91,16 +143,31 @@
 <span class="desc">Who reads the request and the history sees it.</span>
 <textarea name="reason" id="reason" rows="3" required>{{$.Form.Reason}}</textarea></div>
 <details class="expand" data-load="/requests/permissions?rule={{.ID}}"><summary>What you will get</summary><div data-load-target><p class="muted">Loading…</p></div></details>
-<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary">Submit</button></div>
-</form>{{end}}{{end}}
+</form>
+<aside class="box launch-summary"><h2>Summary</h2>
+<dl class="kv">
+<div><dt>Permission set</dt><dd>{{.PermissionSet.Name}}{{if .Privileged}} <span class="tag">privileged</span>{{end}}</dd></div>
+<div><dt>Rule</dt><dd>{{.ID}}</dd></div>
+<div><dt>Approval</dt><dd>{{if eq .Approval "manual"}}Manual · {{with .ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
+<div><dt>Duration</dt><dd>Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}</dd></div>
+</dl>
+<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" form="request">Submit request</button></div>
+</aside>{{else}}<aside class="box launch-summary"><h2>Summary</h2>
+<p class="muted">Choose a rule to see its details.</p>
+<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" disabled>Submit request</button></div>
+</aside>{{end}}{{end}}
 
-{{/* What changes between two rules documents, rule by rule. */}}
+{{/* What changes between two rules documents, rule by rule, always side by side. */}}
 {{define "changes"}}<div class="compare">
 {{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{end}}
 {{if .Other}}<div class="alert info" role="status">Fields outside the rules differ too.</div>{{end}}
-{{with .Added}}<h2>Added</h2>{{range .}}<details class="expand" open><summary>{{.ID}}</summary><pre>{{.After}}</pre></details>{{end}}{{end}}
-{{with .Removed}}<h2>Removed</h2>{{range .}}<details class="expand"><summary>{{.ID}}</summary><pre>{{.Before}}</pre></details>{{end}}{{end}}
-{{with .Changed}}<h2>Changed</h2>{{range .}}<details class="expand" open><summary>{{.ID}}</summary><div class="diff"><div><h3>{{$.OldLabel}}</h3><pre>{{range .BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
-{{end}}</pre></div><div><h3>{{$.NewLabel}}</h3><pre>{{range .AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
-{{end}}</pre></div></div></details>{{end}}{{end}}
+{{range .Added}}{{template "rule-diff" (diff $ . "Added")}}{{end}}
+{{range .Removed}}{{template "rule-diff" (diff $ . "Removed")}}{{end}}
+{{range .Changed}}{{template "rule-diff" (diff $ . "Changed")}}{{end}}
 </div>{{end}}
+
+{{define "rule-diff"}}<details class="expand diff-rule" open><summary>{{.Change.ID}} <span class="tag diff-{{.Kind}}">{{.Kind}}</span></summary>
+<div class="diff"><div><h3>{{.OldLabel}}</h3>{{if .Change.BeforeLines}}<pre>{{range .Change.BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
+{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div>
+<div><h3>{{.NewLabel}}</h3>{{if .Change.AfterLines}}<pre>{{range .Change.AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
+{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div></details>{{end}}

@@ -1,7 +1,11 @@
 {{define "content"}}<div class="page-head"><h1>New request</h1></div>
-<form method="get" action="/requests/new" class="box">
-<h2>1. Choose a rule</h2>
-{{if .Rules}}<div class="table-wrap"><table>
+<div class="launch">
+<form method="get" action="/requests/new" class="box launch-rules">
+<h2>Rule <span class="counter">({{len .Rules}})</span></h2>
+<p class="desc">The access you can ask for. Search by permission set, rule, account or approver.</p>
+{{if .Rules}}<div data-paginate="8">
+<div class="list-tools"><input type="search" data-filter placeholder="Find a rule" aria-label="Find a rule"><nav class="pager-nums" data-pager aria-label="Pages"></nav></div>
+<div class="table-wrap"><table>
 <thead><tr><th class="check"></th><th>Permission set</th><th>Rule</th><th>Accounts</th><th>Approval</th><th>Max duration</th></tr></thead>
 <tbody>{{range .Rules}}<tr{{if and $.Rule (eq .ID $.Rule.ID)}} class="selected"{{end}}>
 <td class="check"><input type="radio" name="rule" value="{{.ID}}" id="rule-{{.ID}}"{{if and $.Rule (eq .ID $.Rule.ID)}} checked{{end}} data-swap="/requests/new/form?rule=" data-swap-into="request-form" data-swap-url="/requests/new?rule="></td>
@@ -12,7 +16,9 @@
 <td>{{short .Duration.MaxSeconds}}</td>
 </tr>{{end}}</tbody>
 </table></div>
+<p class="muted no-match" data-no-match hidden>No rule matches.</p></div>
 <noscript><div class="form-actions"><button class="btn">Choose</button></div></noscript>
 {{else}}<p class="muted">No rule lets you request access. Ask an administrator.</p>{{end}}
 </form>
-<div id="request-form">{{template "requestform" .}}</div>{{end}}
+<div id="request-form" class="launch-slot">{{template "requestform" .}}</div>
+</div>{{end}}
