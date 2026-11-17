@@ -59,7 +59,7 @@ func rows(rels []release.Release, infra bool) []releaseRow {
 }
 
 func (a *App) updatesPage(w http.ResponseWriter, r *http.Request) {
-	v := updatesView{Client: version.Client, Infra: a.Me.InfraVersion, SettingsPath: a.Updates.SettingsPath}
+	v := updatesView{Client: version.Client, Infra: a.me().InfraVersion, SettingsPath: a.Updates.SettingsPath}
 	if !a.Updates.Checked {
 		v.Off = true
 		a.show(w, http.StatusOK, "updates", "Updates", "/updates", v)
@@ -70,8 +70,8 @@ func (a *App) updatesPage(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "Updates", "/updates", err)
 		return
 	}
-	v.Clients = rows(release.ClientUpdates(rels, version.Client, a.Me.InfraVersion), false)
-	v.Infras = rows(release.InfraUpdates(rels, a.Me.InfraVersion), true)
+	v.Clients = rows(release.ClientUpdates(rels, version.Client, a.me().InfraVersion), false)
+	v.Infras = rows(release.InfraUpdates(rels, a.me().InfraVersion), true)
 	a.show(w, http.StatusOK, "updates", "Updates", "/updates", v)
 }
 
@@ -87,10 +87,10 @@ func (a *App) updateClient(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "Updates", "/updates", err)
 		return
 	}
-	next := release.ClientUpdates(rels, version.Client, a.Me.InfraVersion)
+	next := release.ClientUpdates(rels, version.Client, a.me().InfraVersion)
 	if len(next) == 0 {
 		a.show(w, http.StatusOK, "message", "Updates", "/updates", "Updates",
-			Alert{Kind: "info", Text: "This client is the newest that works with infrastructure " + a.Me.InfraVersion + "."})
+			Alert{Kind: "info", Text: "This client is the newest that works with infrastructure " + a.me().InfraVersion + "."})
 		return
 	}
 	msg, err := a.Updates.InstallClient(r.Context(), next[0].Version)
