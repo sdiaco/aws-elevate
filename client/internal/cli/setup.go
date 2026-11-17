@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
@@ -56,6 +57,11 @@ func runSetup(ctx context.Context, e *Env, args []string) error {
 	if added {
 		fmt.Fprintf(e.Stdout, "Added the alias to %s: use aws elevate <command>.\n", e.AliasFile)
 	}
-	fmt.Fprintln(e.Stdout, "Next: aws elevate request")
+	// Only a requester can ask for access; everyone else starts from the interface.
+	next := "aws elevate ui"
+	if slices.Contains(me.Roles, "requester") {
+		next = "aws elevate request"
+	}
+	fmt.Fprintln(e.Stdout, "Next: "+next)
 	return nil
 }
