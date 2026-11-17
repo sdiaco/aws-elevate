@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from botocore.exceptions import ClientError
 
 from ..adapters.grants_table import RETENTION_MONTHS, Duplicate, StateConflict
-from ..core.authz import actions, can
+from ..core.authz import actions, can, decisions
 from ..core.ids import new_grant_id
 from ..core.models import (
     APPROVAL_TIMEOUT_SECONDS,
@@ -139,8 +139,10 @@ class GrantRoutes:
             "closedAt": g.closed_at,
             "revokedBy": _principal(g.revoked_by),
             "revokeReason": g.revoke_reason,
+            "rejectReason": g.reject_reason,
             "error": g.error,
             "ruleRemoved": g.rule_id not in rule_ids,
+            "starting": g.starting,
             "actions": sorted(actions(identity, g) - {"view"}),
             "approvalExpiresAt": _approval_expires_at(g),
         }
@@ -240,7 +242,8 @@ class GrantRoutes:
             self._end_wait(grant, State.ACTIVATING, "approved", approver=_me(identity))
         return self._reply(identity, grant_id)
 
-    def reject(self, identity: Identity, grant_id: str) -> dict:
+    def reject(self, identity: Identity, grant_id: str, body) -> dict:
+        reason = _reason(body if isinstance(body, dict) else {})
         grant = self._pending(identity, "reject", grant_id)
         self._end_wait(
             grant,
@@ -248,6 +251,7 @@ class GrantRoutes:
             "rejected",
             close_reason=CloseReason.REJECTED,
             approver=_me(identity),
+            reject_reason=reason,
         )
         return self._reply(identity, grant_id)
 
@@ -260,8 +264,10 @@ class GrantRoutes:
         grant = self._visible(identity, grant_id)
         if grant.state != State.PENDING:
             raise _conflict(f"grant {grant_id} is {grant.state}, no longer pending")
-        if not can(identity, action, grant):
+        if action not in decisions(identity, grant):
             raise forbidden(f"you cannot {action} grant {grant_id}")
+        if grant.starting:
+            raise ApiError(409, "not_ready", "the request is still starting; retry in a moment")
         return grant
 
     def _nonconformity(self, grant: Grant) -> list[str]:
@@ -334,7 +340,7 @@ class GrantRoutes:
         scope = query.get("scope", "mine")
         if scope not in _SCOPES:
             raise _invalid(f"scope must be one of {', '.join(_SCOPES)}")
-        open_only = self._flag(query.get("open"))
+        status = self._status(query)
         start, end = self._period(query)
         user = query.get("user")
         cursor = _decode(query.get("cursor"))
@@ -344,12 +350,14 @@ class GrantRoutes:
             if user is not None:
                 raise _invalid("user is not allowed with scope=mine")
             grants, key = self._table.by_user(
-                identity.user_id, start, end, PAGE_SIZE, after, open_only
+                identity.user_id, start, end, PAGE_SIZE, after, status
             )
             nxt = {"m": None, "k": key} if key else None
         elif scope == "approvable":
             if user is not None:
                 raise _invalid("user is not allowed with scope=approvable")
+            if status == "closed":
+                raise _invalid("closed is not allowed with scope=approvable")
             grants, key = self._table.open_grants(PAGE_SIZE, after)
             grants = [g for g in grants if self._approves(identity, g)]
             nxt = {"m": None, "k": key} if key else None
@@ -357,13 +365,13 @@ class GrantRoutes:
             if not (identity.is_admin or identity.is_auditor):
                 raise forbidden("scope=all is for admins and auditors")
             if user is not None:
-                grants, key = self._table.by_user(user, start, end, PAGE_SIZE, after, open_only)
+                grants, key = self._table.by_user(user, start, end, PAGE_SIZE, after, status)
                 nxt = {"m": None, "k": key} if key else None
-            elif open_only:
+            elif status == "open":
                 grants, key = self._table.open_grants(PAGE_SIZE, after)
                 nxt = {"m": None, "k": key} if key else None
             else:
-                grants, nxt = self._by_months(start, end, cursor)
+                grants, nxt = self._by_months(start, end, cursor, status)
 
         rule_ids = self._rule_ids()
         return {
@@ -377,7 +385,7 @@ class GrantRoutes:
     def _approves(identity: Identity, grant: Grant) -> bool:
         return grant.approver_group is not None and grant.approver_group.id in identity.group_ids
 
-    def _by_months(self, start: str, end: str, cursor: dict | None):
+    def _by_months(self, start: str, end: str, cursor: dict | None, status: str | None):
         """Up to one page across the month partitions of the period, newest first."""
         months = _months(start, end)
         month, key = (cursor["m"], cursor["k"]) if cursor else (months[0], None)
@@ -385,7 +393,9 @@ class GrantRoutes:
             raise _invalid("cursor does not belong to this period")
         i, grants = months.index(month), []
         while True:
-            page, key = self._table.by_month(months[i], start, end, PAGE_SIZE - len(grants), key)
+            page, key = self._table.by_month(
+                months[i], start, end, PAGE_SIZE - len(grants), key, status
+            )
             grants += page
             if key is None:
                 i += 1
@@ -394,13 +404,23 @@ class GrantRoutes:
             if len(grants) >= PAGE_SIZE:
                 return grants, {"m": months[i], "k": key}
 
+    @classmethod
+    def _status(cls, query: dict) -> str | None:
+        """None for every grant, "open" or "closed" (History) to keep only those."""
+        is_open = cls._flag(query, "open")
+        closed = cls._flag(query, "closed")
+        if is_open and closed:
+            raise _invalid("open and closed cannot both be true")
+        return "open" if is_open else "closed" if closed else None
+
     @staticmethod
-    def _flag(value) -> bool:
+    def _flag(query: dict, name: str) -> bool:
+        value = query.get(name)
         if value in (None, "false"):
             return False
         if value == "true":
             return True
-        raise _invalid("open must be true or false")
+        raise _invalid(f"{name} must be true or false")
 
     def _period(self, query: dict) -> tuple[str, str]:
         now = self._now()

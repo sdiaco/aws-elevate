@@ -34,7 +34,7 @@ func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQue
 	if r.URL.Query().Get("scope") == "all" && a.seesAll() {
 		scope = "all"
 	}
-	return period, scope, api.ListQuery{Scope: scope, From: from(time.Now()).UTC().Format(time.RFC3339)}
+	return period, scope, api.ListQuery{Scope: scope, Closed: true, From: from(time.Now()).UTC().Format(time.RFC3339)}
 }
 
 func (a *App) seesAll() bool { return a.has("admin") || a.has("auditor") }
@@ -102,7 +102,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 var csvHeader = []string{
 	"id", "state", "closeReason", "ruleId", "permissionSet", "account", "requester", "approver",
 	"privileged", "durationSeconds", "reason", "createdAt", "activatedAt", "expiresAt", "closedAt",
-	"revokedBy", "revokeReason", "error", "configVersion",
+	"revokedBy", "revokeReason", "rejectReason", "error", "configVersion",
 }
 
 // historyExport writes every page of the period as CSV. It reads and encodes them all
@@ -156,7 +156,7 @@ func csvRow(g api.Grant) []string {
 		g.ID, g.State, str(g.CloseReason), g.RuleID, g.SourcePs.Name, g.Account, g.Requester.UserName,
 		user(g.Approver), strconv.FormatBool(g.Privileged), strconv.Itoa(g.DurationSeconds), g.Reason,
 		at(&g.CreatedAt), at(g.ActivatedAt), at(g.ExpiresAt), at(g.ClosedAt), user(g.RevokedBy),
-		str(g.RevokeReason), str(g.Error), strconv.Itoa(g.ConfigVersion),
+		str(g.RevokeReason), str(g.RejectReason), str(g.Error), strconv.Itoa(g.ConfigVersion),
 	}
 	for i, v := range row {
 		row[i] = inert(v)

@@ -17,7 +17,7 @@ REQUESTER = Principal(user_id="u-1", user_name="dev@example.com")
 LEADS = Group(id="g-leads", name="leads")
 
 
-def grant(state=State.PENDING, approver_group=LEADS, requester=REQUESTER):
+def grant(state=State.PENDING, approver_group=LEADS, requester=REQUESTER, task_token="tok"):
     return Grant(
         id="abcde23456",
         state=state,
@@ -32,6 +32,7 @@ def grant(state=State.PENDING, approver_group=LEADS, requester=REQUESTER):
         reason="incident",
         privileged=False,
         created_at="2026-11-15T10:00:00Z",
+        task_token=task_token,
     )
 
 
@@ -66,6 +67,13 @@ STRANGER = who("u-6", groups=["g-other"])
 )
 def test_pending(identity, expected):
     assert actions(identity, grant()) == expected
+
+
+@pytest.mark.parametrize("identity", [SELF, LEAD, ADMIN_IN_GROUP, AUDITOR])
+def test_pending_without_its_wait_token_is_starting_and_offers_no_decision(identity):
+    # Approve, reject and cancel end the wait with its token: until the execution has
+    # stored it, a decision could only fail with not_ready (design §6.2).
+    assert actions(identity, grant(task_token=None)) == {"view"}
 
 
 def test_approver_who_is_the_requester_cannot_approve():

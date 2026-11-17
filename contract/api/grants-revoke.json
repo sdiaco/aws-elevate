@@ -43,8 +43,10 @@
         "userName": "admin@example.com"
       },
       "revokeReason": "incident closed",
+      "rejectReason": null,
       "error": null,
       "ruleRemoved": false,
+      "starting": false,
       "actions": [],
       "approvalExpiresAt": null
     }

@@ -17,6 +17,7 @@ type fakePortal struct {
 	roles    map[string][]string
 	refusals int // Credentials fails this many times before succeeding
 	calls    int
+	lasts    time.Duration // when set, the credentials expire this long after they are issued
 }
 
 func (f *fakePortal) ListAccounts(context.Context) ([]PortalAccount, error) { return f.accounts, nil }
@@ -30,7 +31,11 @@ func (f *fakePortal) Credentials(_ context.Context, account, role string) (aws.C
 	if f.calls <= f.refusals {
 		return aws.Credentials{}, errors.New("ForbiddenException: No access")
 	}
-	return aws.Credentials{AccessKeyID: account + "/" + role}, nil
+	c := aws.Credentials{AccessKeyID: account + "/" + role, SecretAccessKey: "secret"}
+	if f.lasts != 0 {
+		c.CanExpire, c.Expires = true, time.Now().Add(f.lasts)
+	}
+	return c, nil
 }
 
 type fakeCaller struct{ err error }
@@ -72,6 +77,28 @@ func TestDiscoverOneCandidatePrefersAdmin(t *testing.T) {
 	want := Target{Account: "111111111111", Role: RoleAdmin, APIURL: "https://api.example.com/v1#111111111111/ElevateAdmin"}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestDiscoverPrefersRequesterOverAuditorAndAcceptsAuditorAlone(t *testing.T) {
+	for _, tc := range []struct {
+		roles []string
+		want  string
+	}{
+		{[]string{"ElevateAuditor", "ElevateRequester"}, RoleRequester},
+		{[]string{"ElevateAuditor"}, RoleAuditor},
+	} {
+		s, _ := newSession(&fakePortal{
+			accounts: []PortalAccount{{ID: "111111111111", Name: "shared"}},
+			roles:    map[string][]string{"111111111111": tc.roles},
+		})
+		got, err := s.Discover(context.Background(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Role != tc.want {
+			t.Errorf("roles %v: got %s, want %s", tc.roles, got.Role, tc.want)
+		}
 	}
 }
 
@@ -350,5 +377,28 @@ func TestLoadSettingsRejectsBadJSON(t *testing.T) {
 	_ = os.WriteFile(path, []byte("{"), 0o600)
 	if _, err := LoadSettings(path); err == nil || !strings.Contains(err.Error(), path) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRoleCredentialsAreFetchedAgainBeforeTheyExpire(t *testing.T) {
+	// Seen in the UI pass: credentials read once at start expired after an hour and every
+	// page answered "security token expired" until the interface was restarted.
+	ctx := context.Background()
+	fresh := &fakePortal{lasts: time.Hour}
+	p := RoleCredentials(fresh, "111111111111", "ElevateAdmin")
+	for range 3 {
+		if c, err := p.Retrieve(ctx); err != nil || c.AccessKeyID != "111111111111/ElevateAdmin" {
+			t.Fatalf("%v %v", c, err)
+		}
+	}
+	if fresh.calls != 1 {
+		t.Errorf("valid credentials fetched %d times", fresh.calls)
+	}
+	ending := &fakePortal{lasts: time.Minute}
+	p = RoleCredentials(ending, "111111111111", "ElevateAdmin")
+	p.Retrieve(ctx)
+	p.Retrieve(ctx)
+	if ending.calls != 2 {
+		t.Errorf("credentials about to expire fetched %d times", ending.calls)
 	}
 }

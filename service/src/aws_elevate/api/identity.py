@@ -1,6 +1,6 @@
 """Who is calling, from the request signature only (design §8.1, spike C9).
 
-API Gateway already admits only the two service roles; api checks again, and also
+API Gateway already admits only the service roles; api checks again, and also
 compares the RoleId of the signature with the real role, so a role that imitates the
 name is refused. Approver and auditor are group memberships, read on every call."""
 
@@ -17,12 +17,23 @@ log = logging.getLogger(__name__)
 
 
 class IdentityResolver:
-    def __init__(self, roles, store, requester_ps: str, admin_ps: str, auditor_group: str | None):
+    def __init__(
+        self,
+        roles,
+        store,
+        requester_ps: str,
+        admin_ps: str,
+        auditor_ps: str,
+        auditor_group: str | None,
+    ):
         self._roles = roles
         self._store = store
+        # ElevateAuditor is ElevateRequester under a clearer name: auditing comes from the
+        # auditor group, never from the role (design §3.3).
         self._prefixes = {
             f"AWSReservedSSO_{requester_ps}_": False,
             f"AWSReservedSSO_{admin_ps}_": True,
+            f"AWSReservedSSO_{auditor_ps}_": False,
         }
         self._auditor_group = auditor_group
 
@@ -37,7 +48,7 @@ class IdentityResolver:
             raise self._refuse("role of another account", signed)
         is_admin = self._service_role(role_name)
         if is_admin is None:
-            raise self._refuse("not one of the two service roles", signed)
+            raise self._refuse("not one of the service roles", signed)
         role_id, _, session = (signed.get("caller") or "").partition(":")
         if session != user_name:
             raise self._refuse("session name is not the user", signed)
@@ -57,7 +68,7 @@ class IdentityResolver:
         )
 
     def _service_role(self, role_name: str) -> bool | None:
-        """True for ElevateAdmin, False for ElevateRequester, None for anything else."""
+        """True for ElevateAdmin, False for ElevateRequester or ElevateAuditor, else None."""
         for prefix, is_admin in self._prefixes.items():
             suffix = role_name.removeprefix(prefix)
             if suffix != role_name and re.fullmatch(r"[0-9a-f]+", suffix):

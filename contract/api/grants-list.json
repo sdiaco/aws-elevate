@@ -41,8 +41,10 @@
         "closedAt": "2026-11-15T11:01:02Z",
         "revokedBy": null,
         "revokeReason": null,
+        "rejectReason": null,
         "error": null,
         "ruleRemoved": false,
+        "starting": false,
         "actions": [],
         "approvalExpiresAt": null
       },
@@ -79,8 +81,10 @@
         "closedAt": null,
         "revokedBy": null,
         "revokeReason": null,
+        "rejectReason": null,
         "error": null,
         "ruleRemoved": false,
+        "starting": false,
         "actions": [
           "revoke"
         ],

@@ -15,7 +15,7 @@ def ps_name(grant_id: str) -> str:
 
 
 # Permission sets no rule may use as its source: the copies the service makes and deletes
-# (JIT-<id>) and the service's own (ElevateRequester, ElevateAdmin).
+# (JIT-<id>) and the service's own (ElevateRequester, ElevateAdmin, ElevateAuditor).
 RESERVED_PREFIXES = ("JIT-", "Elevate")
 
 

@@ -88,6 +88,9 @@ type reviewView struct {
 	Changes compareView
 	Change  string
 	Latest  string
+	// Replaces are rules another admin changed meanwhile that this publish overwrites:
+	// publishing them needs one more confirmation (design §7.2).
+	Replaces []string
 }
 
 // review asks the service to check the changed document, then shows what changes and
@@ -99,10 +102,10 @@ func (a *App) review(w http.ResponseWriter, r *http.Request, c change, back func
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
-	a.reviewOn(w, r, b, c, back, alerts...)
+	a.reviewOn(w, r, b, c, back, nil, alerts...)
 }
 
-func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), alerts ...Alert) {
+func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
 	doc, err := c.apply(b.Doc)
 	if err != nil {
 		back(Alert{Kind: "error", Text: err.Error()})
@@ -128,7 +131,7 @@ func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change,
 		return
 	}
 	diff.OldLabel, diff.NewLabel = "In use", "After publishing"
-	v := reviewView{Changes: diff, Change: string(raw)}
+	v := reviewView{Changes: diff, Change: string(raw), Replaces: replaces}
 	if b.Latest != nil {
 		v.Latest = strconv.Itoa(*b.Latest)
 	}
@@ -173,6 +176,11 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		a.conflict(w, r, b, c, started, back)
 		return
 	}
+	if replaces := r.PostFormValue("replaces"); replaces != "" && r.PostFormValue("confirmed") != "1" {
+		a.reviewOn(w, r, b, c, back, strings.Split(replaces, ","), Alert{Kind: "warning",
+			Text: "Publishing replaces another admin's change to " + strings.ReplaceAll(replaces, ",", ", ") + ": confirm it to go on."})
+		return
+	}
 	doc, err := c.apply(b.Doc)
 	if err != nil {
 		back(Alert{Kind: "error", Text: err.Error()})
@@ -204,34 +212,44 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 func samePtr(x, y *int) bool { return (x == nil && y == nil) || (x != nil && y != nil && *x == *y) }
 
 // conflict says who published after the admin started and reviews the change again on
-// the new version, with one more warning when that version changed the same rules.
+// the new version. When that version changed the same rules, publishing replaces their
+// change and needs a confirmation.
 func (a *App) conflict(w http.ResponseWriter, r *http.Request, b base, c change, started *int, back func(...Alert)) {
 	versions, err := a.Service.ConfigVersions(r.Context())
 	if err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
-	var alerts []Alert
-	var newer []string
+	var text []string
 	for _, v := range versions.Versions {
 		if started == nil || v.Number > *started {
-			who := "an author being verified"
+			// CloudTrail records the author a few minutes after the publish.
+			who := "Another admin"
 			if v.Author != nil {
 				who = *v.Author
 			}
-			newer = append(newer, fmt.Sprintf("Version %d was published by %s after you started.", v.Number, who))
+			text = append(text, fmt.Sprintf("%s published version %d while you were editing.", who, v.Number))
 		}
 	}
-	alerts = append(alerts, Alert{Kind: "warning", Text: strings.Join(newer, " ") + " Review your change on it again."})
 	same, err := a.changedMeanwhile(r.Context(), b, c, started, versions)
 	if err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
+	now := "The review below now starts from version " + latestText(b.Latest)
 	if len(same) > 0 {
-		alerts = append(alerts, Alert{Kind: "warning", Text: "The newer version also changed " + strings.Join(same, ", ") + ": publishing replaces their change."})
+		text = append(text, "It also changed "+strings.Join(same, ", ")+".", now+": publishing replaces their change.")
+	} else {
+		text = append(text, now+".")
 	}
-	a.reviewOn(w, r, b, c, back, alerts...)
+	a.reviewOn(w, r, b, c, back, same, Alert{Kind: "warning", Text: strings.Join(text, " ")})
+}
+
+func latestText(n *int) string {
+	if n == nil {
+		return "no version"
+	}
+	return strconv.Itoa(*n)
 }
 
 // changedMeanwhile are the rules of the change that differ between the valid version the

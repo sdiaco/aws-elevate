@@ -144,6 +144,7 @@ func revokeOne(ctx context.Context, svc Service, id, reason string, e *Env) erro
 func runApprove(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "approve")
 	reject := f.Bool("reject", false, "reject the request instead")
+	reason := f.String("reason", "", "why the request is rejected (required with --reject)")
 	ids, err := f.parse(args)
 	if err != nil {
 		return err
@@ -151,13 +152,20 @@ func runApprove(ctx context.Context, e *Env, args []string) error {
 	if len(ids) != 1 {
 		return fmt.Errorf("give exactly one request id: %w", errUsage)
 	}
+	*reason = strings.TrimSpace(*reason)
+	if *reject && *reason == "" {
+		return fmt.Errorf("--reject needs --reason \"why\": the requester reads it: %w", errUsage)
+	}
+	if !*reject && *reason != "" {
+		return fmt.Errorf("--reason goes with --reject: %w", errUsage)
+	}
 	_, svc, err := connect(ctx, e, f.profileName(e))
 	if err != nil {
 		return err
 	}
 	var g *api.Grant
 	if *reject {
-		g, err = svc.Reject(ctx, ids[0])
+		g, err = svc.Reject(ctx, ids[0], *reason)
 	} else {
 		g, err = svc.Approve(ctx, ids[0])
 	}

@@ -28,6 +28,7 @@ GRANT = Grant(
     expires_at="2026-11-15T11:00:00Z",
     revoked_by=Principal(user_id="u-2", user_name="lead@example.com"),
     revoke_reason="done",
+    reject_reason="not needed",
     task_token="secret-token",
 )
 
@@ -51,6 +52,7 @@ def test_snapshot_has_the_event_fields():
         "closeReason": "revoked",
         "revokedBy": {"userId": "u-2", "userName": "lead@example.com"},
         "revokeReason": "done",
+        "rejectReason": "not needed",
         "error": None,
     }
 

@@ -61,8 +61,10 @@ type Grant struct {
 	ClosedAt        *time.Time    `json:"closedAt"`
 	RevokedBy       *User         `json:"revokedBy"`
 	RevokeReason    *string       `json:"revokeReason"`
+	RejectReason    *string       `json:"rejectReason"`
 	Error           *string       `json:"error"`
 	RuleRemoved     bool          `json:"ruleRemoved"`
+	Starting        bool          `json:"starting"`
 	// Actions the caller may take on this grant, decided by the service.
 	Actions []string `json:"actions"`
 	// When a pending request times out; null in every other state.
@@ -97,7 +99,8 @@ type CreateRequest struct {
 	Reason          string `json:"reason"`
 }
 
-type revokeRequest struct {
+// reasonRequest is the body of revoke and reject.
+type reasonRequest struct {
 	Reason string `json:"reason"`
 }
 
@@ -105,6 +108,7 @@ type revokeRequest struct {
 type ListQuery struct {
 	Scope  string
 	Open   bool
+	Closed bool
 	User   string
 	From   string
 	To     string
@@ -128,8 +132,18 @@ type Rule struct {
 }
 
 type RuleList struct {
-	ConfigVersion int    `json:"configVersion"`
-	Rules         []Rule `json:"rules"`
+	ConfigVersion int         `json:"configVersion"`
+	Rules         []Rule      `json:"rules"`
+	OpenGrants    []OpenGrant `json:"openGrants"`
+}
+
+// OpenGrant is a rule and account where the caller already has an open grant on the
+// same permission set: a request there would be refused as duplicate.
+type OpenGrant struct {
+	RuleID  string `json:"ruleId"`
+	Account string `json:"account"`
+	GrantID string `json:"grantId"`
+	State   string `json:"state"`
 }
 
 type PolicyRef struct {

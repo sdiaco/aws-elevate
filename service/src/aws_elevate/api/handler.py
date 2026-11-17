@@ -24,7 +24,7 @@ _ROUTES = [
     ("GET", re.compile(r"grants"), "grants", "list", "query", 200),
     ("GET", re.compile(rf"grants/{_ID}"), "grants", "get", None, 200),
     ("POST", re.compile(rf"grants/{_ID}/approve"), "grants", "approve", None, 200),
-    ("POST", re.compile(rf"grants/{_ID}/reject"), "grants", "reject", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/reject"), "grants", "reject", "body", 200),
     ("POST", re.compile(rf"grants/{_ID}/cancel"), "grants", "cancel", None, 200),
     ("POST", re.compile(rf"grants/{_ID}/revoke"), "grants", "revoke", "body", 200),
     ("POST", re.compile(rf"grants/{_ID}/redrive"), "grants", "redrive", None, 200),
@@ -185,6 +185,7 @@ def _build_api() -> Api:
         store=store,
         requester_ps=os.environ["REQUESTER_PS_NAME"],
         admin_ps=os.environ["ADMIN_PS_NAME"],
+        auditor_ps=os.environ["AUDITOR_PS_NAME"],
         auditor_group=os.environ["AUDITOR_GROUP_ID"] or None,
     )
     grants = GrantRoutes(
@@ -200,6 +201,7 @@ def _build_api() -> Api:
         reserved_accounts=frozenset(
             {os.environ["MANAGEMENT_ACCOUNT_ID"], os.environ["SERVICE_ACCOUNT_ID"]}
         ),
+        table=table,
     )
     installation = {
         "stackId": os.environ["STACK_ID"],

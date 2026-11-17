@@ -56,6 +56,7 @@ _FIELDS = {
     "closed_at": "closedAt",
     "revoked_by": "revokedBy",
     "revoke_reason": "revokeReason",
+    "reject_reason": "rejectReason",
     "task_token": "taskToken",
     "error": "error",
     "ephemeral_ps_arn": "ephemeralPsArn",
@@ -391,21 +392,20 @@ class GrantsTable:
 
     # ---------- reads by index, newest first (design §11.3: never a Scan) ----------
 
-    def by_user(self, user_id, start, end, limit, after, open_only=False):
-        return self._page(
-            "byUser", "gsi1", f"USER#{user_id}", (start, end), limit, after, open_only
-        )
+    def by_user(self, user_id, start, end, limit, after, status=None):
+        return self._page("byUser", "gsi1", f"USER#{user_id}", (start, end), limit, after, status)
 
-    def by_month(self, month, start, end, limit, after, open_only=False):
+    def by_month(self, month, start, end, limit, after, status=None):
         # The sort key is <createdAt>#<id>: '~' sorts after every id character.
         span = (start, f"{end}#~")
-        return self._page("byMonth", "gsi2", f"MONTH#{month}", span, limit, after, open_only)
+        return self._page("byMonth", "gsi2", f"MONTH#{month}", span, limit, after, status)
 
     def open_grants(self, limit, after):
-        return self._page("open", "gsi3", "OPEN", None, limit, after, False)
+        return self._page("open", "gsi3", "OPEN", None, limit, after, None)
 
-    def _page(self, index, prefix, pk, span, limit, after, open_only):
-        """One page of grants and the key to continue from, None on the last page."""
+    def _page(self, index, prefix, pk, span, limit, after, status):
+        """One page of grants and the key to continue from, None on the last page.
+        status: None for every grant, "open" or "closed" to keep only those."""
         values = {":pk": {"S": pk}}
         condition = f"{prefix}pk = :pk"
         if span:
@@ -419,8 +419,10 @@ class GrantsTable:
             "ScanIndexForward": False,
             "Limit": limit,
         }
-        if open_only:
-            params["FilterExpression"] = "#state <> :closed"
+        if status:
+            params["FilterExpression"] = (
+                "#state <> :closed" if status == "open" else "#state = :closed"
+            )
             params["ExpressionAttributeNames"] = {"#state": "state"}
             values[":closed"] = {"S": State.CLOSED.value}
         if after:
@@ -428,7 +430,7 @@ class GrantsTable:
         resp = self._db.query(**params)
         return [from_item(i) for i in resp["Items"]], resp.get("LastEvaluatedKey")
 
-    def count_open(self, user_id: str) -> int:
+    def open_of(self, user_id: str) -> list[Grant]:
         """Grants of the user not yet closed, read from the small open index."""
         params = {
             "TableName": self._table,
@@ -436,15 +438,17 @@ class GrantsTable:
             "KeyConditionExpression": "gsi3pk = :pk",
             "FilterExpression": "requester.userId = :u",
             "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": user_id}},
-            "Select": "COUNT",
         }
-        total = 0
+        grants = []
         while True:
             resp = self._db.query(**params)
-            total += resp["Count"]
+            grants += [from_item(i) for i in resp["Items"]]
             if "LastEvaluatedKey" not in resp:
-                return total
+                return grants
             params["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+    def count_open(self, user_id: str) -> int:
+        return len(self.open_of(user_id))
 
     def timeline(self, grant_id: str) -> list[dict]:
         params = {

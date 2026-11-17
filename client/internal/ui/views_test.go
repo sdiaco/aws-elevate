@@ -114,8 +114,8 @@ func (f *fakeService) act(name, id string) (*api.Grant, error) {
 func (f *fakeService) Approve(_ context.Context, id string) (*api.Grant, error) {
 	return f.act("approve", id)
 }
-func (f *fakeService) Reject(_ context.Context, id string) (*api.Grant, error) {
-	return f.act("reject", id)
+func (f *fakeService) Reject(_ context.Context, id, reason string) (*api.Grant, error) {
+	return f.act("reject "+reason, id)
 }
 func (f *fakeService) Cancel(_ context.Context, id string) (*api.Grant, error) {
 	return f.act("cancel", id)
@@ -221,7 +221,7 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 		`href="/history/export.csv?period=30d&amp;scope=mine"`, "30 days", "13 months")
 	contains(t, out, `<section class="split-panel" data-panel-slot hidden></section>`)
 	lacks(t, out, "Everyone", `class="open"`)
-	if q := h.svc.queries[0]; q.Scope != "mine" || q.From == "" || q.To != "" {
+	if q := h.svc.queries[0]; q.Scope != "mine" || !q.Closed || q.From == "" || q.To != "" {
 		t.Errorf("query %+v", q)
 	}
 
@@ -237,9 +237,23 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 	auditor := newHarness("auditor")
 	out = auditor.get(t, "/history?scope=all")
 	contains(t, out, `aria-current="true">Everyone</a>`)
-	if q := auditor.svc.queries[0]; q.Scope != "all" {
+	if q := auditor.svc.queries[0]; q.Scope != "all" || !q.Closed {
 		t.Errorf("auditor query %+v", q)
 	}
+}
+
+func TestARejectedGrantShowsWhoRejectedItAndWhy(t *testing.T) {
+	h := newHarness("requester")
+	g := grant("rej2345678", "closed", me)
+	reason, why := "rejected", "use the read-only rule"
+	closed := time.Now()
+	g.CloseReason, g.RejectReason, g.ClosedAt = &reason, &why, &closed
+	g.Approver = &api.User{UserID: "u-2", UserName: "lead@example.com"}
+	h.svc.lists["mine"] = []api.Grant{g}
+	h.svc.grants["rej2345678"] = g
+	out := h.get(t, "/history?open=rej2345678")
+	contains(t, out, "<dt>Rejected by</dt><dd>lead@example.com: use the read-only rule</dd>")
+	lacks(t, out, "Approved by")
 }
 
 func TestExportReadsEveryPageAndNeutralisesFormulas(t *testing.T) {

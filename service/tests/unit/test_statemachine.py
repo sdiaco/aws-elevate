@@ -146,7 +146,7 @@ def test_events_carry_the_contract_fields():
     fields = {
         "grantId", "requester", "approver", "approverGroup", "rule", "sourcePs", "account",
         "approval", "privileged", "startsAt", "expiresAt", "configVersion", "reason",
-        "closeReason", "revokedBy", "revokeReason", "error",
+        "closeReason", "revokedBy", "revokeReason", "rejectReason", "error",
     }  # fmt: skip
     for name, state in event_tasks().items():
         entry = state["Parameters"]["Entries"][0]

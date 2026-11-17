@@ -138,7 +138,9 @@ func TestGrantActions(t *testing.T) {
 		body string
 	}{
 		{"approve", func(c *Client) (*Grant, error) { return c.Approve(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/approve", ""},
-		{"reject", func(c *Client) (*Grant, error) { return c.Reject(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/reject", ""},
+		{"reject", func(c *Client) (*Grant, error) {
+			return c.Reject(context.Background(), "abcde23456", "use the read-only rule")
+		}, "/api/v1/grants/abcde23456/reject", `{"reason":"use the read-only rule"}`},
 		{"cancel", func(c *Client) (*Grant, error) { return c.Cancel(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/cancel", ""},
 		{"revoke", func(c *Client) (*Grant, error) {
 			return c.Revoke(context.Background(), "abcde23456", "incident closed")
@@ -182,6 +184,13 @@ func TestListSendsTheQuery(t *testing.T) {
 		t.Errorf("got %+v", l)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "grants-list").Response))
+	if _, err := c.Grants(context.Background(), ListQuery{Scope: "mine", Closed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := url.ParseQuery(got.query); q.Get("closed") != "true" || q.Has("open") {
+		t.Errorf("closed query %q", got.query)
+	}
+	c, got = serve(t, 200, string(loadExample(t, "grants-list").Response))
 	if _, err := c.Grants(context.Background(), ListQuery{}); err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +209,12 @@ func TestRulesAndPermissions(t *testing.T) {
 		t.Errorf("Rules sent %q", got.query)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "rules-list").Response))
-	if _, err := c.RequestableRules(context.Background()); err != nil || got.query != "scope=requestable" {
+	req, err := c.RequestableRules(context.Background())
+	if err != nil || got.query != "scope=requestable" {
 		t.Fatalf("RequestableRules sent %q: %v", got.query, err)
+	}
+	if len(req.OpenGrants) != 1 || req.OpenGrants[0] != (OpenGrant{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}) {
+		t.Errorf("open grants %+v", req.OpenGrants)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "rules-permissions").Response))
 	p, err := c.Permissions(context.Background(), "ssm dev/x")
@@ -324,5 +337,16 @@ func TestClientTooOldCarriesTheInfraVersion(t *testing.T) {
 	var apiErr *Error
 	if !errors.As(err, &apiErr) || apiErr.InfraVersion != "0.3.0" {
 		t.Fatalf("got %#v", err)
+	}
+}
+
+func TestAnUnreachableServiceSaysWhatToCheck(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close() // nothing listens at this address any more
+	cfg := aws.Config{Region: "eu-west-1", Credentials: credentials.NewStaticCredentialsProvider("a", "b", "c")}
+	_, err := New(cfg, srv.URL+"/api").Me(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cannot reach the aws-elevate service at "+srv.URL+"/api") ||
+		!strings.Contains(err.Error(), "aws elevate setup") {
+		t.Errorf("got %v", err)
 	}
 }

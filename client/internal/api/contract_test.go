@@ -80,7 +80,8 @@ func TestEveryResponseExampleDecodes(t *testing.T) {
 func TestRequestTypesEncodeLikeTheExamples(t *testing.T) {
 	cases := map[string]any{
 		"grants-create": CreateRequest{RuleID: "ssm-prod", Account: "222222222222", DurationSeconds: 3600, Reason: "incident 42"},
-		"grants-revoke": revokeRequest{Reason: "incident closed"},
+		"grants-revoke": reasonRequest{Reason: "incident closed"},
+		"grants-reject": reasonRequest{Reason: "not needed, use the read-only rule"},
 	}
 	for name, req := range cases {
 		got, err := json.Marshal(req)

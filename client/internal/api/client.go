@@ -88,6 +88,9 @@ func (c *Client) Grants(ctx context.Context, q ListQuery) (*GrantList, error) {
 	if q.Open {
 		v.Set("open", "true")
 	}
+	if q.Closed {
+		v.Set("closed", "true")
+	}
 	set("user", q.User)
 	set("from", q.From)
 	set("to", q.To)
@@ -105,8 +108,8 @@ func (c *Client) Approve(ctx context.Context, id string) (*Grant, error) {
 	return c.action(ctx, id, "approve", nil)
 }
 
-func (c *Client) Reject(ctx context.Context, id string) (*Grant, error) {
-	return c.action(ctx, id, "reject", nil)
+func (c *Client) Reject(ctx context.Context, id, reason string) (*Grant, error) {
+	return c.action(ctx, id, "reject", reasonRequest{Reason: reason})
 }
 
 func (c *Client) Cancel(ctx context.Context, id string) (*Grant, error) {
@@ -114,7 +117,7 @@ func (c *Client) Cancel(ctx context.Context, id string) (*Grant, error) {
 }
 
 func (c *Client) Revoke(ctx context.Context, id, reason string) (*Grant, error) {
-	return c.action(ctx, id, "revoke", revokeRequest{Reason: reason})
+	return c.action(ctx, id, "revoke", reasonRequest{Reason: reason})
 }
 
 func (c *Client) Redrive(ctx context.Context, id string) (*Grant, error) {
@@ -202,7 +205,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("call aws-elevate: %w", err)
+		return fmt.Errorf("cannot reach the aws-elevate service at %s: check your network, or run aws elevate setup again if the service moved: %w", c.base, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)

@@ -86,6 +86,7 @@ def test_item_round_trip_keeps_every_field():
             "approver": Principal(user_id="u-2", user_name="lead@example.com"),
             "revoked_by": Principal(user_id="u-2", user_name="lead@example.com"),
             "revoke_reason": "done",
+            "reject_reason": "not needed",
             "activated_at": "2026-11-15T10:00:00Z",
             "expires_at": "2026-11-15T11:00:00Z",
             "closed_at": "2026-11-15T10:30:00Z",
@@ -495,7 +496,30 @@ def test_by_user_open_only_filters_closed_grants_and_continues_from_a_key(table)
         },
         [],
     )
-    assert gt.by_user("u-1", "a", "b", 10, after, open_only=True) == ([], None)
+    assert gt.by_user("u-1", "a", "b", 10, after, status="open") == ([], None)
+
+
+def test_by_month_closed_keeps_only_closed_grants(table):
+    gt, stub = table
+    _query(
+        stub,
+        {
+            "IndexName": "byMonth",
+            "KeyConditionExpression": "gsi2pk = :pk AND gsi2sk BETWEEN :from AND :to",
+            "FilterExpression": "#state = :closed",
+            "ExpressionAttributeNames": {"#state": "state"},
+            "ExpressionAttributeValues": {
+                ":pk": {"S": "MONTH#2026-11"},
+                ":from": {"S": "a"},
+                ":to": {"S": "b#~"},
+                ":closed": {"S": "closed"},
+            },
+            "ScanIndexForward": False,
+            "Limit": 10,
+        },
+        [],
+    )
+    assert gt.by_month("2026-11", "a", "b", 10, None, status="closed") == ([], None)
 
 
 def test_by_month_queries_one_month_partition(table):
@@ -536,22 +560,33 @@ def test_open_grants_reads_the_sparse_open_index(table):
     assert gt.open_grants(50, None) == ([GRANT], None)
 
 
-def test_count_open_counts_the_user_grants_on_every_page_of_the_open_index(table):
-    gt, stub = table
+def _open_index(stub, *pages):
     params = {
         "IndexName": "open",
         "KeyConditionExpression": "gsi3pk = :pk",
         "FilterExpression": "requester.userId = :u",
         "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": "u-1"}},
-        "Select": "COUNT",
     }
     last = {"pk": {"S": "x"}}
-    stub.add_response(
-        "query", {"Count": 2, "LastEvaluatedKey": last}, {"TableName": TABLE, **params}
-    )
-    stub.add_response(
-        "query", {"Count": 1}, {"TableName": TABLE, **params, "ExclusiveStartKey": last}
-    )
+    for i, items in enumerate(pages):
+        expected = {"TableName": TABLE, **params}
+        if i:
+            expected["ExclusiveStartKey"] = last
+        resp = {"Items": items}
+        if i < len(pages) - 1:
+            resp["LastEvaluatedKey"] = last
+        stub.add_response("query", resp, expected)
+
+
+def test_open_of_reads_the_user_grants_on_every_page_of_the_open_index(table):
+    gt, stub = table
+    _open_index(stub, [to_item(GRANT)], [to_item(GRANT)])
+    assert gt.open_of("u-1") == [GRANT, GRANT]
+
+
+def test_count_open_counts_the_user_open_grants(table):
+    gt, stub = table
+    _open_index(stub, [to_item(GRANT)] * 2, [to_item(GRANT)])
     assert gt.count_open("u-1") == 3
 
 

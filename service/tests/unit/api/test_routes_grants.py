@@ -61,7 +61,8 @@ def test_manual_request_is_recorded_pending_and_started(make, fx):
     assert grant["createdAt"] == "2026-11-15T10:00:00Z"
     assert grant["privileged"] is True
     assert grant["ruleRemoved"] is False
-    assert grant["actions"] == ["cancel"]
+    # The execution stores the wait's token a moment later: until then, no cancel.
+    assert (grant["starting"], grant["actions"]) == (True, [])
     assert sfn.started == [(grant["id"], "manual")]
     assert table.get(grant["id"]).state == State.PENDING
 
@@ -199,6 +200,28 @@ def test_missing_grant_is_not_found(make, fx):
     assert error_of(lambda: routes.approve(fx.LEAD, "zzzzz23456")).code == "not_found"
 
 
+@pytest.mark.parametrize(
+    ("changes", "starting"),
+    [
+        ({"task_token": None}, True),
+        ({}, False),
+        ({"state": State.ACTIVE, "task_token": None}, False),
+    ],
+)
+def test_a_pending_grant_is_starting_until_its_wait_has_a_token(make, fx, changes, starting):
+    routes, _, _ = make(fx.make_grant(**changes))
+    assert routes.get(fx.LEAD, "abcde23456")["grant"]["starting"] is starting
+
+
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_own_request_still_starting_is_forbidden_not_unready(make, fx, action):
+    # Who may decide comes first: retrying later would never help the requester.
+    routes, _, _ = make(fx.make_grant(task_token=None))
+    call = getattr(routes, action)
+    args = ("abcde23456", {"reason": "r"}) if action == "reject" else ("abcde23456",)
+    assert error_of(lambda: call(fx.REQUESTER, *args)).code == "forbidden"
+
+
 def test_approve_before_the_wait_has_its_token_is_not_ready(make, fx):
     routes, table, _ = make(fx.make_grant(task_token=None))
     err = error_of(lambda: routes.approve(fx.LEAD, "abcde23456"))
@@ -252,10 +275,20 @@ def test_approve_when_the_requester_left_the_group_invalidates(make, fx):
 
 def test_reject_closes_and_records_the_approver(make, fx):
     routes, table, sfn = make(fx.make_grant())
-    grant = routes.reject(fx.LEAD, "abcde23456")["grant"]
+    grant = routes.reject(fx.LEAD, "abcde23456", {"reason": "use the read-only rule"})["grant"]
     assert (grant["state"], grant["closeReason"]) == ("closed", "rejected")
     assert grant["approver"]["userId"] == "u-2"
+    assert grant["rejectReason"] == "use the read-only rule"
     assert sfn.sent == [(fx.TOKEN, {"decision": "rejected"})]
+
+
+@pytest.mark.parametrize("body", [None, {}, {"reason": "  "}, {"reason": "r" * 501}])
+def test_reject_needs_a_reason(make, fx, body):
+    # The requester reads why in the panel, in History and in the rejected event.
+    routes, table, sfn = make(fx.make_grant())
+    err = error_of(lambda: routes.reject(fx.LEAD, "abcde23456", body))
+    assert err.code == "invalid_request"
+    assert (table.transitions, sfn.sent) == ([], [])
 
 
 def test_requester_can_cancel_but_not_approve(make, fx):
@@ -385,7 +418,8 @@ def test_grant_view_has_every_contract_key(make, fx):
         "id", "state", "closeReason", "ruleId", "approval", "configVersion", "requester",
         "approver", "approverGroup", "sourcePs", "account", "durationSeconds", "reason",
         "privileged", "createdAt", "activatedAt", "expiresAt", "closedAt", "revokedBy",
-        "revokeReason", "error", "ruleRemoved", "actions", "approvalExpiresAt",
+        "revokeReason", "rejectReason", "error", "ruleRemoved", "starting", "actions",
+        "approvalExpiresAt",
     }  # fmt: skip
 
 
@@ -420,7 +454,7 @@ def test_mine_reads_the_caller_index_over_the_last_30_days(make, fx):
     assert ids(body) == ["bbbbb23456", "aaaaa23456"]
     assert body["cursor"] is None
     assert table.queries == [
-        ("by_user", "u-1", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", False)
+        ("by_user", "u-1", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", None)
     ]
     assert_no_token(body)
 
@@ -428,7 +462,36 @@ def test_mine_reads_the_caller_index_over_the_last_30_days(make, fx):
 def test_mine_open_filters_closed(make, fx):
     routes, table, _ = make()
     routes.list(fx.REQUESTER, {"scope": "mine", "open": "true"})
-    assert table.queries[0][-1] is True
+    assert table.queries[0][-1] == "open"
+
+
+def test_mine_closed_keeps_only_closed_grants(make, fx):
+    # History shows closed grants only, filtered here and not in the client (design §11.2).
+    routes, table, _ = make(
+        g(fx, "aaaaa23456", "2026-11-15T09:00:00Z"),
+        g(fx, "bbbbb23456", "2026-11-15T09:30:00Z", state=State.CLOSED),
+    )
+    body = routes.list(fx.REQUESTER, {"scope": "mine", "closed": "true"})
+    assert ids(body) == ["bbbbb23456"]
+    assert table.queries[0][-1] == "closed"
+
+
+def test_all_closed_walks_the_months_with_the_closed_filter(make, fx):
+    routes, table, _ = make(
+        g(fx, "aaaaa23456", "2026-11-14T00:00:00Z"),
+        g(fx, "bbbbb23456", "2026-11-14T01:00:00Z", state=State.CLOSED),
+    )
+    body = routes.list(fx.AUDITOR, {"scope": "all", "closed": "true"})
+    assert ids(body) == ["bbbbb23456"]
+    assert {q[-1] for q in table.queries} == {"closed"}
+
+
+def test_all_closed_for_one_user_reads_that_user_index(make, fx):
+    routes, table, _ = make()
+    routes.list(fx.ADMIN, {"scope": "all", "user": "u-9", "closed": "true"})
+    assert table.queries == [
+        ("by_user", "u-9", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", "closed")
+    ]
 
 
 def test_period_is_taken_from_the_query(make, fx):
@@ -448,6 +511,9 @@ def test_period_is_taken_from_the_query(make, fx):
         {"scope": "mine", "from": "2026-11-15T00:00:00Z", "to": "2026-11-01T00:00:00Z"},
         {"scope": "mine", "from": "2025-09-30T00:00:00Z"},  # beyond the 13 months kept
         {"scope": "mine", "open": "yes"},
+        {"scope": "mine", "closed": "yes"},
+        {"scope": "mine", "open": "true", "closed": "true"},
+        {"scope": "approvable", "closed": "true"},
         {"scope": "mine", "user": "u-2"},
         {"scope": "mine", "cursor": "not-a-cursor"},
     ],

@@ -119,6 +119,12 @@ func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
 	}
 }
 
+func TestRuleFormSaysWhichAccountsAreNeverListed(t *testing.T) {
+	h, _ := rulesHarness()
+	contains(t, h.get(t, "/rules/edit"),
+		"The management account and the aws-elevate account are never listed.")
+}
+
 func TestNewRuleFormShowsWhatThePermissionSetContains(t *testing.T) {
 	h, _ := rulesHarness()
 	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`)
@@ -249,16 +255,87 @@ func TestConflictReviewsAgainAgainstTheNewVersion(t *testing.T) {
 	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":7200`, `"maxSeconds":10800,"x":1`, 1)
 	adm.conflict = true
 	out = h.do(t, "POST", "/rules/publish", url.Values{"change": {change}, "latest": {"4"}}).Body.String()
-	contains(t, out, "Review changes", "Version 5 was published by other@example.com after you started",
-		"also changed ssm-dev: publishing replaces their change")
-	if hidden(out, "latest") != "5" {
-		t.Errorf("latest %q", hidden(out, "latest"))
+	contains(t, out, "Review changes",
+		"other@example.com published version 5 while you were editing. It also changed ssm-dev. "+
+			"The review below now starts from version 5: publishing replaces their change.",
+		"Replace and publish")
+	if n := strings.Count(out, `class="alert warning"`); n != 1 {
+		t.Errorf("%d warnings, want one", n)
+	}
+	if hidden(out, "latest") != "5" || hidden(out, "replaces") != "ssm-dev" {
+		t.Errorf("latest %q, replaces %q", hidden(out, "latest"), hidden(out, "replaces"))
 	}
 	adm.conflict = false
-	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {"5"}})
+	// Overwriting another admin's change needs the confirmation, not only the review.
+	form := url.Values{"change": {hidden(out, "change")}, "latest": {"5"}, "replaces": {"ssm-dev"}}
+	out = h.do(t, "POST", "/rules/publish", form).Body.String()
+	contains(t, out, "Review changes", "Replace and publish")
+	if len(adm.published) != 0 {
+		t.Fatalf("published without confirmation: %v", adm.published)
+	}
+	form.Set("confirmed", "1")
+	h.do(t, "POST", "/rules/publish", form)
 	if len(adm.published) != 1 || *adm.latest[0] != 5 {
 		t.Errorf("published %v", adm.latest)
 	}
+}
+
+func TestConflictOnOtherRulesOnlyInforms(t *testing.T) {
+	h, adm := rulesHarness()
+	out := h.do(t, "POST", "/rules/edit", url.Values{
+		"orig": {"ssm-dev"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+		"default": {"1h"}, "max": {"3h"}, "approval": {"auto"},
+	}).Body.String()
+	change := hidden(out, "change")
+	// Version 5 changed ssm-prod only, and its author is not known yet.
+	five := 5
+	h.svc.versions = &api.ConfigVersions{Current: &five, Versions: []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}}
+	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":14400`, `"maxSeconds":12600`, 1)
+	adm.conflict = true
+	out = h.do(t, "POST", "/rules/publish", url.Values{"change": {change}, "latest": {"4"}}).Body.String()
+	contains(t, out, "Another admin published version 5 while you were editing. "+
+		"The review below now starts from version 5.", `formaction="/rules/publish"`)
+	lacks(t, out, "Replace and publish", "replaces their change")
+	if hidden(out, "replaces") != "" {
+		t.Errorf("replaces %q", hidden(out, "replaces"))
+	}
+}
+
+func TestAChangeBuildsOnTheNewestValidVersionBeforeTheServiceReadsIt(t *testing.T) {
+	// For about 30 seconds after a publish the service still uses the older version:
+	// building on it would publish over the newer one and drop its changes.
+	h, adm := rulesHarness()
+	three := 3
+	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}}
+	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":14400`, `"maxSeconds":12600`, 1)
+	out := h.do(t, "POST", "/rules/edit", url.Values{
+		"orig": {"ssm-dev"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+		"default": {"1h"}, "max": {"3h"}, "approval": {"auto"},
+	}).Body.String()
+	if hidden(out, "latest") != "5" {
+		t.Fatalf("latest %q", hidden(out, "latest"))
+	}
+	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {"5"}})
+	if len(adm.published) != 1 || !strings.Contains(adm.published[0], `"maxSeconds":12600`) {
+		t.Fatalf("version 5's change to ssm-prod lost: %v", adm.published)
+	}
+}
+
+func TestConflictBeforeTheServiceReadsTheNewVersionComparesWithIt(t *testing.T) {
+	h, adm := rulesHarness()
+	out := h.do(t, "POST", "/rules/edit", url.Values{
+		"orig": {"ssm-dev"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+		"default": {"1h"}, "max": {"3h"}, "approval": {"auto"},
+	}).Body.String()
+	change := hidden(out, "change")
+	// Version 5 changed ssm-dev too, and the service still uses version 3.
+	three := 3
+	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{{Number: 5, Valid: true}, {Number: 4}, {Number: 3, Valid: true}}}
+	h.svc.docs[5] = strings.Replace(h.svc.docs[3], `"maxSeconds":7200`, `"maxSeconds":3600`, 1)
+	adm.conflict = true
+	out = h.do(t, "POST", "/rules/publish", url.Values{"change": {change}, "latest": {"4"}}).Body.String()
+	contains(t, out, "It also changed ssm-dev.", "publishing replaces their change", "3600")
+	lacks(t, out, "7200")
 }
 
 func TestDeletingRules(t *testing.T) {

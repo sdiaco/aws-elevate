@@ -29,6 +29,7 @@
     "closeReason": null,
     "revokedBy": null,
     "revokeReason": null,
+    "rejectReason": null,
     "error": null
   }
 }

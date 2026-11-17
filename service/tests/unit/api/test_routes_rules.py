@@ -25,9 +25,16 @@ DOC_ARN = VALID_DOC["rules"][0]["permissionSet"]["arn"]
 
 @pytest.fixture
 def make(fx):
-    def build(*sources, config=None, reserved=frozenset({"999999999999", "888888888888"})):
+    def build(
+        *sources, config=None, reserved=frozenset({"999999999999", "888888888888"}), grants=()
+    ):
         sso = fx.FakeSso(*sources)
-        routes = RuleRoutes(config=config or fx.FakeConfig(), sso=sso, reserved_accounts=reserved)
+        routes = RuleRoutes(
+            config=config or fx.FakeConfig(),
+            sso=sso,
+            reserved_accounts=reserved,
+            table=fx.FakeTable(*grants),
+        )
         return routes, sso
 
     return build
@@ -84,6 +91,32 @@ def test_requestable_scope_keeps_the_rules_of_the_caller_groups(make, fx):
     admin_requester = dataclasses.replace(fx.ADMIN, group_ids=frozenset({"g-req"}))
     body = routes.list(admin_requester, {"scope": "requestable"})
     assert [r["id"] for r in body["rules"]] == ["ssm-dev"]
+
+
+def test_requestable_scope_lists_the_accounts_where_the_caller_has_an_open_grant(make, fx):
+    # Same permission set and account as an open grant: a request would be a duplicate,
+    # whatever rule it came from (design §11.2).
+    two = dataclasses.replace(
+        fx.AUTO_RULE,
+        accounts=(
+            fx.Account(id="111111111111", name="dev"),
+            fx.Account(id="333333333333", name="qa"),
+        ),
+    )
+    other_ps = dataclasses.replace(
+        fx.AUTO_RULE, id="other-ps", permission_set=fx.PermissionSetRef(arn="arn:x:ps-9", name="x")
+    )
+    grants = (
+        fx.make_grant(id="aaaaa23456", state=fx.State.ACTIVE, account="111111111111"),
+        fx.make_grant(id="bbbbb23456", state=fx.State.CLOSED, account="333333333333"),
+        fx.make_grant(id="ccccc23456", requester=fx.Principal("u-9", "x"), account="333333333333"),
+    )
+    routes, _ = make(config=fx.FakeConfig(two, other_ps), grants=grants)
+    body = routes.list(fx.REQUESTER, {"scope": "requestable"})
+    assert body["openGrants"] == [
+        {"ruleId": "ssm-dev", "account": "111111111111", "grantId": "aaaaa23456", "state": "active"}
+    ]
+    assert routes.list(fx.REQUESTER, {})["openGrants"] == []
 
 
 @pytest.mark.parametrize("query", [{"scope": "all"}, {"scope": ""}, {"other": "x"}])

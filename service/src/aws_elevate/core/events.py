@@ -35,5 +35,6 @@ def snapshot(grant: Grant) -> dict:
         "closeReason": grant.close_reason.value if grant.close_reason else None,
         "revokedBy": _principal(grant.revoked_by),
         "revokeReason": grant.revoke_reason,
+        "rejectReason": grant.reject_reason,
         "error": grant.error,
     }

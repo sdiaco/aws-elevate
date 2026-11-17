@@ -101,7 +101,13 @@ def body_of(resp):
         ("GET", "grants", None, None, ("list", {})),
         ("GET", "grants/abcde23456", None, None, ("get", "abcde23456")),
         ("POST", "grants/abcde23456/approve", None, None, ("approve", "abcde23456")),
-        ("POST", "grants/abcde23456/reject", None, None, ("reject", "abcde23456")),
+        (
+            "POST",
+            "grants/abcde23456/reject",
+            {"reason": "r"},
+            None,
+            ("reject", "abcde23456", {"reason": "r"}),
+        ),
         ("POST", "grants/abcde23456/cancel", None, None, ("cancel", "abcde23456")),
         ("POST", "grants/abcde23456/redrive", None, None, ("redrive", "abcde23456")),
         (
@@ -314,6 +320,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "IDENTITY_STORE_ID": "d-1234567890",
         "REQUESTER_PS_NAME": "ElevateRequester",
         "ADMIN_PS_NAME": "ElevateAdmin",
+        "AUDITOR_PS_NAME": "ElevateAuditor",
         "MANAGEMENT_ACCOUNT_ID": "999999999999",
         "SERVICE_ACCOUNT_ID": "888888888888",
         "AUDITOR_GROUP_ID": "",

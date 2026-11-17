@@ -84,11 +84,29 @@ func Open(ctx context.Context, profile string) (*Session, aws.Config, error) {
 	return s, cfg, nil
 }
 
-// WithCredentials returns cfg signing with creds, for the api client.
+// WithCredentials returns cfg signing with creds, for one short call.
 func WithCredentials(cfg aws.Config, creds aws.Credentials) aws.Config {
+	return WithProvider(cfg, static(creds))
+}
+
+// WithProvider returns cfg signing with the credentials of p.
+func WithProvider(cfg aws.Config, p aws.CredentialsProvider) aws.Config {
 	cfg = cfg.Copy()
-	cfg.Credentials = static(creds)
+	cfg.Credentials = p
 	return cfg
+}
+
+// credentialsMargin is how long before expiry role credentials are fetched again, so a
+// call never leaves with credentials that expire on the way.
+const credentialsMargin = 5 * time.Minute
+
+// RoleCredentials are the credentials of role in account, fetched from the portal again
+// before they expire: the interface stays open for hours, longer than one set lasts.
+func RoleCredentials(p Portal, account, role string) aws.CredentialsProvider {
+	fetch := aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+		return p.Credentials(ctx, account, role)
+	})
+	return aws.NewCredentialsCache(fetch, func(o *aws.CredentialsCacheOptions) { o.ExpiryWindow = credentialsMargin })
 }
 
 func static(c aws.Credentials) aws.CredentialsProvider {

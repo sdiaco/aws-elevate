@@ -5,6 +5,17 @@ approval itself then finds the request no longer conforming (design §6.2)."""
 from .models import Grant, Identity, State
 
 
+def decisions(identity: Identity, grant: Grant) -> set[str]:
+    """What the caller may decide on a pending request, ready or still starting."""
+    if grant.state != State.PENDING:
+        return set()
+    if identity.user_id == grant.requester.user_id:
+        return {"cancel"}
+    if grant.approver_group is not None and grant.approver_group.id in identity.group_ids:
+        return {"approve", "reject"}  # never one's own request, admin or not (design §3.3)
+    return set()
+
+
 def actions(identity: Identity, grant: Grant) -> set[str]:
     own = identity.user_id == grant.requester.user_id
     approver = grant.approver_group is not None and grant.approver_group.id in identity.group_ids
@@ -12,10 +23,8 @@ def actions(identity: Identity, grant: Grant) -> set[str]:
         return set()
     allowed = {"view"}
     if grant.state == State.PENDING:
-        if own:
-            allowed.add("cancel")
-        elif approver:  # never one's own request, admin or not (design §3.3)
-            allowed |= {"approve", "reject"}
+        if not grant.starting:  # no decision until the wait can receive it
+            allowed |= decisions(identity, grant)
     elif grant.state in (State.ACTIVE, State.ACTIVATING):
         if own or approver or identity.is_admin:
             allowed.add("revoke")

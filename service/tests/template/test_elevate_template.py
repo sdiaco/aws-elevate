@@ -1,6 +1,7 @@
 """What each role of infra/elevate.yaml can and cannot do, and the guarantees the
 design puts on the template (design §8.2, §8.3, §12.1)."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -379,7 +380,31 @@ SERVICE_ROLES = [
     "AWSReservedSSO_ElevateRequester_*",
     "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
     "AWSReservedSSO_ElevateAdmin_*",
+    "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
+    "AWSReservedSSO_ElevateAuditor_*",
 ]
+
+
+def api_fingerprint() -> str:
+    """Short hash of what an API Gateway deployment publishes: the API with its resource
+    policy, its paths and its methods."""
+    published = {
+        name: r
+        for name, r in RESOURCES.items()
+        if r["Type"].startswith("AWS::ApiGateway::") and r["Type"] != "AWS::ApiGateway::Deployment"
+    }
+    return hashlib.sha256(json.dumps(published, sort_keys=True).encode()).hexdigest()[:8].upper()
+
+
+def test_a_change_to_the_api_gets_a_new_deployment():
+    # A stack update changes the API but republishes it only through a new deployment;
+    # with a fixed logical id the stage keeps serving the first one forever (seen in the
+    # e2e stack: a new role stayed denied after the update). The id carries a fingerprint
+    # of the API, so any change to it forces a rename and CloudFormation deploys again.
+    (deployment,) = [n for n, r in RESOURCES.items() if r["Type"] == "AWS::ApiGateway::Deployment"]
+    assert deployment == f"ApiDeployment{api_fingerprint()}", (
+        f"the API changed: rename {deployment} to ApiDeployment{api_fingerprint()}"
+    )
 
 
 def test_resource_policy_allows_the_two_roles_and_denies_everyone_else_explicitly():
@@ -428,7 +453,11 @@ def ps_actions(name: str) -> set[str]:
 
 
 def test_service_permission_sets_have_fixed_names_and_no_jit_tag():
-    for name, ps_name in (("RequesterPs", "ElevateRequester"), ("AdminPs", "ElevateAdmin")):
+    for name, ps_name in (
+        ("RequesterPs", "ElevateRequester"),
+        ("AdminPs", "ElevateAdmin"),
+        ("AuditorPs", "ElevateAuditor"),
+    ):
         props = RESOURCES[name]["Properties"]
         assert props["Name"] == ps_name
         assert "jit" not in text(props.get("Tags", []))
@@ -436,6 +465,12 @@ def test_service_permission_sets_have_fixed_names_and_no_jit_tag():
 
 def test_requester_can_only_call_the_api_and_read_its_address():
     assert ps_actions("RequesterPs") == {"execute-api:Invoke", "ssm:GetParameter"}
+
+
+def test_auditor_has_exactly_the_requester_policy():
+    # The name tells the auditor what they are in the portal; what they may do through the
+    # API is decided by the service from their groups (design §3.3).
+    assert ps_statements("AuditorPs") == ps_statements("RequesterPs")
 
 
 def test_admin_cannot_write_permission_sets_iam_lambda_or_apply_stack_updates():
@@ -482,10 +517,21 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
     assert read["Resource"] == {"Fn::Sub": f"arn:${{AWS::Partition}}:s3:::{release_bucket}/*"}
 
 
+def test_auditors_get_api_access_only_when_the_group_is_given():
+    # An auditor only reads (design §3.3), but without a service permission set cannot call
+    # the API at all: seen in the UI pass with an auditor outside the requesters group.
+    assert TEMPLATE["Conditions"]["HasAuditors"] == {
+        "Fn::Not": [{"Fn::Equals": [{"Ref": "AuditorGroupId"}, ""]}]
+    }
+    assert RESOURCES["AuditorPs"]["Condition"] == "HasAuditors"
+    assert RESOURCES["AuditorAssignment"]["Condition"] == "HasAuditors"
+
+
 def test_service_permission_sets_are_assigned_to_the_groups_by_id_in_this_account():
     for assignment, ps, group in (
         ("RequesterAssignment", "RequesterPs", "RequesterGroupId"),
         ("AdminAssignment", "AdminPs", "AdminGroupId"),
+        ("AuditorAssignment", "AuditorPs", "AuditorGroupId"),
     ):
         props = RESOURCES[assignment]["Properties"]
         assert props["PermissionSetArn"] == {"Fn::GetAtt": [ps, "PermissionSetArn"]}
@@ -498,6 +544,7 @@ def test_api_function_gets_the_permission_set_names_and_parameters():
     env = RESOURCES["ApiFunction"]["Properties"]["Environment"]["Variables"]
     assert env["REQUESTER_PS_NAME"] == RESOURCES["RequesterPs"]["Properties"]["Name"]
     assert env["ADMIN_PS_NAME"] == RESOURCES["AdminPs"]["Properties"]["Name"]
+    assert env["AUDITOR_PS_NAME"] == RESOURCES["AuditorPs"]["Properties"]["Name"]
     assert env["MAX_OPEN_GRANTS_PER_USER"] == {"Ref": "MaxOpenGrantsPerUser"}
     assert env["AUDITOR_GROUP_ID"] == {"Ref": "AuditorGroupId"}
     assert env["SSO_INSTANCE_ARN"] == {"Fn::GetAtt": ["Precheck", "InstanceArn"]}

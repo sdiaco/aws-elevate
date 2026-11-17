@@ -9,7 +9,7 @@
 <details class="expand" data-load="/rules/ps-permissions?ps=" data-load-from="ps"><summary>What it contains</summary><div data-load-target><p class="muted">Loading…</p></div></details></div>{{end}}
 
 {{define "rule-where"}}<fieldset class="field"><legend>Accounts</legend>
-<span class="desc">The management account is never listed.</span>
+<span class="desc">The management account and the aws-elevate account are never listed.</span>
 <div class="choices">{{range .Accounts}}<label class="choice"><input type="checkbox" name="account" value="{{.ID}}"{{if has $.Form.Accounts .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.ID}}</span></label>{{end}}</div></fieldset>{{end}}
 
 {{define "rule-who"}}<div class="field"><label for="group">Who can request</label>

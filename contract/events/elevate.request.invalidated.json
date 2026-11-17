@@ -32,6 +32,7 @@
     "closeReason": "invalidated",
     "revokedBy": null,
     "revokeReason": null,
+    "rejectReason": null,
     "error": "rule ssm-prod no longer exists"
   }
 }

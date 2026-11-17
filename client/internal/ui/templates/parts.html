@@ -89,7 +89,7 @@
 <div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
 <div><dt>Requested</dt><dd>{{exact $g.CreatedAt}}</dd></div>
-{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{exact $.ApprovedAt}}{{end}}</dd></div>{{end}}
+{{with $g.Approver}}{{if $g.RejectReason}}<div><dt>Rejected by</dt><dd>{{.UserName}}: {{$g.RejectReason}}</dd></div>{{else}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{exact $.ApprovedAt}}{{end}}</dd></div>{{end}}{{end}}
 {{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
 {{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
 {{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}

@@ -2,7 +2,9 @@
   "method": "POST",
   "path": "/v1/grants/abcde23456/reject",
   "query": null,
-  "request": null,
+  "request": {
+    "reason": "not needed, use the read-only rule"
+  },
   "status": 200,
   "response": {
     "grant": {
@@ -38,8 +40,10 @@
       "closedAt": "2026-11-15T10:00:00Z",
       "revokedBy": null,
       "revokeReason": null,
+      "rejectReason": "not needed, use the read-only rule",
       "error": null,
       "ruleRemoved": false,
+      "starting": false,
       "actions": [],
       "approvalExpiresAt": null
     }

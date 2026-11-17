@@ -50,6 +50,7 @@ Parameters:
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
   HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
+  HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -609,6 +610,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType": "elevate.request.created"
@@ -786,6 +788,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType": "elevate.request.approved"
@@ -841,6 +844,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType.$": "States.Format('elevate.request.{}', $.snap.grant.closeReason)"
@@ -936,6 +940,7 @@ Resources:
                       "closeReason.$": "$.act.grant.closeReason",
                       "revokedBy.$": "$.act.grant.revokedBy",
                       "revokeReason.$": "$.act.grant.revokeReason",
+                      "rejectReason.$": "$.act.grant.rejectReason",
                       "error.$": "$.act.grant.error"
                     },
                     "DetailType": "elevate.grant.activated"
@@ -1099,6 +1104,7 @@ Resources:
                       "closeReason.$": "$.rev.grant.closeReason",
                       "revokedBy.$": "$.rev.grant.revokedBy",
                       "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
                       "error.$": "$.rev.grant.error",
                       "errorCode": "revoke_failed"
                     },
@@ -1186,6 +1192,7 @@ Resources:
                       "closeReason.$": "$.rev.grant.closeReason",
                       "revokedBy.$": "$.rev.grant.revokedBy",
                       "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
                       "error.$": "$.rev.grant.error"
                     },
                     "DetailType": "elevate.grant.closed"
@@ -1303,7 +1310,7 @@ Resources:
                 Resource:
                   - !GetAtt Precheck.InstanceArn
                   - !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
-              # The real RoleId of the two service roles, to refuse look-alikes (§8.1).
+              # The real RoleId of the service roles, to refuse look-alikes (§8.1).
               - Sid: CompareRoleId
                 Effect: Allow
                 Action: iam:GetRole
@@ -1354,6 +1361,7 @@ Resources:
           IDENTITY_STORE_ID: !GetAtt Precheck.IdentityStoreId
           REQUESTER_PS_NAME: ElevateRequester
           ADMIN_PS_NAME: ElevateAdmin
+          AUDITOR_PS_NAME: ElevateAuditor
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
@@ -1383,6 +1391,7 @@ Resources:
                 aws:PrincipalArn:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
           # In the same account an Allow alone refuses nobody (spike S5).
           - Sid: DenyEveryoneElse
             Effect: Deny
@@ -1394,6 +1403,7 @@ Resources:
                 aws:PrincipalArn:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
 
   ApiV1:
     Type: AWS::ApiGateway::Resource
@@ -1422,7 +1432,9 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
 
-  ApiDeployment:
+  # The suffix is a fingerprint of the API: a stack update republishes the API only through
+  # a new deployment, so a test makes every change to the API rename this resource.
+  ApiDeployment7F48D219:
     Type: AWS::ApiGateway::Deployment
     DependsOn: ApiMethod
     Properties:
@@ -1440,7 +1452,7 @@ Resources:
   # Fixed name: aws-elevate setup finds the API here (design §10.1).
   ApiUrlParameter:
     Type: AWS::SSM::Parameter
-    DependsOn: ApiDeployment
+    DependsOn: ApiDeployment7F48D219
     Properties:
       Name: /elevate/api-url
       Type: String
@@ -1456,6 +1468,28 @@ Resources:
       InstanceArn: !GetAtt Precheck.InstanceArn
       Name: ElevateRequester
       Description: Call the aws-elevate API
+      SessionDuration: PT1H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CallApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*
+          - Sid: ReadApiAddress
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
+
+  # Same policy as ElevateRequester: the name only tells auditors what they are in the
+  # access portal. What they see through the API comes from their groups (design §3.3).
+  AuditorPs:
+    Type: AWS::SSO::PermissionSet
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      Name: ElevateAuditor
+      Description: Read aws-elevate
       SessionDuration: PT1H
       InlinePolicy:
         Version: "2012-10-17"
@@ -1551,6 +1585,19 @@ Resources:
       PermissionSetArn: !GetAtt AdminPs.PermissionSetArn
       PrincipalType: GROUP
       PrincipalId: !Ref AdminGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref AWS::AccountId
+
+  # Auditors only read, but they still need a service permission set to call the API
+  # (design §3.3).
+  AuditorAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      PermissionSetArn: !GetAtt AuditorPs.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref AuditorGroupId
       TargetType: AWS_ACCOUNT
       TargetId: !Ref AWS::AccountId
 

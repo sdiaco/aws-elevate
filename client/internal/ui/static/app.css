@@ -152,11 +152,12 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st::before { content: var(--glyph); flex: none; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; display: inline-grid; place-items: center; font-size: 9px; line-height: 1; font-weight: 700; }
 .st-pending { color: var(--warning); background: var(--bg-warning); --glyph: "!"; }
 .st-activating { color: var(--info); background: var(--bg-info); --glyph: ""; }
+.st-starting { color: var(--info); background: var(--bg-info); --glyph: ""; }
 .st-active { color: var(--success); background: var(--bg-success); --glyph: "✓"; }
 .st-revoking { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-revoke_failed { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-closed { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
-.st-activating::before, .st-revoking::before { border-right-color: transparent; animation: spin .8s linear infinite; }
+.st-activating::before, .st-starting::before, .st-revoking::before { border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stalled .st::before { animation: none; }
 .checking { color: var(--text-2); white-space: nowrap; }
@@ -409,3 +410,7 @@ details.diff-rule { margin-top: 16px; }
 tbody tr.last-shown td { border-bottom: 1px solid var(--divider-2); }
 tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
 .no-match { margin: 12px 0 0; }
+
+.modal { max-width: 600px; width: calc(100% - 32px); background: var(--surface); color: var(--text); border: 1px solid var(--divider); border-radius: 2px; padding: 16px 20px 20px; }
+.modal::backdrop { background: rgb(0 0 0 / 50%); }
+.modal h2 { margin: 0 0 12px; font-size: 18px; color: var(--text-strong); }

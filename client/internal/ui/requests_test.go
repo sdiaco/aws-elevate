@@ -149,6 +149,21 @@ func TestPendingRowsRefreshOnRequestAndMovingRowsPoll(t *testing.T) {
 	contains(t, out, `data-state="activating"`, `value="ask2345678" data-select aria-label`)
 }
 
+func TestAStartingRequestShowsStartingAndReadsItselfAgain(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	starting := grant("ask2345678", api.StatePending, other)
+	starting.Starting = true
+	h.svc.grants["ask2345678"] = starting
+	out := h.get(t, "/requests/row/ask2345678")
+	contains(t, out, `<span class="st st-starting">Starting</span>`, `data-poll="/requests/row/ask2345678"`, `data-state="starting"`)
+	lacks(t, out, "data-refresh")
+
+	h.svc.grants["ask2345678"] = grant("ask2345678", api.StatePending, other, "approve", "reject")
+	out = h.get(t, "/requests/row/ask2345678")
+	contains(t, out, `data-state="pending"`, `data-refresh="/requests/row/ask2345678?check=1"`)
+	lacks(t, out, "data-poll")
+}
+
 func TestTheBottomPanelIsClosedUntilARowIsChosen(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests?f=approve")
@@ -225,15 +240,17 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	contains(t, followed(t, h, w, "/requests"), `class="flash success"`, "Request ask2345678: approved.", "data-dismiss")
 
 	out := h.get(t, "/requests/reject?id=ask2345678")
-	contains(t, out, `<form method="post" action="/requests/reject">`, `value="ask2345678"`, "Reject 1 request")
+	contains(t, out, `<form method="post" action="/requests/reject">`, `value="ask2345678"`, "Reject 1 request", `<textarea name="reason"`)
+	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}, "reason": {" "}})
+	contains(t, w.Body.String(), `class="alert error"`, "A reason is required")
 	h.svc.afterAction = api.StateClosed
-	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}})
+	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}, "reason": {"use the read-only rule"}})
 	contains(t, followed(t, h, w, "/requests"), "Request ask2345678: rejected.")
 
 	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
 	if got := strings.Join(h.svc.calls, ","); !strings.Contains(got, "approve ask2345678") ||
-		!strings.Contains(got, "reject ask2345678") || !strings.Contains(got, "cancel own2345678") {
+		!strings.Contains(got, "reject use the read-only rule ask2345678") || !strings.Contains(got, "cancel own2345678") {
 		t.Errorf("calls %v", h.svc.calls)
 	}
 }
