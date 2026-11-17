@@ -221,7 +221,7 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 		`href="/history/export.csv?period=30d&amp;scope=mine"`, "30 days", "13 months")
 	contains(t, out, `<section class="split-panel" data-panel-slot hidden></section>`)
 	lacks(t, out, "Everyone", `class="open"`)
-	if q := h.svc.queries[0]; q.Scope != "mine" || q.From == "" || q.To != "" {
+	if q := h.svc.queries[0]; q.Scope != "mine" || !q.Closed || q.From == "" || q.To != "" {
 		t.Errorf("query %+v", q)
 	}
 
@@ -237,7 +237,7 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 	auditor := newHarness("auditor")
 	out = auditor.get(t, "/history?scope=all")
 	contains(t, out, `aria-current="true">Everyone</a>`)
-	if q := auditor.svc.queries[0]; q.Scope != "all" {
+	if q := auditor.svc.queries[0]; q.Scope != "all" || !q.Closed {
 		t.Errorf("auditor query %+v", q)
 	}
 }

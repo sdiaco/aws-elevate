@@ -182,6 +182,13 @@ func TestListSendsTheQuery(t *testing.T) {
 		t.Errorf("got %+v", l)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "grants-list").Response))
+	if _, err := c.Grants(context.Background(), ListQuery{Scope: "mine", Closed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := url.ParseQuery(got.query); q.Get("closed") != "true" || q.Has("open") {
+		t.Errorf("closed query %q", got.query)
+	}
+	c, got = serve(t, 200, string(loadExample(t, "grants-list").Response))
 	if _, err := c.Grants(context.Background(), ListQuery{}); err != nil {
 		t.Fatal(err)
 	}

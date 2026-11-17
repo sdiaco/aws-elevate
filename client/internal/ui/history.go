@@ -34,7 +34,7 @@ func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQue
 	if r.URL.Query().Get("scope") == "all" && a.seesAll() {
 		scope = "all"
 	}
-	return period, scope, api.ListQuery{Scope: scope, From: from(time.Now()).UTC().Format(time.RFC3339)}
+	return period, scope, api.ListQuery{Scope: scope, Closed: true, From: from(time.Now()).UTC().Format(time.RFC3339)}
 }
 
 func (a *App) seesAll() bool { return a.has("admin") || a.has("auditor") }

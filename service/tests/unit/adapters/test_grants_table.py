@@ -495,7 +495,30 @@ def test_by_user_open_only_filters_closed_grants_and_continues_from_a_key(table)
         },
         [],
     )
-    assert gt.by_user("u-1", "a", "b", 10, after, open_only=True) == ([], None)
+    assert gt.by_user("u-1", "a", "b", 10, after, status="open") == ([], None)
+
+
+def test_by_month_closed_keeps_only_closed_grants(table):
+    gt, stub = table
+    _query(
+        stub,
+        {
+            "IndexName": "byMonth",
+            "KeyConditionExpression": "gsi2pk = :pk AND gsi2sk BETWEEN :from AND :to",
+            "FilterExpression": "#state = :closed",
+            "ExpressionAttributeNames": {"#state": "state"},
+            "ExpressionAttributeValues": {
+                ":pk": {"S": "MONTH#2026-11"},
+                ":from": {"S": "a"},
+                ":to": {"S": "b#~"},
+                ":closed": {"S": "closed"},
+            },
+            "ScanIndexForward": False,
+            "Limit": 10,
+        },
+        [],
+    )
+    assert gt.by_month("2026-11", "a", "b", 10, None, status="closed") == ([], None)
 
 
 def test_by_month_queries_one_month_partition(table):

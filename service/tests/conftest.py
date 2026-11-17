@@ -134,23 +134,23 @@ class FakeTable:
         nxt = {"i": start + limit} if start + limit < len(grants) else None
         return page, nxt
 
-    def by_user(self, user_id, start, end, limit, after, open_only=False):
-        self.queries.append(("by_user", user_id, start, end, open_only))
+    def by_user(self, user_id, start, end, limit, after, status=None):
+        self.queries.append(("by_user", user_id, start, end, status))
         found = [
             g
             for g in self.grants.values()
             if g.requester.user_id == user_id and start <= g.created_at <= end
-            if not open_only or g.state != State.CLOSED
+            if _has_status(g, status)
         ]
         return self._paged(found, limit, after)
 
-    def by_month(self, month, start, end, limit, after, open_only=False):
-        self.queries.append(("by_month", month, start, end, open_only))
+    def by_month(self, month, start, end, limit, after, status=None):
+        self.queries.append(("by_month", month, start, end, status))
         found = [
             g
             for g in self.grants.values()
             if g.created_at[:7] == month and start <= g.created_at <= end
-            if not open_only or g.state != State.CLOSED
+            if _has_status(g, status)
         ]
         return self._paged(found, limit, after)
 
@@ -158,6 +158,11 @@ class FakeTable:
         self.queries.append(("open",))
         found = [g for g in self.grants.values() if g.state != State.CLOSED]
         return self._paged(found, limit, after)
+
+
+def _has_status(grant, status):
+    closed = grant.state == State.CLOSED
+    return status is None or (status == "closed") == closed
 
 
 class FakeConfig:

@@ -105,6 +105,7 @@ type revokeRequest struct {
 type ListQuery struct {
 	Scope  string
 	Open   bool
+	Closed bool
 	User   string
 	From   string
 	To     string

@@ -88,6 +88,9 @@ func (c *Client) Grants(ctx context.Context, q ListQuery) (*GrantList, error) {
 	if q.Open {
 		v.Set("open", "true")
 	}
+	if q.Closed {
+		v.Set("closed", "true")
+	}
 	set("user", q.User)
 	set("from", q.From)
 	set("to", q.To)

@@ -420,7 +420,7 @@ def test_mine_reads_the_caller_index_over_the_last_30_days(make, fx):
     assert ids(body) == ["bbbbb23456", "aaaaa23456"]
     assert body["cursor"] is None
     assert table.queries == [
-        ("by_user", "u-1", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", False)
+        ("by_user", "u-1", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", None)
     ]
     assert_no_token(body)
 
@@ -428,7 +428,36 @@ def test_mine_reads_the_caller_index_over_the_last_30_days(make, fx):
 def test_mine_open_filters_closed(make, fx):
     routes, table, _ = make()
     routes.list(fx.REQUESTER, {"scope": "mine", "open": "true"})
-    assert table.queries[0][-1] is True
+    assert table.queries[0][-1] == "open"
+
+
+def test_mine_closed_keeps_only_closed_grants(make, fx):
+    # History shows closed grants only, filtered here and not in the client (design §11.2).
+    routes, table, _ = make(
+        g(fx, "aaaaa23456", "2026-11-15T09:00:00Z"),
+        g(fx, "bbbbb23456", "2026-11-15T09:30:00Z", state=State.CLOSED),
+    )
+    body = routes.list(fx.REQUESTER, {"scope": "mine", "closed": "true"})
+    assert ids(body) == ["bbbbb23456"]
+    assert table.queries[0][-1] == "closed"
+
+
+def test_all_closed_walks_the_months_with_the_closed_filter(make, fx):
+    routes, table, _ = make(
+        g(fx, "aaaaa23456", "2026-11-14T00:00:00Z"),
+        g(fx, "bbbbb23456", "2026-11-14T01:00:00Z", state=State.CLOSED),
+    )
+    body = routes.list(fx.AUDITOR, {"scope": "all", "closed": "true"})
+    assert ids(body) == ["bbbbb23456"]
+    assert {q[-1] for q in table.queries} == {"closed"}
+
+
+def test_all_closed_for_one_user_reads_that_user_index(make, fx):
+    routes, table, _ = make()
+    routes.list(fx.ADMIN, {"scope": "all", "user": "u-9", "closed": "true"})
+    assert table.queries == [
+        ("by_user", "u-9", "2026-10-16T10:00:00Z", "2026-11-15T10:00:00Z", "closed")
+    ]
 
 
 def test_period_is_taken_from_the_query(make, fx):
@@ -448,6 +477,9 @@ def test_period_is_taken_from_the_query(make, fx):
         {"scope": "mine", "from": "2026-11-15T00:00:00Z", "to": "2026-11-01T00:00:00Z"},
         {"scope": "mine", "from": "2025-09-30T00:00:00Z"},  # beyond the 13 months kept
         {"scope": "mine", "open": "yes"},
+        {"scope": "mine", "closed": "yes"},
+        {"scope": "mine", "open": "true", "closed": "true"},
+        {"scope": "approvable", "closed": "true"},
         {"scope": "mine", "user": "u-2"},
         {"scope": "mine", "cursor": "not-a-cursor"},
     ],

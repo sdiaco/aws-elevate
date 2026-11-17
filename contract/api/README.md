@@ -8,3 +8,7 @@ Both test suites read them: the service checks that every route answers with the
 keys and JSON types, and the client decodes every response with unknown fields refused.
 A `null` value marks a field that can be empty; the other examples show it filled.
 `error.json` is the format of every error; the codes are in `../vocabulary.json`.
+
+`GET /v1/grants` filters: `scope` (`mine`, `approvable`, `all`), `user`, `from`, `to`,
+`cursor`, and at most one of `open=true` (grants not yet closed) or `closed=true` (closed
+grants only, the History view).
