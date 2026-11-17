@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from botocore.exceptions import ClientError
 
 from ..adapters.grants_table import RETENTION_MONTHS, Duplicate, StateConflict
-from ..core.authz import actions, can
+from ..core.authz import actions, can, decisions
 from ..core.ids import new_grant_id
 from ..core.models import (
     APPROVAL_TIMEOUT_SECONDS,
@@ -264,10 +264,10 @@ class GrantRoutes:
         grant = self._visible(identity, grant_id)
         if grant.state != State.PENDING:
             raise _conflict(f"grant {grant_id} is {grant.state}, no longer pending")
+        if action not in decisions(identity, grant):
+            raise forbidden(f"you cannot {action} grant {grant_id}")
         if grant.starting:
             raise ApiError(409, "not_ready", "the request is still starting; retry in a moment")
-        if not can(identity, action, grant):
-            raise forbidden(f"you cannot {action} grant {grant_id}")
         return grant
 
     def _nonconformity(self, grant: Grant) -> list[str]:

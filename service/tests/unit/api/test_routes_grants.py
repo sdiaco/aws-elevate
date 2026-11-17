@@ -213,6 +213,15 @@ def test_a_pending_grant_is_starting_until_its_wait_has_a_token(make, fx, change
     assert routes.get(fx.LEAD, "abcde23456")["grant"]["starting"] is starting
 
 
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_own_request_still_starting_is_forbidden_not_unready(make, fx, action):
+    # Who may decide comes first: retrying later would never help the requester.
+    routes, _, _ = make(fx.make_grant(task_token=None))
+    call = getattr(routes, action)
+    args = ("abcde23456", {"reason": "r"}) if action == "reject" else ("abcde23456",)
+    assert error_of(lambda: call(fx.REQUESTER, *args)).code == "forbidden"
+
+
 def test_approve_before_the_wait_has_its_token_is_not_ready(make, fx):
     routes, table, _ = make(fx.make_grant(task_token=None))
     err = error_of(lambda: routes.approve(fx.LEAD, "abcde23456"))
