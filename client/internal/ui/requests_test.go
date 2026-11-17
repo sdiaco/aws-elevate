@@ -242,7 +242,7 @@ func followed(t *testing.T, h *harness, w *httptest.ResponseRecorder, prefix str
 		t.Fatalf("%d %q %s", w.Code, loc, w.Body)
 	}
 	out := h.get(t, loc)
-	lacks(t, h.get(t, loc), `class="flash`) // the notice shows once
+	lacks(t, h.get(t, loc), `<div class="flash`) // the notice shows once
 	return out
 }
 
@@ -258,7 +258,9 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	contains(t, w.Body.String(), `class="alert error"`, "A reason is required")
 	h.svc.afterAction = api.StateClosed
 	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}, "reason": {"use the read-only rule"}})
-	contains(t, followed(t, h, w, "/requests"), "Request ask2345678: rejected.")
+	out = followed(t, h, w, "/requests")
+	contains(t, out, "Request ask2345678: rejected.")
+	lacks(t, out, "data-follow") // a rejection is final: nothing to follow
 
 	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
@@ -288,14 +290,16 @@ func TestRevokeAsksForReasonAndShowsEachOutcome(t *testing.T) {
 		t.Errorf("calls %v", h.svc.calls)
 	}
 	contains(t, followed(t, h, w, "/requests"), `class="flash warning"`,
-		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed")
+		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed",
+		// The page follows the started revocation and sums up its end (design §11.1).
+		`data-follow="mine234567"`, `data-follow-failed="1"`)
 }
 
 func TestRetryRunsTheFailedRevocationAgain(t *testing.T) {
 	h := requestsHarness("admin")
 	h.svc.afterAction = api.StateRevoking
 	w := h.do(t, "POST", "/requests/retry", url.Values{"id": {"fail234567"}})
-	contains(t, followed(t, h, w, "/requests"), "Request fail234567: revocation retried.")
+	contains(t, followed(t, h, w, "/requests"), "Request fail234567: revocation retried.", `data-follow="fail234567"`)
 	if h.svc.calls[len(h.svc.calls)-1] != "redrive fail234567" {
 		t.Errorf("calls %v", h.svc.calls)
 	}

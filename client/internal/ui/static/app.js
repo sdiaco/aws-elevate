@@ -155,7 +155,52 @@ async function replace(el, address, follow = true) {
   if (list) updateSelection(list);
   tick();
   if (moved && follow) sync(next);
+  if (moved) sumUp();
   return { next, moved };
+}
+
+// sumUp rewrites a notice that started revocations once none of its grants is still
+// revoking, from the states their rows show: "2 grants revoked.", "1 revoked, 1 failed."
+// It asks the service nothing: the rows are already being polled.
+function sumUp() {
+  document.querySelectorAll(".flash[data-follow]").forEach((flash) => {
+    const ids = flash.dataset.follow.split(" ");
+    const rows = ids.map((id) => document.querySelector(`tr[data-grant="${CSS.escape(id)}"]`));
+    if (rows.some((r) => !r || r.dataset.state === "revoking")) return;
+    const failedIds = ids.filter((id, i) => rows[i].dataset.state === "revoke_failed");
+    const revoked = ids.length - failedIds.length;
+    const failed = failedIds.length + Number(flash.dataset.followFailed || 0);
+    let kind, text;
+    if (failed === 0) {
+      kind = "success";
+      text = ids.length === 1 ? `Grant ${ids[0]} revoked.` : `${ids.length} grants revoked.`;
+    } else if (revoked === 0) {
+      kind = "error";
+      text = failed === 1 ? "The revocation failed." : `${failed} revocations failed.`;
+    } else {
+      kind = "warning";
+      text = `${revoked} revoked, ${failed} failed.`;
+    }
+    if (failedIds.length) {
+      let list = flash.querySelector(".flash-list");
+      if (!list) {
+        list = document.createElement("ul");
+        list.className = "flash-body flash-list";
+        flash.append(list);
+      }
+      failedIds.forEach((id) => {
+        const li = document.createElement("li");
+        li.textContent = `${id}: revocation failed, the access may still work. Open it for the error and Retry.`;
+        list.append(li);
+      });
+    }
+    flash.classList.remove("success", "warning", "error");
+    flash.classList.add(kind);
+    const icon = document.getElementById(`flash-icon-${kind}`).content.firstElementChild.cloneNode(true);
+    flash.querySelector(".flash-icon")?.replaceWith(icon);
+    flash.querySelector(".flash-text").textContent = text;
+    delete flash.dataset.follow;
+  });
 }
 
 // A state that has not moved for 2 minutes is stuck or slow: the page stops asking, so a
