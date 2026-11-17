@@ -229,7 +229,14 @@ func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {
 func TestThePanelOfOwnActiveGrantOpensTheConsole(t *testing.T) {
 	out := requestsHarness("requester").get(t, "/requests?open=mine234567")
 	contains(t, out, `class="box access"`, `data-copy="aws elevate shell mine234567"`,
-		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗`)
+		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗`,
+		// The portal opens as whoever is signed in to this browser: say so, and offer the
+		// link for another browser profile.
+		"Opens the AWS access portal as", "You will see No access", `aria-label="Copy link"`)
+	// Once, in Access: not again in the panel header.
+	if n := strings.Count(out, "Open in console"); n != 1 {
+		t.Fatalf("Open in console %d times", n)
+	}
 	out = requestsHarness("admin").get(t, "/requests?open=their23456")
 	lacks(t, out, "Open in console", "aws elevate shell")
 }
@@ -426,10 +433,10 @@ func TestTheFlashWaitsForTheRoleBeforeTheConsole(t *testing.T) {
 		t.Fatalf("ready calls %v", h.ready)
 	}
 	contains(t, out, `class="flash success"`,
-		"aws elevate shell new4567890", "export AWS_PROFILE=jit-ssm-write-222222222222",
+		"aws elevate shell new4567890", `data-copy="--profile jit-ssm-write-222222222222"`,
 		`<a class="btn primary" href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗</a>`,
 	)
-	lacks(t, out, "data-poll", `class="nav"`)
+	lacks(t, out, "data-poll", `class="nav"`, "AWS_PROFILE")
 }
 
 func TestTheFlashOfAClosedOrUnreadyRequest(t *testing.T) {

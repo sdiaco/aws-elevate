@@ -40,7 +40,7 @@
 {{if eq .Grant.State "active"}}<div class="flash-body">
 {{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 {{template "command" (print "aws elevate shell " .Grant.ID)}}
-{{if .Ready}}{{template "command" (print "export AWS_PROFILE=" .Profile)}}{{end}}
+{{if .Ready}}{{template "profile-command" .Profile}}{{end}}
 </div>{{end}}
 </div>{{end}}
 
@@ -66,7 +66,6 @@
 {{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}" data-confirm>Reject…</a>{{end}}
 {{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
 {{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
-{{with .Console}}<a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 </form>
 {{template "panel-close" .Close}}</div>
 <div class="tabs" data-tabs>
@@ -76,9 +75,11 @@
 {{if eq $g.State "revoke_failed"}}<div class="alert error" role="status">The revocation failed: {{with $g.Error}}{{.}}{{end}}. Still usable for {{with $g.ExpiresAt}}<time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time>{{end}}.</div>{{end}}
 {{with .Console}}<div class="box access"><h3>Access</h3>
 <p class="desc">Open the AWS console with this access, or use it from a terminal.</p>
-<div class="access-row"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>
+<div class="access-row"><div class="access-open"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>
+<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy link" title="Copy link"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l1-1"/></svg></button></div>
 <div class="access-commands">{{template "command" (print "aws elevate shell " $g.ID)}}
-<div data-fill="/requests/profile/{{$g.ID}}"><div class="command pending"><code class="muted">Preparing the CLI profile…</code></div></div></div></div></div>{{end}}
+<div data-fill="/requests/profile/{{$g.ID}}"><div class="command pending"><code class="muted">Preparing the CLI profile…</code></div></div></div></div>
+<p class="hint">Opens the AWS access portal as {{$g.Requester.UserName}}; you may need to sign in there. Signed in as someone else? You will see No access: copy the link into the right browser profile.</p></div>{{end}}
 <div class="box"><h3>Details</h3>
 <dl class="kv cols4">
 <div><dt>Requester</dt><dd>{{$g.Requester.UserName}}</dd></div>

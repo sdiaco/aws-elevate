@@ -301,6 +301,8 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .access .desc { margin: -8px 0 12px; color: var(--text-2); }
 .access-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .access-commands { display: contents; }
+.access-open { display: inline-flex; align-items: center; gap: 4px; }
+.access .hint { margin: 8px 0 0; color: var(--text-2); font-size: 12px; }
 .command.pending { padding: 0 12px; }
 .command { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--divider); border-radius: 4px; padding: 3px 4px 3px 12px; background: var(--surface-soft); max-width: 100%; }
 .command code { font-size: 13px; overflow-wrap: anywhere; color: var(--text-strong); }
