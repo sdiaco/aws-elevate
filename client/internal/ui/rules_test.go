@@ -94,7 +94,9 @@ func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", `<span class="st st-ps_missing">PS not found</span>`,
 		`<span class="st st-active">Active</span>`, "<th>Status</th>", "privileged",
 		"prod (222222222222)", "1h (max 4h)", "manual by leads", "auto",
-		`href="/rules/edit"`, "New rule", `href="/rules/import"`, `formaction="/rules/delete"`)
+		`href="/rules/edit"`, "New rule", `href="/rules/import"`,
+		// The list is a GET form; deleting changes the rules and is only accepted as POST.
+		`formaction="/rules/delete" formmethod="post"`)
 	if strings.Count(out, "PS not found") != 1 {
 		t.Errorf("only ssm-prod lost its permission set:\n%s", out)
 	}

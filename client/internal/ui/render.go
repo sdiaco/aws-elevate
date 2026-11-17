@@ -120,6 +120,7 @@ type Action struct {
 	Name    string
 	Danger  bool
 	Confirm bool // the address is a confirmation page, opened as a dialog over the list
+	Post    bool // the action changes something: sent as POST, while the list itself is a GET form
 	Primary bool
 	Count   int // the action needs exactly this many rows, when not 0
 }
