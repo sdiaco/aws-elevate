@@ -65,7 +65,7 @@ func failedRevoke(id string, actions ...string) api.Grant {
 }
 
 func versionsFixture(h *harness) {
-	author := "admin@example.com"
+	author := "arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_0123456789abcdef/user@example.com"
 	at := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
 	three := 3
 	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{
@@ -84,7 +84,9 @@ func TestVersionsListAuthorsValidityAndTheVersionInUse(t *testing.T) {
 	versionsFixture(h)
 	out := h.get(t, "/versions")
 	contains(t, out,
-		"admin@example.com", "author being verified", "in use",
+		// The user name only; the full identity on hover and in the panel.
+		`<span title="arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_0123456789abcdef/user@example.com">user@example.com</span>`,
+		"author being verified", "in use",
 		"schema: approval must be auto or manual", "not valid, ignored",
 		`href="/versions?open=3" data-panel="/versions/3/panel"`,
 		`formaction="/versions/compare"`, `data-count="2"`, "Compare",

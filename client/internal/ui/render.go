@@ -108,6 +108,7 @@ type Cell struct {
 	Until    time.Time
 	At       time.Time
 	Refresh  string // a button next to the state reads the row again from this address
+	Title    string // the full value on hover, when Text shortens it
 	Outcome  string // a close reason, shown as one label: red when the access was refused or broke
 }
 

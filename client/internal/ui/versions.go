@@ -29,7 +29,7 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 		n := strconv.Itoa(info.Number)
 		author := Cell{Text: "author being verified", Muted: true}
 		if info.Author != nil {
-			author = Cell{Text: *info.Author}
+			author = Cell{Text: userName(*info.Author), Title: *info.Author}
 		}
 		published := Cell{}
 		if info.CreatedAt != nil {
@@ -307,4 +307,10 @@ func jsonEqual(x, y json.RawMessage) bool {
 	ja, _ := json.Marshal(a)
 	jb, _ := json.Marshal(b)
 	return bytes.Equal(ja, jb)
+}
+
+// userName is the last part of an identity ARN: the SSO user of an assumed role, or an IAM
+// user. The column stays narrow; the full ARN shows on hover and in the panel.
+func userName(arn string) string {
+	return arn[strings.LastIndex(arn, "/")+1:]
 }
