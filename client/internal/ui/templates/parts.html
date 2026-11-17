@@ -114,16 +114,7 @@
 <div class="split-panel-body">
 <div role="tabpanel" data-tabpanel="details">
 {{if .PSMissing}}<div class="alert error" role="status">The permission set {{$r.PermissionSet.Name}} is no longer in Identity Center: edit the rule and choose another one.</div>{{end}}
-<div class="box"><h3>Details</h3>
-<dl class="kv cols4">
-<div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div>
-<div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div>
-<div><dt>Accounts</dt><dd>{{.Accounts}}</dd></div>
-<div><dt>Approval</dt><dd>{{.Approval}}</dd></div>
-<div><dt>Default duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div>
-<div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div>
-<div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div>
-</dl></div>
+<div class="box"><h3>Details</h3>{{template "rule-kv" .}}</div>
 </div>
 {{if not .PSMissing}}<div role="tabpanel" data-tabpanel="permissions" data-load="/rules/ps-permissions?ps={{$r.PermissionSet.Name}}" hidden><div class="box" data-load-target><p class="muted">Loading…</p></div></div>{{end}}
 </div></div>{{end}}
@@ -185,11 +176,25 @@
 {{range .Changed}}{{template "rule-diff" (diff $ . "Changed")}}{{end}}
 </div>{{end}}
 
+{{/* The details of a rule, in its panel and in a review. */}}
+{{define "rule-kv"}}{{$r := .Rule}}<dl class="kv cols4">
+<div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div>
+<div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div>
+<div><dt>Accounts</dt><dd>{{.Accounts}}</dd></div>
+<div><dt>Approval</dt><dd>{{.Approval}}</dd></div>
+<div><dt>Default duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div>
+<div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div>
+<div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div>
+</dl>{{end}}
+
+{{/* A changed rule shows both sides; an added or removed one, the side it is on, as details. */}}
 {{define "rule-diff"}}<details class="expand diff-rule" open><summary>{{.Change.ID}} <span class="tag diff-{{.Kind}}">{{.Kind}}</span></summary>
-<div class="diff"><div><h3>{{.OldLabel}}</h3>{{if .Change.BeforeLines}}<pre>{{range .Change.BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
+{{if .Rule}}<div class="diff-one"><h3>{{if eq .Kind "Added"}}{{.NewLabel}}{{else}}{{.OldLabel}}{{end}}</h3>{{template "rule-kv" .Rule}}
+<details class="expand"><summary>Show JSON</summary><pre>{{if eq .Kind "Added"}}{{.Change.After}}{{else}}{{.Change.Before}}{{end}}</pre></details></div>
+{{else}}<div class="diff"><div><h3>{{.OldLabel}}</h3>{{if .Change.BeforeLines}}<pre>{{range .Change.BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
 {{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div>
 <div><h3>{{.NewLabel}}</h3>{{if .Change.AfterLines}}<pre>{{range .Change.AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
-{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div></details>{{end}}
+{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div>{{end}}</details>{{end}}
 
 {{/* Accounts as Cloudscape cards: searched, 12 a page, ticked (several) or picked (one).
      An account with an open grant shows it instead of a choice. */}}

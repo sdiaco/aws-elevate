@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
@@ -193,7 +194,14 @@ var funcs = template.FuncMap{
 	"policyName": policyName,
 	"policyDoc":  policyDoc,
 	"diff": func(v compareView, c ruleChange, kind string) ruleDiff {
-		return ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
+		d := ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
+		side := map[string]string{"Added": c.After, "Removed": c.Before}[kind]
+		var rule api.Rule
+		// A side that is not a readable rule keeps the line diff.
+		if side != "" && json.Unmarshal([]byte(side), &rule) == nil {
+			d.Rule = &rulePanel{Rule: rule, Accounts: accountNames(rule), Approval: approvalText(rule)}
+		}
+		return d
 	},
 	"columns": func(l List) int {
 		if len(l.Actions) > 0 {
@@ -217,6 +225,7 @@ type ruleDiff struct {
 	Change             ruleChange
 	Kind               string
 	OldLabel, NewLabel string
+	Rule               *rulePanel // the details of an added or removed rule
 }
 
 // parts are the shared templates; templates holds one set per view: the base layout, the
