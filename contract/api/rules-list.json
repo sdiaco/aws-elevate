@@ -60,6 +60,14 @@
         },
         "privileged": true
       }
+    ],
+    "openGrants": [
+      {
+        "ruleId": "ssm-prod",
+        "account": "222222222222",
+        "grantId": "abcde23456",
+        "state": "active"
+      }
     ]
   }
 }

@@ -95,15 +95,35 @@ def _reserved_account_errors(rule: Rule, reserved: frozenset[str]) -> list[dict]
 
 
 class RuleRoutes:
-    def __init__(self, config, sso, reserved_accounts: frozenset[str]):
+    def __init__(self, config, sso, reserved_accounts: frozenset[str], table):
         self._config = config
         self._sso = sso
         self._reserved_accounts = reserved_accounts
+        self._table = table
 
     def _visible(self, identity: Identity, rules: list[Rule]) -> list[Rule]:
         if identity.is_admin or identity.is_auditor:
             return rules
         return requestable(rules, identity)
+
+    def _open_grants(self, identity: Identity, rules: list[Rule]) -> list[dict]:
+        """Rule and account pairs a new request would be refused on as duplicate: the
+        caller has an open grant there on the same permission set (design §11.2)."""
+        held = {(g.source_ps.arn, g.account): g for g in self._table.open_of(identity.user_id)}
+        out = []
+        for rule in rules:
+            for account in rule.accounts:
+                g = held.get((rule.permission_set.arn, account.id))
+                if g is not None:
+                    out.append(
+                        {
+                            "ruleId": rule.id,
+                            "account": account.id,
+                            "grantId": g.id,
+                            "state": g.state.value,
+                        }
+                    )
+        return out
 
     def list(self, identity: Identity, query: dict) -> dict:
         """Admins and auditors see every rule; scope=requestable keeps only what the caller
@@ -112,7 +132,11 @@ class RuleRoutes:
             raise ApiError(400, "invalid_request", "the only query is scope=requestable")
         version, rules = self._config.current()
         shown = requestable(rules, identity) if query else self._visible(identity, rules)
-        return {"configVersion": version, "rules": [rule_to_dict(r) for r in shown]}
+        return {
+            "configVersion": version,
+            "rules": [rule_to_dict(r) for r in shown],
+            "openGrants": self._open_grants(identity, shown) if query else [],
+        }
 
     def permissions(self, identity: Identity, rule_id: str) -> dict:
         _, rules = self._config.current()

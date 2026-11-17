@@ -200,6 +200,7 @@ def _build_api() -> Api:
         reserved_accounts=frozenset(
             {os.environ["MANAGEMENT_ACCOUNT_ID"], os.environ["SERVICE_ACCOUNT_ID"]}
         ),
+        table=table,
     )
     installation = {
         "stackId": os.environ["STACK_ID"],

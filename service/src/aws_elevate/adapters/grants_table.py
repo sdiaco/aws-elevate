@@ -430,7 +430,7 @@ class GrantsTable:
         resp = self._db.query(**params)
         return [from_item(i) for i in resp["Items"]], resp.get("LastEvaluatedKey")
 
-    def count_open(self, user_id: str) -> int:
+    def open_of(self, user_id: str) -> list[Grant]:
         """Grants of the user not yet closed, read from the small open index."""
         params = {
             "TableName": self._table,
@@ -438,15 +438,17 @@ class GrantsTable:
             "KeyConditionExpression": "gsi3pk = :pk",
             "FilterExpression": "requester.userId = :u",
             "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": user_id}},
-            "Select": "COUNT",
         }
-        total = 0
+        grants = []
         while True:
             resp = self._db.query(**params)
-            total += resp["Count"]
+            grants += [from_item(i) for i in resp["Items"]]
             if "LastEvaluatedKey" not in resp:
-                return total
+                return grants
             params["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+    def count_open(self, user_id: str) -> int:
+        return len(self.open_of(user_id))
 
     def timeline(self, grant_id: str) -> list[dict]:
         params = {

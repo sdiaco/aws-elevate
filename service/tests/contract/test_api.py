@@ -96,7 +96,12 @@ def respond(fx, name: str, example: dict) -> tuple[int, dict]:
         Resolver(identity),
         grant_routes,
         config,
-        RuleRoutes(config=config, sso=fx.FakeSso(), reserved_accounts=frozenset({"999999999999"})),
+        RuleRoutes(
+            config=config,
+            sso=fx.FakeSso(),
+            reserved_accounts=frozenset({"999999999999"}),
+            table=table,
+        ),
         ConfigRoutes(config),
         {
             "stackId": "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1",

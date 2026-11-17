@@ -120,6 +120,13 @@ class FakeTable:
     def timeline(self, grant_id):
         return self.rows.get(grant_id, [])
 
+    def open_of(self, user_id):
+        return [
+            g
+            for g in self.grants.values()
+            if g.state != State.CLOSED and g.requester.user_id == user_id
+        ]
+
     def count_open(self, user_id):
         return sum(
             1

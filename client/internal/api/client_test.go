@@ -209,8 +209,12 @@ func TestRulesAndPermissions(t *testing.T) {
 		t.Errorf("Rules sent %q", got.query)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "rules-list").Response))
-	if _, err := c.RequestableRules(context.Background()); err != nil || got.query != "scope=requestable" {
+	req, err := c.RequestableRules(context.Background())
+	if err != nil || got.query != "scope=requestable" {
 		t.Fatalf("RequestableRules sent %q: %v", got.query, err)
+	}
+	if len(req.OpenGrants) != 1 || req.OpenGrants[0] != (OpenGrant{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}) {
+		t.Errorf("open grants %+v", req.OpenGrants)
 	}
 	c, got = serve(t, 200, string(loadExample(t, "rules-permissions").Response))
 	p, err := c.Permissions(context.Background(), "ssm dev/x")

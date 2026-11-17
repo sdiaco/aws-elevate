@@ -132,8 +132,18 @@ type Rule struct {
 }
 
 type RuleList struct {
-	ConfigVersion int    `json:"configVersion"`
-	Rules         []Rule `json:"rules"`
+	ConfigVersion int         `json:"configVersion"`
+	Rules         []Rule      `json:"rules"`
+	OpenGrants    []OpenGrant `json:"openGrants"`
+}
+
+// OpenGrant is a rule and account where the caller already has an open grant on the
+// same permission set: a request there would be refused as duplicate.
+type OpenGrant struct {
+	RuleID  string `json:"ruleId"`
+	Account string `json:"account"`
+	GrantID string `json:"grantId"`
+	State   string `json:"state"`
 }
 
 type PolicyRef struct {

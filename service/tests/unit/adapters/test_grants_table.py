@@ -560,22 +560,33 @@ def test_open_grants_reads_the_sparse_open_index(table):
     assert gt.open_grants(50, None) == ([GRANT], None)
 
 
-def test_count_open_counts_the_user_grants_on_every_page_of_the_open_index(table):
-    gt, stub = table
+def _open_index(stub, *pages):
     params = {
         "IndexName": "open",
         "KeyConditionExpression": "gsi3pk = :pk",
         "FilterExpression": "requester.userId = :u",
         "ExpressionAttributeValues": {":pk": {"S": "OPEN"}, ":u": {"S": "u-1"}},
-        "Select": "COUNT",
     }
     last = {"pk": {"S": "x"}}
-    stub.add_response(
-        "query", {"Count": 2, "LastEvaluatedKey": last}, {"TableName": TABLE, **params}
-    )
-    stub.add_response(
-        "query", {"Count": 1}, {"TableName": TABLE, **params, "ExclusiveStartKey": last}
-    )
+    for i, items in enumerate(pages):
+        expected = {"TableName": TABLE, **params}
+        if i:
+            expected["ExclusiveStartKey"] = last
+        resp = {"Items": items}
+        if i < len(pages) - 1:
+            resp["LastEvaluatedKey"] = last
+        stub.add_response("query", resp, expected)
+
+
+def test_open_of_reads_the_user_grants_on_every_page_of_the_open_index(table):
+    gt, stub = table
+    _open_index(stub, [to_item(GRANT)], [to_item(GRANT)])
+    assert gt.open_of("u-1") == [GRANT, GRANT]
+
+
+def test_count_open_counts_the_user_open_grants(table):
+    gt, stub = table
+    _open_index(stub, [to_item(GRANT)] * 2, [to_item(GRANT)])
     assert gt.count_open("u-1") == 3
 
 

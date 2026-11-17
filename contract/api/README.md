@@ -12,3 +12,7 @@ A `null` value marks a field that can be empty; the other examples show it fille
 `GET /v1/grants` filters: `scope` (`mine`, `approvable`, `all`), `user`, `from`, `to`,
 `cursor`, and at most one of `open=true` (grants not yet closed) or `closed=true` (closed
 grants only, the History view).
+
+`GET /v1/rules?scope=requestable` also lists in `openGrants` the rule and account pairs
+where the caller already has an open grant on the same permission set: a new request
+there would be refused as `duplicate`. Without the scope the list is empty.
