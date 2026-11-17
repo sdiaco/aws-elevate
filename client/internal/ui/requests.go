@@ -17,23 +17,26 @@ import (
 
 // requestFilter is one quick filter of the table; who sees which follows the role.
 type requestFilter struct {
-	key, label string
-	keep       func(a *App, g api.Grant) bool
+	key, label, empty string
+	keep              func(a *App, g api.Grant) bool
 }
+
+const noOwnRequest = "You have no open request."
 
 func (a *App) requestFilters() []requestFilter {
 	if !a.has("approver") && !a.has("admin") {
 		return nil // a requester sees only their own requests, without filters
 	}
-	f := []requestFilter{
-		{"", "All", func(*App, api.Grant) bool { return true }},
-		{"mine", "Mine", func(a *App, g api.Grant) bool { return a.mine(g) }},
-		{"approve", "To approve", func(_ *App, g api.Grant) bool {
-			return g.State == api.StatePending && (can(g, "approve") || can(g, "reject"))
-		}},
+	f := []requestFilter{{"", "All", "No open request.", func(*App, api.Grant) bool { return true }}}
+	// "Mine" only for who can request: for anyone else it always counts 0.
+	if a.has("requester") {
+		f = append(f, requestFilter{"mine", "Mine", noOwnRequest, func(a *App, g api.Grant) bool { return a.mine(g) }})
 	}
+	f = append(f, requestFilter{"approve", "To approve", "Nothing to approve.", func(_ *App, g api.Grant) bool {
+		return g.State == api.StatePending && (can(g, "approve") || can(g, "reject"))
+	}})
 	if a.has("admin") {
-		f = append(f, requestFilter{"failed", "Failed", func(_ *App, g api.Grant) bool { return g.State == api.StateRevokeFailed }})
+		f = append(f, requestFilter{"failed", "Failed", "No failed grants.", func(_ *App, g api.Grant) bool { return g.State == api.StateRevokeFailed }})
 	}
 	return f
 }
@@ -124,8 +127,11 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 		here += "?f=" + key
 	}
 	l := List{
-		Title: "Requests", Search: true, Empty: "No open request.",
+		Title: "Requests", Search: true, Empty: noOwnRequest,
 		Columns: []string{"Id", "State", "Permission set", "Account", "Ends in"},
+	}
+	if a.seesOthers() {
+		l.Empty = "No open request."
 	}
 	if a.seesOthers() {
 		l.Columns = slices.Insert(l.Columns, 2, "Requester")
@@ -149,7 +155,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			group.Items = append(group.Items, Filter{Label: fmt.Sprintf("%s (%d)", f.label, len(in)), Path: path, On: f.key == key})
 			if f.key == key {
-				kept = in
+				kept, l.Empty = in, f.empty
 			}
 		}
 		l.Filters = []FilterGroup{group}
@@ -203,6 +209,10 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 		{Text: g.Account},
 		{Until: countdown(g)},
 	}}
+	if state == api.StatePending || state == "starting" {
+		// The time left is for an approver to decide, not for the access.
+		row.Cells[len(row.Cells)-1].Text, row.Cells[len(row.Cells)-1].Muted = "Approve within ", true
+	}
 	if a.seesOthers() {
 		row.Cells = slices.Insert(row.Cells, 2, Cell{Text: g.Requester.UserName})
 	}

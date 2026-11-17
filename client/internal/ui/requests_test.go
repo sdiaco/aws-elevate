@@ -485,3 +485,20 @@ func TestAnActiveRowReadsItselfOnceItEndsAndAClosedOneStaysGrey(t *testing.T) {
 	contains(t, out, `data-state="closed"`, `<span class="st st-closed">Closed</span>`)
 	lacks(t, out, "data-expire", "data-poll", "<time data-until", `data-actions="revoke"`)
 }
+
+func TestEachRequestsFilterSaysWhatIsEmpty(t *testing.T) {
+	h := newHarness("admin", "approver")
+	contains(t, h.get(t, "/requests?f=failed"), "No failed grants.")
+	contains(t, h.get(t, "/requests?f=approve"), "Nothing to approve.")
+	// Who cannot request has no "Mine": it would always count 0.
+	lacks(t, h.get(t, "/requests"), ">Mine (")
+	contains(t, newHarness("requester", "approver").get(t, "/requests?f=mine"), ">Mine (", "You have no open request.")
+	contains(t, newHarness("requester").get(t, "/requests"), "You have no open request.")
+	contains(t, newHarness("auditor").get(t, "/requests"), "No open request.")
+}
+
+func TestAPendingRowSaysWithinWhenToApprove(t *testing.T) {
+	h := requestsHarness("requester")
+	out := h.get(t, "/requests")
+	contains(t, out, `<span class="muted">Approve within </span><time`)
+}
