@@ -260,12 +260,25 @@ func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, re
 	a.show(w, http.StatusOK, "rule", title, "/rules", v, alerts...)
 }
 
+// choosable drops the permission sets no rule may use: the service refuses them as a
+// source (code "reserved"), so the form does not offer them.
+func choosable(sets []awsx.Named) []awsx.Named {
+	var out []awsx.Named
+	for _, ps := range sets {
+		if !strings.HasPrefix(ps.Name, "JIT-") && !strings.HasPrefix(ps.Name, "Elevate") {
+			out = append(out, ps)
+		}
+	}
+	return out
+}
+
 // readChoices fills the lists the rule form chooses from, read from AWS by the admin.
 func (a *App) readChoices(ctx context.Context, v *ruleView, refresh bool) error {
 	var err error
 	if v.Sets, err = a.Admin.PermissionSets(ctx, refresh); err != nil {
 		return err
 	}
+	v.Sets = choosable(v.Sets)
 	if v.Accounts, err = a.Admin.Accounts(ctx); err != nil {
 		return err
 	}

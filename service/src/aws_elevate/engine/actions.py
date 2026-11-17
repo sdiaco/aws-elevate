@@ -11,7 +11,7 @@ from ..adapters.grants_table import StateConflict
 from ..adapters.sso_admin import SsoOperationFailed, SsoTimeout
 from ..adapters.sso_read import PsNotFound
 from ..core.events import snapshot
-from ..core.ids import ps_name
+from ..core.ids import ps_name, reserved_source
 from ..core.models import CloseReason, Grant, State
 from ..core.policy import (
     build_inline,
@@ -128,6 +128,10 @@ class Engine:
             raise ActivationFailed(
                 f"source permission set {grant.source_ps.name} no longer exists"
             ) from err
+        if reserved_source(source.name):
+            raise ActivationFailed(
+                f"source permission set {source.name} is reserved to aws-elevate"
+            )
 
         # The start is recorded once: a rerun must not move the expiry.
         if grant.activated_at is None:

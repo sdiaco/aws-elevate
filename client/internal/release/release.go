@@ -55,6 +55,17 @@ type githubRelease struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
+// githubMessage is the "message" of a GitHub error body, or the body when it has none.
+func githubMessage(body []byte) string {
+	var e struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Message != "" {
+		return e.Message
+	}
+	return strings.TrimSpace(string(body))
+}
+
 // List returns the published releases, newest first, without drafts and prereleases.
 func (l *Lister) List(ctx context.Context) ([]Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.URL, nil)
@@ -67,9 +78,13 @@ func (l *Lister) List(ctx context.Context) ([]Release, error) {
 		return nil, fmt.Errorf("read the releases: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// GitHub answers 404 for a repository it does not show: private, renamed or gone.
+		return nil, fmt.Errorf("read the releases: GitHub answered 404: the repository is not reachable or has no published release yet")
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("read the releases: GitHub answered %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("read the releases: GitHub answered %d: %s", resp.StatusCode, githubMessage(body))
 	}
 	var all []githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&all); err != nil {

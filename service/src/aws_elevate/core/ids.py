@@ -12,3 +12,12 @@ def new_grant_id() -> str:
 
 def ps_name(grant_id: str) -> str:
     return f"JIT-{grant_id}"
+
+
+# Permission sets no rule may use as its source: the copies the service makes and deletes
+# (JIT-<id>) and the service's own (ElevateRequester, ElevateAdmin).
+RESERVED_PREFIXES = ("JIT-", "Elevate")
+
+
+def reserved_source(name: str) -> bool:
+    return name.startswith(RESERVED_PREFIXES)

@@ -161,7 +161,7 @@ func TestTheBottomPanelIsClosedUntilARowIsChosen(t *testing.T) {
 
 	out = h.get(t, "/requests?f=approve&open=ask2345678")
 	contains(t, out,
-		`<tr data-row class="open"`,
+		`data-grant="ask2345678" class="open"`,
 		`href="/requests?f=approve" data-panel-close aria-label="Close"`,
 		`data-tab="details"`, `data-tab="permissions"`,
 		`data-tabpanel="permissions" data-load="/requests/permissions?rule=ssm-prod" hidden`,
@@ -418,4 +418,15 @@ func TestARequestNobodyApprovedInTimeSaysSo(t *testing.T) {
 	if got := outcome(g); !strings.Contains(got, "not approved in time") {
 		t.Errorf("outcome %q", got)
 	}
+}
+
+func TestThePanelOfOwnActiveGrantLoadsTheProfileAfterShowing(t *testing.T) {
+	h := requestsHarness("requester")
+	out := h.get(t, "/requests?open=mine234567")
+	contains(t, out, `data-fill="/requests/profile/mine234567"`, "Preparing the CLI profile")
+	if len(h.ready) != 0 {
+		t.Fatalf("the panel waited for AWS: %v", h.ready)
+	}
+	contains(t, h.get(t, "/requests/profile/mine234567"), `data-copy="--profile `)
+	contains(t, h.get(t, "/requests/profile/their23456"), `class="alert error"`, "not an active grant of yours")
 }

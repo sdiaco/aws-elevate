@@ -300,3 +300,13 @@ def test_too_many_managed_policies_counts_customer_managed_too(make, fx):
     body = routes.check(fx.ADMIN, {"doc": VALID_DOC})
     assert body["valid"] is False
     assert "11 managed policies" in body["errors"][0]["message"]
+
+
+@pytest.mark.parametrize("name", ["JIT-abcde23456", "ElevateAdmin", "ElevateRequester"])
+def test_a_reserved_permission_set_cannot_be_a_source(make, fx, name):
+    # JIT-* are the copies the service makes and deletes; Elevate* are the service's own.
+    routes, _ = make(fx.source_ps(arn=DOC_ARN, name=name))
+    body = routes.check(fx.ADMIN, {"doc": VALID_DOC})
+    assert body["valid"] is False
+    assert {e["code"] for e in body["errors"]} == {"reserved"}
+    assert name in body["errors"][0]["message"]

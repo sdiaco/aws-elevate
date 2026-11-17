@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 from aws_elevate.adapters.sso_admin import SsoOperationFailed, SsoTimeout
 from aws_elevate.core.models import State
 from aws_elevate.engine.errors import ActivationFailed, Retryable
+from tests.unit.engine.conftest import SOURCE as ENGINE_SOURCE
 
 
 def client_error(code):
@@ -175,3 +176,11 @@ def test_activate_missing_grant(build):
 def test_snapshot_reads_the_record(build, grant):
     engine, _ = build(grant())
     assert engine.snapshot("abcde23456")["grant"]["grantId"] == "abcde23456"
+
+
+def test_reserved_source_is_refused_at_activation(build, grant, admin):
+    # A version published without the check still cannot grant a reserved set.
+    engine, table = build(grant(), source=dataclasses.replace(ENGINE_SOURCE, name="JIT-zzzzz23456"))
+    with pytest.raises(ActivationFailed, match="reserved"):
+        engine.activate("abcde23456")
+    assert_failed(table, admin, "reserved")
