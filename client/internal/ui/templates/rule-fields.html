@@ -2,10 +2,9 @@
 <span class="desc">Letters, digits and dashes. Requests and the history show it.</span>
 <input type="text" id="id" name="id" value="{{.Form.ID}}" required></div>
 <div class="field"><label for="ps">Permission set</label>
-<span class="desc">Type to search. The list is kept 10 minutes: <a href="?{{with .Form.Orig}}id={{.}}&amp;{{end}}refresh=1">refresh it</a>.</span>
-<input type="text" id="ps" name="ps" value="{{.Form.PS}}" list="ps-names" required autocomplete="off">
+<span class="desc">The list is kept 10 minutes: <a href="?{{with .Form.Orig}}id={{.}}&amp;{{end}}refresh=1">refresh it</a>.</span>
+<select id="ps" name="ps" required data-filter data-error="Choose a permission set."><option value="">Choose a permission set</option>{{range .Sets}}<option value="{{.Name}}"{{if eq .Name $.Form.PS}} selected{{end}}>{{.Name}}</option>{{end}}</select>
 {{if .PSMissing}}<span class="constraint warn">{{.Form.PS}} is no longer in Identity Center: choose another permission set.</span>{{end}}
-<datalist id="ps-names">{{range .Sets}}<option value="{{.Name}}">{{end}}</datalist>
 <details class="expand" data-load="/rules/ps-permissions?ps=" data-load-from="ps"><summary>What it contains</summary><div data-load-target><p class="muted">Loading…</p></div></details></div>{{end}}
 
 {{define "rule-where"}}<fieldset class="field"><legend>Accounts</legend>
@@ -14,7 +13,7 @@
 
 {{define "rule-who"}}<div class="field"><label for="group">Who can request</label>
 <span class="desc">An Identity Center group.</span>
-<select id="group" name="group" required data-error="Choose a group."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Group}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>
+<select id="group" name="group" required data-filter data-error="Choose a group."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Group}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>
 <fieldset class="field"><legend>Approval</legend>
 <div class="choices">
 <label class="choice"><input type="radio" name="approval" value="auto"{{if eq .Form.Approval "auto"}} checked{{end}}> Automatic</label>
@@ -22,7 +21,7 @@
 </div>
 <span class="desc">Automatic: the access starts at once. Manual: a member of the approving group must approve it first.</span></fieldset>
 <div class="field" data-show-when="approval=manual"><label for="approver">Who approves</label>
-<select id="approver" name="approver" required data-error="Choose who approves."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Approver}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>{{end}}
+<select id="approver" name="approver" required data-filter data-error="Choose who approves."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Approver}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>{{end}}
 
 {{define "rule-how"}}<div class="field"><div class="field-row">
 <div class="field"><label for="default">Proposed duration</label><input type="text" id="default" name="default" value="{{.Form.Default}}" required></div>

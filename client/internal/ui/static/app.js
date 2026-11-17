@@ -538,8 +538,7 @@ function steps(form) {
   };
   back.addEventListener("click", () => { at--; show(); });
   next.addEventListener("click", () => {
-    const bad = [...all[at].querySelectorAll("input, select")].find((f) => !f.checkValidity());
-    if (bad) { bad.reportValidity(); return; }
+    if (!showErrors(all[at], [...all[at].querySelectorAll("input, select, textarea")])) return;
     at++;
     show();
   });
@@ -769,12 +768,18 @@ function clearError(el) {
 document.addEventListener("submit", (e) => {
   const form = e.target;
   if (!form.noValidate || (e.submitter && e.submitter.formNoValidate)) return;
-  const invalid = [...form.elements].filter((el) => el.willValidate && !el.checkValidity());
-  form.querySelectorAll(".field-error").forEach((p) => p.remove());
-  form.querySelectorAll("[aria-invalid]").forEach((el) => el.removeAttribute("aria-invalid"));
-  if (!invalid.length) return;
+  if (showErrors(form, [...form.elements])) return;
   e.preventDefault();
   e.stopImmediatePropagation(); // nothing else acts on a form that is not ready
+}, true); // before the handlers that open dialogs or send the form
+
+// showErrors puts a console-style message under each invalid field among fields, in
+// container, and focuses the first. It answers whether all of them were valid.
+function showErrors(container, fields) {
+  const invalid = fields.filter((el) => el.willValidate && !el.checkValidity());
+  container.querySelectorAll(".field-error").forEach((p) => p.remove());
+  container.querySelectorAll("[aria-invalid]").forEach((el) => el.removeAttribute("aria-invalid"));
+  if (!invalid.length) return true;
   const shown = new Set();
   invalid.forEach((el) => {
     const field = el.closest(".field") || el.parentElement;
@@ -788,8 +793,9 @@ document.addEventListener("submit", (e) => {
     el.setAttribute("aria-invalid", "true");
     el.setAttribute("aria-describedby", p.id);
   });
-  invalid[0].focus();
-}, true); // before the handlers that open dialogs or send the form
+  (invalid[0].filterTrigger || invalid[0]).focus();
+  return false;
+}
 
 ["input", "change"].forEach((type) => document.addEventListener(type, (e) => {
   if (e.target.getAttribute?.("aria-invalid") && e.target.checkValidity()) clearError(e.target);
@@ -801,3 +807,111 @@ document.addEventListener("change", (e) => {
   if (!input.matches?.("input[type=file][data-file-name]")) return;
   document.getElementById(input.dataset.fileName).textContent = input.files[0]?.name || "No file chosen";
 });
+
+// A select with data-filter becomes a Cloudscape "select with filtering": a button shows
+// the choice, and a popover lists the options with a search field. The native select
+// stays in the form, hidden, so sending, validation and change listeners work unchanged.
+function filterSelect(select) {
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  const label = select.id && document.querySelector(`label[for="${select.id}"]`);
+  if (label) {
+    label.htmlFor = `${select.id}-trigger`;
+    trigger.id = `${select.id}-trigger`;
+  }
+  const shown = () => {
+    const o = select.selectedOptions[0];
+    trigger.textContent = o ? o.textContent : "";
+    trigger.classList.toggle("placeholder", !o || o.value === "");
+  };
+  shown();
+  select.hidden = true;
+  select.filterTrigger = trigger;
+  select.after(trigger);
+  select.addEventListener("change", shown);
+
+  let pop = null;
+  let active = -1;
+  const close = (refocus) => {
+    if (!pop) return;
+    pop.remove();
+    pop = null;
+    trigger.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    if (refocus) trigger.focus();
+  };
+  const outside = (e) => { if (pop && !pop.contains(e.target) && e.target !== trigger) close(false); };
+  const items = () => [...pop.querySelectorAll("[role=option]:not([hidden])")];
+  const mark = (i) => {
+    const list = items();
+    list.forEach((li) => li.classList.remove("active"));
+    active = Math.max(0, Math.min(i, list.length - 1));
+    const li = list[active];
+    if (!li) return;
+    li.classList.add("active");
+    li.scrollIntoView({ block: "nearest" });
+    pop.querySelector("input").setAttribute("aria-activedescendant", li.id);
+  };
+  const pick = (li) => {
+    select.value = li.dataset.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    close(true);
+  };
+  const open = () => {
+    pop = document.createElement("div");
+    pop.className = "select-popover";
+    const search = document.createElement("input");
+    search.type = "search";
+    search.placeholder = "Find";
+    search.setAttribute("aria-label", "Find");
+    search.setAttribute("role", "combobox");
+    search.setAttribute("aria-expanded", "true");
+    const list = document.createElement("ul");
+    list.setAttribute("role", "listbox");
+    list.id = `${select.id}-options`;
+    search.setAttribute("aria-controls", list.id);
+    [...select.options].filter((o) => o.value !== "").forEach((o, i) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.id = `${select.id}-option-${i}`;
+      li.dataset.value = o.value;
+      li.textContent = o.textContent;
+      li.setAttribute("aria-selected", String(o.selected));
+      li.addEventListener("click", () => pick(li));
+      list.append(li);
+    });
+    const none = document.createElement("p");
+    none.className = "select-none";
+    none.textContent = "No matches";
+    none.hidden = true;
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      list.querySelectorAll("li").forEach((li) => { li.hidden = !li.textContent.toLowerCase().includes(q); });
+      none.hidden = items().length > 0;
+      mark(0);
+    });
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); mark(active + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); mark(active - 1); }
+      else if (e.key === "Enter") { e.preventDefault(); const li = items()[active]; if (li) pick(li); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+      else if (e.key === "Tab") close(false);
+    });
+    pop.append(search, list, none);
+    trigger.after(pop);
+    trigger.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outside, true);
+    search.focus();
+    const chosen = items().findIndex((li) => li.dataset.value === select.value);
+    mark(chosen < 0 ? 0 : chosen);
+  };
+  trigger.addEventListener("click", () => (pop ? close(true) : open()));
+  trigger.addEventListener("keydown", (e) => {
+    if (!pop && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); open(); }
+  });
+}
+
+document.querySelectorAll("select[data-filter]").forEach(filterSelect);

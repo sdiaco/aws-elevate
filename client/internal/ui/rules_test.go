@@ -127,13 +127,15 @@ func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
 		`<input type="hidden" name="orig" value="ssm-dev">`,
 		`name="id" value="ssm-dev"`,
 		`<option value="g-dev" selected>devs</option>`,
-		`name="ps" value="ssm-write" list="ps-names"`, `<option value="db-admin">`,
+		`<select id="ps" name="ps" required data-filter data-error="Choose a permission set.">`,
+		`<option value="ssm-write" selected>ssm-write</option>`, `<option value="db-admin">db-admin</option>`,
+		`<select id="group" name="group" required data-filter`, `<select id="approver" name="approver" required data-filter`,
 		`name="account" value="111111111111" checked`, `name="account" value="222222222222"`,
 		`name="default" value="1h"`, `name="max" value="2h"`,
 		`name="approval" value="auto" checked`,
 		`data-load="/rules/ps-permissions?ps=" data-load-from="ps"`,
 	)
-	lacks(t, out, `name="privileged" checked`)
+	lacks(t, out, `name="privileged" checked`, "<datalist")
 	h.get(t, "/rules/edit?refresh=1")
 	if !adm.refreshed {
 		t.Error("refresh did not read AWS again")
@@ -424,7 +426,7 @@ func TestTheRuleFormDoesNotOfferReservedPermissionSets(t *testing.T) {
 func TestManualApprovalNeedsAGroupThatApproves(t *testing.T) {
 	h, adm := rulesHarness()
 	out := h.get(t, "/rules/edit")
-	contains(t, out, `<option value="">Choose a group</option>`, `name="approver" required data-error="Choose who approves."`,
+	contains(t, out, `<option value="">Choose a group</option>`, `name="approver" required data-filter data-error="Choose who approves."`,
 		"Automatic: the access starts at once.")
 	lacks(t, out, "No group")
 	form := postedRule("x")
