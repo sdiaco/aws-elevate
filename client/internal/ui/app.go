@@ -58,10 +58,12 @@ func Pages(a *App) http.Handler {
 	if a.has("requester") {
 		mux.HandleFunc("GET /requests/new", a.newRequestPage)
 		mux.HandleFunc("POST /requests/new", a.newRequestSubmit)
+		mux.HandleFunc("GET /requests/new/form", a.newRequestForm)
 	}
 	mux.HandleFunc("GET /requests/permissions", a.permissions)
 	mux.HandleFunc("GET /requests/flash/{id}", a.flashPart)
 	mux.HandleFunc("GET /requests/row/{id}", a.requestRow)
+	mux.HandleFunc("GET /panel/{id}", a.panelPart)
 	mux.HandleFunc("GET /requests/outcome/{id}", a.outcomeRow)
 	mux.HandleFunc("POST /requests/approve", a.approve)
 	mux.HandleFunc("GET /requests/reject", a.rejectConfirm)

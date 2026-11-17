@@ -41,7 +41,7 @@ func (a *App) seesAll() bool { return a.has("admin") || a.has("auditor") }
 
 type historyView struct {
 	List  List
-	Panel *panel
+	Panel panelSlot
 	Alert *Alert
 }
 
@@ -76,8 +76,8 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l.Filters = append(l.Filters, group)
 	for _, g := range page.Items {
-		l.Rows = append(l.Rows, Row{Cells: []Cell{
-			{Text: g.ID, Href: "/history?" + here + "&open=" + g.ID},
+		l.Rows = append(l.Rows, Row{Key: g.ID, Cells: []Cell{
+			{Text: g.ID, Href: "/history?" + here + "&open=" + g.ID, Panel: "/panel/" + g.ID + "?from=history"},
 			{At: g.CreatedAt},
 			{Text: g.Requester.UserName},
 			{Text: g.SourcePs.Name, Tags: tags(g)},
@@ -91,14 +91,15 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	if cursor != "" {
 		l.First = "/history?" + base
 	}
-	v := historyView{List: l}
+	v := historyView{List: l, Panel: panelSlot{Empty: "Select a grant above to see its details."}}
 	// The detail is read only when opened (design §11.1).
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, "/history?"+here)
 		if err != nil {
 			v.Alert = &Alert{Kind: "error", Text: err.Error()}
 		} else {
-			v.Panel = p
+			v.Panel.Panel = p
+			markOpen(v.List.Rows, id)
 		}
 	}
 	a.show(w, http.StatusOK, "history", "History", "/history", v)

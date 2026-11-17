@@ -77,6 +77,8 @@ type Filter struct {
 }
 
 type Row struct {
+	Key     string   // the grant shown, to mark the row whose panel is open
+	Open    bool     // its panel is open
 	ID      string   // the value sent by the actions; empty for a row that cannot be selected
 	Actions []string // the named actions this row allows
 	State   string   // the grant state, so the page sees when a polled row moves on
@@ -96,7 +98,8 @@ type Cell struct {
 	State    string
 	Text     string
 	Href     string
-	External bool // opens in a new tab, without telling the other site where it came from
+	Panel    string // with the script, the link fills the bottom panel from this address
+	External bool   // opens in a new tab, without telling the other site where it came from
 	Muted    bool
 	Tags     []string
 	Copy     string

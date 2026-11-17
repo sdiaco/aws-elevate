@@ -35,10 +35,28 @@ func (a *App) newRequestPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) showNewRequest(w http.ResponseWriter, r *http.Request, ruleID string, form requestForm, alerts ...Alert) {
-	rules, err := a.Service.RequestableRules(r.Context())
+	v, err := a.newRequestView(r, ruleID, form)
 	if err != nil {
 		a.fail(w, "New request", "/requests", err)
 		return
+	}
+	a.show(w, http.StatusOK, "newrequest", "New request", "/requests", v, alerts...)
+}
+
+// newRequestForm is the details form of one rule, fetched when the rule changes.
+func (a *App) newRequestForm(w http.ResponseWriter, r *http.Request) {
+	v, err := a.newRequestView(r, r.URL.Query().Get("rule"), requestForm{})
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	part(w, "requestform", v)
+}
+
+func (a *App) newRequestView(r *http.Request, ruleID string, form requestForm) (newRequestView, error) {
+	rules, err := a.Service.RequestableRules(r.Context())
+	if err != nil {
+		return newRequestView{}, err
 	}
 	v := newRequestView{Rules: rules.Rules, Form: form}
 	for i := range rules.Rules {
@@ -54,7 +72,7 @@ func (a *App) showNewRequest(w http.ResponseWriter, r *http.Request, ruleID stri
 			})
 		}
 	}
-	a.show(w, http.StatusOK, "newrequest", "New request", "/requests", v, alerts...)
+	return v, nil
 }
 
 func (a *App) newRequestSubmit(w http.ResponseWriter, r *http.Request) {
