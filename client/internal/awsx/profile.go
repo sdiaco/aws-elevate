@@ -24,20 +24,88 @@ func ProfileName(sourcePs, account string) string {
 	return "jit-" + sourcePs + "-" + account
 }
 
-// WriteProfile adds or replaces the grant profile in the CLI config file at path and
-// leaves every other line of the file as it was.
+// The grant profiles live in one block at the end of the user's CLI config, between two
+// comment lines, so the rest of the file is never touched (design §10.3). The block stays
+// last: in the INI format a comment does not end a section, so lines written after the
+// block without a header would belong to its last profile.
+const (
+	blockBegin = "# >>> aws-elevate: managed block, rewritten automatically, do not edit >>>"
+	blockEnd   = "# <<< aws-elevate <<<"
+)
+
+// WriteProfile adds or replaces the grant profile in the managed block of the CLI config
+// file at path and leaves every line outside the block as it was.
 func WriteProfile(path string, src SourceProfile, sourcePs, account, role string) (string, error) {
 	name := ProfileName(sourcePs, account)
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	section := profileSection(name, src, account, role)
-	out := replaceSection(string(data), "[profile "+name+"]", section)
-	if err := writeFileAtomic(path, []byte(out)); err != nil {
+	outside, block, err := splitBlock(string(data))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	header := "[profile " + name + "]"
+	for _, l := range strings.Split(outside, "\n") {
+		if strings.TrimSpace(l) == header {
+			return "", fmt.Errorf("%s: profile %s already exists outside the aws-elevate block; rename or remove it", path, name)
+		}
+	}
+	block = replaceSection(block, header, profileSection(name, src, account, role))
+	if err := writeFileAtomic(path, []byte(joinBlock(outside, block))); err != nil {
 		return "", err
 	}
 	return name, nil
+}
+
+// splitBlock returns the file without the managed block and the block's content.
+func splitBlock(doc string) (outside, block string, err error) {
+	lines := strings.SplitAfter(doc, "\n")
+	begin, end := -1, -1
+	for i, l := range lines {
+		switch strings.TrimSpace(l) {
+		case blockBegin:
+			if begin >= 0 {
+				return "", "", errors.New("the aws-elevate block appears twice; remove one copy")
+			}
+			begin = i
+		case blockEnd:
+			if begin < 0 || end >= 0 {
+				return "", "", errors.New("the aws-elevate block end line has no begin line; fix or remove the block")
+			}
+			end = i
+		}
+	}
+	if begin < 0 {
+		return doc, "", nil
+	}
+	if end < 0 {
+		return "", "", errors.New("the aws-elevate block has no end line; fix or remove the block")
+	}
+	before := strings.Join(lines[:begin], "")
+	after := strings.TrimLeft(strings.Join(lines[end+1:], ""), "\n")
+	outside = before
+	if after != "" {
+		outside = strings.TrimRight(before, "\n")
+		if outside != "" {
+			outside += "\n\n"
+		}
+		outside += after
+	}
+	return outside, strings.Join(lines[begin+1:end], ""), nil
+}
+
+// joinBlock puts the managed block back at the end of the file, after a blank line.
+func joinBlock(outside, block string) string {
+	var b strings.Builder
+	if strings.TrimSpace(outside) != "" {
+		b.WriteString(strings.TrimRight(outside, "\n"))
+		b.WriteString("\n\n")
+	}
+	b.WriteString(blockBegin + "\n")
+	b.WriteString(strings.TrimRight(block, "\n") + "\n")
+	b.WriteString(blockEnd + "\n")
+	return b.String()
 }
 
 func profileSection(name string, src SourceProfile, account, role string) string {
@@ -57,8 +125,8 @@ func profileSection(name string, src SourceProfile, account, role string) string
 	return b.String()
 }
 
-// replaceSection swaps the section that starts with header (up to the blank lines before
-// the next section) for section, or appends section after a blank line.
+// replaceSection swaps the section that starts with header (up to the next section) for
+// section, or appends section after a blank line.
 func replaceSection(doc, header, section string) string {
 	lines := strings.SplitAfter(doc, "\n")
 	start := -1
@@ -69,13 +137,10 @@ func replaceSection(doc, header, section string) string {
 		}
 	}
 	if start < 0 {
-		if doc == "" {
+		if strings.TrimSpace(doc) == "" {
 			return section
 		}
-		if !strings.HasSuffix(doc, "\n") {
-			doc += "\n"
-		}
-		return doc + "\n" + section
+		return strings.TrimRight(doc, "\n") + "\n\n" + section
 	}
 	end := len(lines)
 	for i := start + 1; i < len(lines); i++ {
