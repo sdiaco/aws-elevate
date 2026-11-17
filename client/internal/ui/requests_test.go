@@ -460,3 +460,21 @@ func TestThePanelOfOwnActiveGrantLoadsTheProfileAfterShowing(t *testing.T) {
 	contains(t, h.get(t, "/requests/profile/mine234567"), `data-copy="--profile `)
 	contains(t, h.get(t, "/requests/profile/their23456"), `class="alert error"`, "not an active grant of yours")
 }
+
+func TestAnActiveRowReadsItselfOnceItEndsAndAClosedOneStaysGrey(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	h.svc.grants["mine234567"] = grant("mine234567", api.StateActive, me, "revoke")
+	out := h.get(t, "/requests/row/mine234567")
+	// No timer while it is active: one read when its countdown reaches zero (design §11.1).
+	contains(t, out, `data-expire="/requests/row/mine234567"`, `<time data-until`)
+	lacks(t, out, "data-poll")
+	// With the selection column, the row read again keeps it.
+	h.svc.lists["mine"] = []api.Grant{h.svc.grants["mine234567"]}
+	contains(t, h.get(t, "/requests"), `data-expire="/requests/row/mine234567?check=1"`)
+	contains(t, h.get(t, "/requests/row/mine234567?check=1"), `data-expire="/requests/row/mine234567?check=1"`)
+
+	h.svc.grants["mine234567"] = grant("mine234567", api.StateClosed, me)
+	out = h.get(t, "/requests/row/mine234567")
+	contains(t, out, `data-state="closed"`, `<span class="st st-closed">Closed</span>`)
+	lacks(t, out, "data-expire", "data-poll", "<time data-until", `data-actions="revoke"`)
+}

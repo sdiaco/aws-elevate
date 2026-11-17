@@ -300,6 +300,7 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .btn.copied::after { content: " ✓"; color: var(--success); }
 .btn.icon { padding: 4px 8px; }
 tr.open > td { background: var(--surface-soft); }
+tr[data-state="closed"] > td { color: var(--inactive); } /* closed while the page is open: gone from Requests on reload */
 #request-form:not(:empty) { margin-top: 16px; }
 .main:has(.split-panel:not([hidden])) { padding-bottom: calc(var(--panel-h) + 40px); }
 @media (max-width: 800px) { .split-panel { left: 0; } }

@@ -160,6 +160,9 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 		if l.Rows[i].Poll != "" {
 			l.Rows[i].Poll += "?check=1"
 		}
+		if l.Rows[i].Expire != "" {
+			l.Rows[i].Expire += "?check=1"
+		}
 	}
 	v := listView{List: l, Notice: a.noticeOf(r)}
 	if id := r.URL.Query().Get("sent"); id != "" {
@@ -192,7 +195,7 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
-		{Until: ends(g)},
+		{Until: countdown(g)},
 	}}
 	for _, act := range requestActions {
 		if can(g, act.Name) {
@@ -204,7 +207,20 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	if inMotion(state) {
 		row.Poll = "/requests/row/" + g.ID
 	}
+	// An active grant changes only when it ends: the page reads it once then, with no timer
+	// meanwhile, so an open tab costs no calls (design §11.1).
+	if state == api.StateActive {
+		row.Expire = "/requests/row/" + g.ID
+	}
 	return row
+}
+
+// countdown is the end shown on a row: none once the grant is closed.
+func countdown(g api.Grant) time.Time {
+	if g.State == api.StateClosed {
+		return time.Time{}
+	}
+	return ends(g)
 }
 
 // shownState is the state on screen: "starting" for a request the service says cannot
@@ -266,6 +282,9 @@ func (a *App) freshRow(w http.ResponseWriter, r *http.Request, rowOf func(api.Gr
 	check := r.URL.Query().Get("check") == "1"
 	if check && row.Poll != "" {
 		row.Poll += checkSuffix
+	}
+	if check && row.Expire != "" {
+		row.Expire += checkSuffix
 	}
 	part(w, "row", rowCtx{Row: row, Check: check})
 }

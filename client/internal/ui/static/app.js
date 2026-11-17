@@ -66,8 +66,43 @@ function remaining(until) {
 
 function tick() {
   document.querySelectorAll("time[data-until]").forEach((t) => {
-    t.textContent = remaining(Date.parse(t.dateTime));
+    const until = Date.parse(t.dateTime);
+    const row = t.closest("[data-expire]");
+    const ended = until <= Date.now();
+    // A row past its end says so until the service closes it, not "0 min".
+    t.textContent = row && ended ? "Ending…" : remaining(until);
+    if (row && ended && !row.dataset.expiring) {
+      row.dataset.expiring = "1";
+      expire(row, 0);
+    }
   });
+}
+
+// Expiry: an active row changes only when the grant ends, so the page asks nothing while
+// it runs. Once the countdown ends it reads the row 20 seconds later, time for the service
+// to close the grant, then at most 3 more times; a row still active after that keeps
+// saying "Ending…" until the page is reloaded (design §11.1).
+const expireDelays = [20000, 30000, 30000, 30000];
+
+function expire(el, attempt) {
+  if (attempt >= expireDelays.length) return;
+  setTimeout(async () => {
+    if (!el.isConnected) return;
+    try {
+      const { next, moved } = await replace(el, el.dataset.expire);
+      if (moved && next.classList.contains("open")) {
+        const link = next.querySelector("a[data-panel]");
+        if (link) openPanel(link); // the panel loses the Access box with the grant
+      }
+      if (next.dataset.poll) return poll(next, 0); // revoking: the polling takes over
+      if (next.dataset.expire) {
+        next.dataset.expiring = "1";
+        expire(next, attempt + 1);
+      }
+    } catch {
+      el.title = "Status not refreshed: reload the page";
+    }
+  }, expireDelays[attempt]);
 }
 
 // Polling: an element with data-poll is replaced by the HTML at that address after

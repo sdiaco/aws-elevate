@@ -22,7 +22,7 @@
 {{if or .First .Next}}<div class="pager">{{if .First}}<a class="btn" href="{{.First}}">Newest</a>{{end}}{{if .Next}}<a class="btn" href="{{.Next}}">Next page</a>{{end}}</div>{{end}}
 </form>{{end}}
 
-{{define "row"}}<tr data-row{{with .Row.Key}} data-grant="{{.}}"{{end}}{{if .Row.Open}} class="open"{{end}}{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
+{{define "row"}}<tr data-row{{with .Row.Key}} data-grant="{{.}}"{{end}}{{if .Row.Open}} class="open"{{end}}{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.Expire}} data-expire="{{.}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
 
 {{define "cell"}}{{if .State}}{{template "state" .State}}{{with .Refresh}} {{template "refresh-button" .}}{{end}}{{end}}
 {{- if .Href}}<a href="{{.Href}}"{{with .Panel}} data-panel="{{.}}"{{end}}{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}>{{.Text}}</span>{{end}}

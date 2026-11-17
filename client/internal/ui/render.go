@@ -83,6 +83,7 @@ type Row struct {
 	Actions []string // the named actions this row allows
 	State   string   // the grant state, so the page sees when a polled row moves on
 	Poll    string   // address of the row's fresh HTML while its state can still change
+	Expire  string   // address the row reads itself from once, when its countdown ends
 	Cells   []Cell
 }
 
