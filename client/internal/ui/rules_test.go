@@ -87,7 +87,7 @@ func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	h, _ := rulesHarness()
 	out := h.get(t, "/rules")
 	contains(t, h.get(t, "/rules/edit?id=ssm-prod"), "old-ps is no longer in Identity Center")
-	contains(t, out, "Rules", `href="/rules/edit?id=ssm-prod"`, "old-ps", "PS not found", "privileged",
+	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", "PS not found", "privileged",
 		"prod (222222222222)", "1h (max 4h)", "manual by leads", "auto",
 		`href="/rules/edit"`, "New rule", `href="/rules/import"`, `formaction="/rules/delete"`)
 	if strings.Count(out, "PS not found") != 1 {
@@ -274,4 +274,18 @@ func TestImportingADocumentReplacesTheRules(t *testing.T) {
 	if len(adm.published) != 1 || adm.published[0] != `{"schemaVersion":1,"rules":[{"id":"only-rule"}]}` {
 		t.Errorf("published %v", adm.published)
 	}
+}
+
+func TestARuleOpensInThePanelWithItsDecisions(t *testing.T) {
+	h, _ := rulesHarness()
+	out := h.get(t, "/rules?open=ssm-prod")
+	contains(t, out, `class="open"`, "Who can request", "Maximum duration",
+		`href="/rules/edit?id=ssm-prod"`, `formaction="/rules/delete"`, `name="id" value="ssm-prod"`,
+		"old-ps is no longer in Identity Center")
+	lacks(t, out, `data-tab="permissions"`) // its permission set is gone
+	part := h.get(t, "/rules/panel?id=ssm-dev")
+	contains(t, part, `<section class="split-panel" data-panel-slot`, `data-load="/rules/ps-permissions?ps=`)
+	lacks(t, part, `class="nav"`)
+	contains(t, h.get(t, "/rules/panel?id=nope"), "no such rule")
+	contains(t, h.get(t, "/rules?open=nope"), "No rule nope")
 }

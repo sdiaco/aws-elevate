@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -76,17 +78,7 @@ func rulesOf(doc json.RawMessage) ([]api.Rule, error) {
 }
 
 func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
-	b, err := a.base(r.Context())
-	if err != nil {
-		a.fail(w, "Rules", "/rules", err)
-		return
-	}
-	rules, err := rulesOf(b.Doc)
-	if err != nil {
-		a.fail(w, "Rules", "/rules", err)
-		return
-	}
-	sets, err := a.Admin.PermissionSets(r.Context(), false)
+	rules, sets, err := a.rulesAndSets(r.Context())
 	if err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return
@@ -94,29 +86,22 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	l := List{
 		Title: "Rules", Search: true, Empty: "No rule yet.",
 		Columns: []string{"Rule", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
-		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit"}},
+		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit", Primary: true}},
 	}
 	for _, rule := range rules {
 		var tags []string
-		if !slices.ContainsFunc(sets, func(ps awsx.Named) bool { return ps.ID == rule.PermissionSet.Arn }) {
+		if psMissing(rule, sets) {
 			tags = append(tags, "PS not found")
 		}
-		accounts := make([]string, len(rule.Accounts))
-		for i, acc := range rule.Accounts {
-			accounts[i] = acc.Name + " (" + acc.ID + ")"
-		}
-		approval := Cell{Text: rule.Approval}
-		if rule.ApproverGroup != nil {
-			approval.Text += " by " + rule.ApproverGroup.Name
-		}
+		approval := Cell{Text: approvalText(rule)}
 		if rule.Privileged {
 			approval.Tags = []string{"privileged"}
 		}
-		l.Rows = append(l.Rows, Row{ID: rule.ID, Cells: []Cell{
-			{Text: rule.ID, Href: "/rules/edit?id=" + rule.ID},
+		l.Rows = append(l.Rows, Row{ID: rule.ID, Key: rule.ID, Cells: []Cell{
+			{Text: rule.ID, Href: "/rules?open=" + url.QueryEscape(rule.ID), Panel: "/rules/panel?id=" + url.QueryEscape(rule.ID)},
 			{Text: rule.Group.Name},
 			{Text: rule.PermissionSet.Name, Tags: tags},
-			{Text: strings.Join(accounts, ", ")},
+			{Text: accountNames(rule)},
 			{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
 			approval,
 		}})
@@ -124,7 +109,81 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	if len(l.Rows) > 0 {
 		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true}}
 	}
-	a.show(w, http.StatusOK, "list", "Rules", "/rules", l)
+	view := listView{List: l}
+	if open := r.URL.Query().Get("open"); open != "" {
+		if p := rulePanelOf(rules, sets, open); p != nil {
+			view.Panel.Rule = p
+			markOpen(view.List.Rows, open)
+		} else {
+			view.Alert = &Alert{Kind: "error", Text: "No rule " + open + " in the version in use."}
+		}
+	}
+	a.show(w, http.StatusOK, "listpanel", "Rules", "/rules", view)
+}
+
+// rulesAndSets reads the rules in use and the permission sets of Identity Center.
+func (a *App) rulesAndSets(ctx context.Context) ([]api.Rule, []awsx.Named, error) {
+	b, err := a.base(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	rules, err := rulesOf(b.Doc)
+	if err != nil {
+		return nil, nil, err
+	}
+	sets, err := a.Admin.PermissionSets(ctx, false)
+	return rules, sets, err
+}
+
+func psMissing(rule api.Rule, sets []awsx.Named) bool {
+	return !slices.ContainsFunc(sets, func(ps awsx.Named) bool { return ps.ID == rule.PermissionSet.Arn })
+}
+
+func approvalText(rule api.Rule) string {
+	if rule.ApproverGroup != nil {
+		return rule.Approval + " by " + rule.ApproverGroup.Name
+	}
+	return rule.Approval
+}
+
+func accountNames(rule api.Rule) string {
+	accounts := make([]string, len(rule.Accounts))
+	for i, acc := range rule.Accounts {
+		accounts[i] = acc.Name + " (" + acc.ID + ")"
+	}
+	return strings.Join(accounts, ", ")
+}
+
+// rulePanel is one rule at the bottom of Rules.
+type rulePanel struct {
+	Rule      api.Rule
+	Accounts  string
+	Approval  string
+	PSMissing bool
+}
+
+func rulePanelOf(rules []api.Rule, sets []awsx.Named, id string) *rulePanel {
+	i := slices.IndexFunc(rules, func(r api.Rule) bool { return r.ID == id })
+	if i < 0 {
+		return nil
+	}
+	rule := rules[i]
+	return &rulePanel{Rule: rule, Accounts: accountNames(rule), Approval: approvalText(rule), PSMissing: psMissing(rule, sets)}
+}
+
+// rulePanelPart is the panel of one rule alone, fetched when a row is chosen.
+func (a *App) rulePanelPart(w http.ResponseWriter, r *http.Request) {
+	rules, sets, err := a.rulesAndSets(r.Context())
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	p := rulePanelOf(rules, sets, r.URL.Query().Get("id"))
+	if p == nil {
+		partError(w, errors.New("no such rule in the version in use"))
+		return
+	}
+	part(w, "panel", panelSlot{Rule: p})
 }
 
 // ruleForm is the one form of a rule (design §3.1), as typed.

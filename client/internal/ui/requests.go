@@ -86,17 +86,21 @@ var requestActions = []Action{
 	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true},
 }
 
-type requestsView struct {
+// listView is a page of one list and its bottom panel: Requests, History, Rules and
+// Config versions.
+type listView struct {
 	List  List
 	Flash *flash
 	Panel panelSlot
 	Alert *Alert
 }
 
-// panelSlot is the bottom panel of a page: the open grant, or a hint when none is.
+// panelSlot is the bottom panel of a page, closed until a row is chosen (design §11.1):
+// the detail of a grant, a rule or a rules version.
 type panelSlot struct {
-	Panel *panel
-	Empty string
+	Panel   *panel
+	Rule    *rulePanel
+	Version *versionPanel
 }
 
 func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +166,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	v := requestsView{List: l, Panel: panelSlot{Empty: "Select a request above to see its details."}}
+	v := listView{List: l}
 	if id := r.URL.Query().Get("sent"); id != "" {
 		if d, err := a.Service.Grant(r.Context(), id); err != nil {
 			v.Alert = &Alert{Kind: "error", Text: err.Error()}
@@ -181,7 +185,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 		v.Panel.Panel = p
 		markOpen(v.List.Rows, id)
 	}
-	a.show(w, http.StatusOK, "requests", "Requests", "/requests", v)
+	a.show(w, http.StatusOK, "listpanel", "Requests", "/requests", v)
 }
 
 // requestRowOf is one row; its id opens the panel on the page at here.

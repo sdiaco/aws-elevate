@@ -86,16 +86,21 @@ func TestVersionsListAuthorsValidityAndTheVersionInUse(t *testing.T) {
 	contains(t, out,
 		"admin@example.com", "author being verified", "in use",
 		"schema: approval must be auto or manual", "not valid, ignored",
-		`href="/versions/3"`, `formaction="/versions/compare"`, "Compare",
-		`href="/versions/3/export.json"`,
+		`href="/versions?open=3" data-panel="/versions/3/panel"`,
+		`formaction="/versions/compare"`, `data-count="2"`, "Compare",
+		`<section class="split-panel" data-panel-slot hidden>`,
 	)
 }
 
-func TestVersionShowsTheDocumentAndExportsIt(t *testing.T) {
+func TestVersionOpensInThePanelAndExports(t *testing.T) {
 	h := newHarness("admin")
 	versionsFixture(h)
-	out := h.get(t, "/versions/3")
-	contains(t, out, "Version 3", "&#34;ssm-prod&#34;", `href="/versions/3/export.json"`)
+	out := h.get(t, "/versions?open=2")
+	contains(t, out, "Version 2", "&#34;old-rule&#34;", `href="/versions/2/export.json"`,
+		`href="/versions/compare?id=2&amp;id=3"`, "Compare with in use", `data-tab="document"`, `class="open"`)
+	part := h.get(t, "/versions/3/panel")
+	contains(t, part, `<section class="split-panel" data-panel-slot`, "in use", `href="/versions/3/export.json"`)
+	lacks(t, part, "Compare with in use", `class="nav"`)
 
 	w := h.do(t, "GET", "/versions/3/export.json", nil)
 	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Disposition"), `attachment; filename="elevate-rules-v3.json"`) {
@@ -104,7 +109,7 @@ func TestVersionShowsTheDocumentAndExportsIt(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "\n  \"rules\": [") {
 		t.Errorf("not indented: %s", w.Body)
 	}
-	if w := h.do(t, "GET", "/versions/x", nil); w.Code != 404 {
+	if w := h.do(t, "GET", "/versions/x/panel", nil); w.Code != 404 {
 		t.Errorf("bad number: %d", w.Code)
 	}
 }
@@ -118,6 +123,8 @@ func TestCompareTwoVersionsRuleByRule(t *testing.T) {
 		"Removed", "old-rule",
 		"Changed", "ssm-dev", `<span class="del">  &#34;privileged&#34;: false</span>`, `<span class="add">  &#34;privileged&#34;: true</span>`,
 		`<span>  &#34;id&#34;: &#34;ssm-dev&#34;,</span>`,
+		// An added rule reads as a diff too: nothing on the left, every line added.
+		"Not in this version.", `<span class="add">  &#34;id&#34;: &#34;ssm-prod&#34;</span>`,
 	)
 	out = h.get(t, "/versions/compare?id=3")
 	contains(t, out, `class="alert error"`, "Select two versions")

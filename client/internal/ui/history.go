@@ -39,12 +39,6 @@ func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQue
 
 func (a *App) seesAll() bool { return a.has("admin") || a.has("auditor") }
 
-type historyView struct {
-	List  List
-	Panel panelSlot
-	Alert *Alert
-}
-
 func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	period, scope, q := a.historyQuery(r)
 	cursor := r.URL.Query().Get("cursor")
@@ -91,7 +85,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	if cursor != "" {
 		l.First = "/history?" + base
 	}
-	v := historyView{List: l, Panel: panelSlot{Empty: "Select a grant above to see its details."}}
+	v := listView{List: l}
 	// The detail is read only when opened (design §11.1).
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, "/history?"+here)
@@ -102,7 +96,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 			markOpen(v.List.Rows, id)
 		}
 	}
-	a.show(w, http.StatusOK, "history", "History", "/history", v)
+	a.show(w, http.StatusOK, "listpanel", "History", "/history", v)
 }
 
 var csvHeader = []string{

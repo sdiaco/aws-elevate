@@ -3,7 +3,7 @@
      selected and send the selected ids as id=… to their address. */}}
 {{define "list"}}<form class="list" data-list method="get">
 <div class="list-head"><h1>{{.Title}} <span class="counter">({{len .Rows}}{{if .Next}}+{{end}})</span></h1>
-{{if or .Actions .Tools}}<div class="actions">{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}" disabled data-action="{{.Name}}">{{.Label}}<span data-selected-count></span></button>{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
+{{if or .Actions .Tools}}<div class="actions">{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}" disabled data-action="{{.Name}}"{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
 </div>
 {{if or .Search .Filters}}<div class="list-tools">
 {{if .Search}}<input type="search" data-search placeholder="Search this page" aria-label="Search this page">{{end}}

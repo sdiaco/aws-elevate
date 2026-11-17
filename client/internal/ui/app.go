@@ -80,6 +80,7 @@ func Pages(a *App) http.Handler {
 	if a.has("admin") && a.Admin != nil {
 		mux.HandleFunc("GET /rules", a.rulesPage)
 		mux.HandleFunc("GET /rules/edit", a.ruleEdit)
+		mux.HandleFunc("GET /rules/panel", a.rulePanelPart)
 		mux.HandleFunc("GET /rules/ps-permissions", a.psPermissions)
 		mux.HandleFunc("POST /rules/edit", a.ruleSave)
 		mux.HandleFunc("POST /rules/delete", a.rulesDelete)
@@ -97,7 +98,7 @@ func Pages(a *App) http.Handler {
 	if a.has("admin") || a.has("auditor") {
 		mux.HandleFunc("GET /versions", a.versionsPage)
 		mux.HandleFunc("GET /versions/compare", a.compare)
-		mux.HandleFunc("GET /versions/{n}", a.versionPage)
+		mux.HandleFunc("GET /versions/{n}/panel", a.versionPanelPart)
 		mux.HandleFunc("GET /versions/{n}/export.json", a.versionExport)
 	}
 	return mux

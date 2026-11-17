@@ -209,7 +209,7 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 	out := h.get(t, "/history")
 	contains(t, out, `href="/history?period=30d&amp;scope=mine&amp;cursor=1"`, `href="/history?period=30d&amp;scope=mine&amp;open=old2345678"`,
 		`href="/history/export.csv?period=30d&amp;scope=mine"`, "30 days", "13 months")
-	contains(t, out, "Select a grant above")
+	contains(t, out, `<section class="split-panel" data-panel-slot hidden></section>`)
 	lacks(t, out, "Everyone", `class="open"`)
 	if q := h.svc.queries[0]; q.Scope != "mine" || q.From == "" || q.To != "" {
 		t.Errorf("query %+v", q)

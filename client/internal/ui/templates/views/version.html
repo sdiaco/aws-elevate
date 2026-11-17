@@ -1,8 +1,0 @@
-{{define "content"}}<div class="page-head"><h1>Version {{.Info.Number}}</h1>
-<div class="actions"><a class="btn" href="/versions">All versions</a><a class="btn primary" href="/versions/{{.Info.Number}}/export.json">Export</a></div></div>
-<dl class="kv">
-<div><dt>Author</dt><dd>{{with .Info.Author}}{{.}}{{else}}<span class="muted">author being verified</span>{{end}}</dd></div>
-<div><dt>Published</dt><dd>{{with .Info.CreatedAt}}<time datetime="{{iso .}}">{{exact .}}</time>{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
-<div><dt>Validity</dt><dd>{{if .Info.Valid}}valid{{else}}not valid, ignored: {{range .Info.Errors}}<span class="tag">{{.}}</span> {{end}}{{end}}</dd></div>
-</dl>
-<pre>{{.Doc}}</pre>{{end}}

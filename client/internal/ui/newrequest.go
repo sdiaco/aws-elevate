@@ -9,8 +9,9 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// newRequestView is the New request view (design §11.2): one column, the rule first,
-// then the form of the chosen one.
+// newRequestView is the New request view (design §11.2), laid out like the console's
+// launch pages: the rules to choose from and the details on the left, a summary with the
+// submit button on the right.
 type newRequestView struct {
 	Rules    []api.Rule
 	Rule     *api.Rule

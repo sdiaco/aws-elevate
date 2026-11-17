@@ -258,8 +258,6 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
    keeps room below the table so the panel never hides its last rows. */
 :root { --panel-h: 40vh; }
 .split-panel { position: fixed; left: 250px; right: 0; bottom: 0; z-index: 10; height: var(--panel-h); display: flex; flex-direction: column; background: var(--bg); border-top: 1px solid var(--divider); font-size: 13px; line-height: 20px; }
-.split-panel.folded { height: auto; }
-.split-panel.folded .tabs, .split-panel.folded .split-panel-body { display: none; }
 .split-panel-handle { position: absolute; top: -4px; left: 0; right: 0; height: 9px; cursor: ns-resize; touch-action: none; }
 .split-panel-handle::after { content: ""; position: absolute; left: 50%; top: 4px; width: 16px; margin-left: -8px; border-top: 1px solid var(--text-2); }
 .split-panel-handle:focus-visible { outline: 2px solid var(--accent); }
@@ -294,8 +292,7 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .btn.icon { padding: 4px 8px; }
 tr.open > td { background: var(--surface-soft); }
 #request-form:not(:empty) { margin-top: 16px; }
-.main:has(.split-panel) { padding-bottom: calc(var(--panel-h) + 40px); }
-.main:has(.split-panel.folded) { padding-bottom: 100px; }
+.main:has(.split-panel:not([hidden])) { padding-bottom: calc(var(--panel-h) + 40px); }
 @media (max-width: 800px) { .split-panel { left: 0; } }
 
 /* Key-value pairs and sections. */
@@ -342,3 +339,60 @@ label.choice { display: inline-flex; align-items: center; gap: 8px; font-weight:
 .diff pre .del { background: var(--bg-error); }
 .diff pre .add { background: var(--bg-success); }
 .form-actions.start { justify-content: flex-start; }
+
+/* Icon buttons (copy, close): square, as tall as a field. */
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--text-2); cursor: pointer; flex: none; }
+.icon-btn:hover { color: var(--text-strong); background: var(--btn-hover); }
+.icon-btn svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.copied { color: var(--success); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); }
+.command { padding: 0 0 0 12px; gap: 4px; }
+.command code { padding: 5px 0; }
+.split-panel-head > .icon-btn { margin-left: 4px; }
+
+/* New request, laid out like the console's launch pages: choices and details on the left,
+   a summary that stays in view on the right. */
+.launch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: "rules summary" "details summary"; gap: 16px 20px; align-items: start; }
+.launch-slot { display: contents; }
+.launch-rules { grid-area: rules; }
+.launch-details { grid-area: details; }
+.launch-summary { grid-area: summary; position: sticky; top: 20px; }
+.launch-summary .kv { grid-template-columns: 1fr; gap: 12px; }
+.launch-summary .form-actions { margin-top: 20px; border-top: 1px solid var(--divider); padding-top: 16px; }
+.launch .box > h2 { margin: 0; }
+.launch .box > p.desc { margin: 2px 0 16px; }
+@media (max-width: 960px) {
+  .launch { grid-template-columns: minmax(0, 1fr); grid-template-areas: "rules" "details" "summary"; }
+  .launch-summary { position: static; }
+}
+
+/* Page numbers of a table, on the right of its search (console pagination). */
+.pager-nums { display: flex; gap: 2px; margin-left: auto; }
+.pager-nums button { font: inherit; min-width: 24px; height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: none; color: var(--text-2); cursor: pointer; }
+.pager-nums button:hover:not(:disabled) { color: var(--text-strong); }
+.pager-nums button[aria-current="true"] { color: var(--text-strong); font-weight: 700; }
+.pager-nums button:disabled { color: var(--text-disabled); cursor: default; }
+
+/* A comparison of two rules versions: each rule side by side. */
+details.diff-rule { margin-top: 16px; }
+.compare > details.diff-rule:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
+.tag.diff-Added { color: var(--success); }
+.tag.diff-Removed { color: var(--error); }
+.diff > div { min-width: 0; }
+.diff pre { margin: 0; }
+.diff p.muted { margin: 0; padding: 12px; border: 1px dashed var(--divider); border-radius: 2px; }
+
+/* A file chosen from disk, with the console's dashed drop area. */
+.file-drop { display: block; border: 1px dashed var(--input-border); border-radius: 4px; padding: 20px; text-align: center; background: var(--surface-soft); }
+.file-drop input[type=file] { font: inherit; color: var(--text-2); }
+.file-drop input[type=file]::file-selector-button { font: inherit; font-weight: 500; margin-right: 12px; border-radius: 4px; padding: 4px 12px; min-height: 30px; cursor: pointer; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--btn-text); }
+.file-drop input[type=file]::file-selector-button:hover { background: var(--btn-hover); }
+.perms h3:first-child { margin-top: 0; }
+.perms .table-wrap + h3 { margin-top: 20px; }
+.launch .box > h2 + p.muted { margin: 8px 0 0; }
+.launch-summary .kv { margin-top: 16px; }
+.launch .box + .box { margin-top: 0; }
+.launch-details > h2 { margin-bottom: 16px !important; }
+tbody tr.last-shown td { border-bottom: 1px solid var(--divider-2); }
+tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
+.no-match { margin: 12px 0 0; }
