@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -12,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
 // files are the pages, styles and script, inside the executable (design §11.1).
@@ -33,8 +36,19 @@ type Page struct {
 
 // Alert is a message above the view. Kind is error, success, warning or info.
 type Alert struct {
-	Kind string
-	Text string
+	Kind    string
+	Text    string
+	Command string // a command to run, shown copyable after Text
+}
+
+// errorAlert is the alert for a failed call. An expired SSO session says what to run
+// instead of the raw error, wherever it comes from.
+func errorAlert(err error) Alert {
+	var s *awsx.SessionExpiredError
+	if errors.As(err, &s) {
+		return Alert{Kind: "error", Text: "Your AWS session for " + s.Profile + " has expired. Run this command, then reload this page:", Command: s.Command()}
+	}
+	return Alert{Kind: "error", Text: err.Error()}
 }
 
 type NavGroup struct {

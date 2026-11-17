@@ -495,7 +495,7 @@ func (a *App) importSubmit(w http.ResponseWriter, r *http.Request) {
 	doc, err := io.ReadAll(io.LimitReader(file, maxImport+1))
 	switch {
 	case err != nil:
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	case len(doc) > maxImport:
 		back(Alert{Kind: "error", Text: "The file is larger than 1 MB: it is not a rules document."})

@@ -180,7 +180,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	v := listView{List: l, Notice: a.noticeOf(r)}
 	if id := r.URL.Query().Get("sent"); id != "" {
 		if d, err := a.Service.Grant(r.Context(), id); err != nil {
-			v.Alert = &Alert{Kind: "error", Text: err.Error()}
+			v.Alert = new(errorAlert(err))
 		} else {
 			f := a.flashOf(d.Grant)
 			v.Flash = &f

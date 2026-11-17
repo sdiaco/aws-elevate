@@ -103,7 +103,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, "/history?"+here)
 		if err != nil {
-			v.Alert = &Alert{Kind: "error", Text: err.Error()}
+			v.Alert = new(errorAlert(err))
 		} else {
 			v.Panel.Panel = p
 			markOpen(v.List.Rows, id)

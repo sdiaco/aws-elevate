@@ -61,7 +61,7 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 			view.Panel.Version, err = a.versionPanel(r.Context(), n, v.Current)
 		}
 		if err != nil {
-			view.Alert = &Alert{Kind: "error", Text: err.Error()}
+			view.Alert = new(errorAlert(err))
 		} else {
 			markOpen(view.List.Rows, open)
 		}
@@ -219,7 +219,7 @@ func (a *App) compare(w http.ResponseWriter, r *http.Request) {
 	view, err := diffRules(docs[0], docs[1])
 	if err != nil {
 		a.show(w, http.StatusOK, "message", "Compare versions", "/versions", "Compare versions",
-			Alert{Kind: "error", Text: err.Error()})
+			errorAlert(err))
 		return
 	}
 	view.Old, view.New = ns[0], ns[1]

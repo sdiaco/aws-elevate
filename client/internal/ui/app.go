@@ -99,6 +99,9 @@ func (a *App) rolesAlert() []Alert {
 	if a.rolesErr == nil {
 		return nil
 	}
+	if alert := errorAlert(a.rolesErr); alert.Command != "" {
+		return []Alert{alert}
+	}
 	return []Alert{{Kind: "warning", Text: "Could not refresh your roles, the menu may be out of date: " + a.rolesErr.Error()}}
 }
 
@@ -222,7 +225,7 @@ func (a *App) show(w http.ResponseWriter, status int, view, title, path string, 
 
 // fail shows an answer of the service that stopped the view.
 func (a *App) fail(w http.ResponseWriter, title, path string, err error) {
-	a.show(w, http.StatusBadGateway, "message", title, path, title, Alert{Kind: "error", Text: err.Error()})
+	a.show(w, http.StatusBadGateway, "message", title, path, title, errorAlert(err))
 }
 
 // part writes HTML a page fetches into itself.
@@ -234,7 +237,7 @@ func part(w http.ResponseWriter, name string, data any) {
 
 // partError is a failure inside a fetched piece: the page around it stays usable.
 func partError(w http.ResponseWriter, err error) {
-	part(w, "alert", Alert{Kind: "error", Text: err.Error()})
+	part(w, "alert", errorAlert(err))
 }
 
 // listAll reads every page of a grants query.

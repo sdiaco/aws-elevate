@@ -31,4 +31,4 @@
 {{- if not .Until.IsZero}}<time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>{{end}}
 {{- if not .At.IsZero}}<time datetime="{{iso .At}}" title="{{exact .At}}">{{ago .At}}</time>{{end}}{{end}}
 
-{{define "alert"}}<div class="alert {{.Kind}}" role="status">{{.Text}}</div>{{end}}
+{{define "alert"}}<div class="alert {{.Kind}}" role="status">{{.Text}}{{if .Command}} <button type="button" class="copy" data-copy="{{.Command}}" title="Copy"><code>{{.Command}}</code></button>{{end}}</div>{{end}}

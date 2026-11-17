@@ -70,7 +70,7 @@ func (a *App) updatesPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// The installed versions stay worth showing: only the list of releases is missing.
 		v.None = true
-		a.show(w, http.StatusOK, "updates", "Updates", "/updates", v, Alert{Kind: "error", Text: err.Error()})
+		a.show(w, http.StatusOK, "updates", "Updates", "/updates", v, errorAlert(err))
 		return
 	}
 	if len(rels) == 0 {

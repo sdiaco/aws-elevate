@@ -45,6 +45,9 @@ func (f *fakeService) Me(context.Context) (*api.Me, error) {
 
 func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
 	f.calls = append(f.calls, "requestable rules")
+	if f.rulesErr != nil {
+		return nil, f.rulesErr
+	}
 	return &api.RuleList{ConfigVersion: 3, Rules: f.rules}, nil
 }
 

@@ -113,6 +113,21 @@ func static(c aws.Credentials) aws.CredentialsProvider {
 	return credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, c.SessionToken)
 }
 
+// SessionExpiredError is an SSO session that has expired or was never opened: only the
+// user can open it again, with Command.
+type SessionExpiredError struct {
+	Profile string
+	Err     error
+}
+
+func (e *SessionExpiredError) Command() string { return "aws sso login --profile " + e.Profile }
+
+func (e *SessionExpiredError) Error() string {
+	return fmt.Sprintf("SSO session expired or missing: run %s (%v)", e.Command(), e.Err)
+}
+
+func (e *SessionExpiredError) Unwrap() error { return e.Err }
+
 type portal struct {
 	client  *sso.Client
 	tokens  *ssocreds.SSOTokenProvider
@@ -122,7 +137,7 @@ type portal struct {
 func (p *portal) token(ctx context.Context) (*string, error) {
 	t, err := p.tokens.RetrieveBearerToken(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("SSO session expired or missing: run aws sso login --profile %s (%w)", p.profile, err)
+		return nil, &SessionExpiredError{Profile: p.profile, Err: err}
 	}
 	return &t.Value, nil
 }

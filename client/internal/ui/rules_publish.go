@@ -112,12 +112,12 @@ func (a *App) review(w http.ResponseWriter, r *http.Request, c change, back func
 func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
 	doc, err := c.apply(b.Doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	check, err := a.Service.CheckRules(r.Context(), doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	if !check.Valid {
@@ -126,7 +126,7 @@ func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change,
 	}
 	diff, err := diffRules(b.Doc, doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	raw, err := json.Marshal(c)
@@ -191,7 +191,7 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := c.apply(b.Doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	n, err := a.Admin.PublishRules(r.Context(), b.Latest, doc)

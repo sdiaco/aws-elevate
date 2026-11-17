@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -183,5 +184,20 @@ func TestSettingsPath(t *testing.T) {
 	t.Setenv("HOME", "/home/u")
 	if p, _ := SettingsPath(); p != "/home/u/.config/aws-elevate/config.json" {
 		t.Errorf("got %s", p)
+	}
+}
+
+func TestSessionExpiredErrorSaysWhatToRunAndKeepsTheCause(t *testing.T) {
+	cause := errors.New("token expired")
+	err := fmt.Errorf("aws credentials: %w", &SessionExpiredError{Profile: "work", Err: cause})
+	var s *SessionExpiredError
+	if !errors.As(err, &s) || s.Profile != "work" || !errors.Is(err, cause) {
+		t.Fatalf("lost in wrapping: %v", err)
+	}
+	if got := s.Command(); got != "aws sso login --profile work" {
+		t.Fatalf("command: %q", got)
+	}
+	if !strings.Contains(err.Error(), "run aws sso login --profile work") {
+		t.Fatalf("message: %v", err)
 	}
 }

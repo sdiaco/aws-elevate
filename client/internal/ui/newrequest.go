@@ -92,7 +92,7 @@ func (a *App) newRequestSubmit(w http.ResponseWriter, r *http.Request) {
 		RuleID: ruleID, Account: form.Account, DurationSeconds: seconds, Reason: form.Reason,
 	})
 	if err != nil {
-		a.showNewRequest(w, r, ruleID, form, Alert{Kind: "error", Text: err.Error()})
+		a.showNewRequest(w, r, ruleID, form, errorAlert(err))
 		return
 	}
 	http.Redirect(w, r, "/requests?sent="+g.ID, http.StatusSeeOther)
