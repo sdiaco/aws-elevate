@@ -80,6 +80,28 @@ func TestDiscoverOneCandidatePrefersAdmin(t *testing.T) {
 	}
 }
 
+func TestDiscoverPrefersRequesterOverAuditorAndAcceptsAuditorAlone(t *testing.T) {
+	for _, tc := range []struct {
+		roles []string
+		want  string
+	}{
+		{[]string{"ElevateAuditor", "ElevateRequester"}, RoleRequester},
+		{[]string{"ElevateAuditor"}, RoleAuditor},
+	} {
+		s, _ := newSession(&fakePortal{
+			accounts: []PortalAccount{{ID: "111111111111", Name: "shared"}},
+			roles:    map[string][]string{"111111111111": tc.roles},
+		})
+		got, err := s.Discover(context.Background(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Role != tc.want {
+			t.Errorf("roles %v: got %s, want %s", tc.roles, got.Role, tc.want)
+		}
+	}
+}
+
 func TestDiscoverTwoCandidatesAsksForAccount(t *testing.T) {
 	p := &fakePortal{
 		accounts: []PortalAccount{{ID: "111111111111", Name: "shared"}, {ID: "222222222222", Name: "other"}},

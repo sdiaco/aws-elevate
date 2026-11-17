@@ -1310,7 +1310,7 @@ Resources:
                 Resource:
                   - !GetAtt Precheck.InstanceArn
                   - !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
-              # The real RoleId of the two service roles, to refuse look-alikes (§8.1).
+              # The real RoleId of the service roles, to refuse look-alikes (§8.1).
               - Sid: CompareRoleId
                 Effect: Allow
                 Action: iam:GetRole
@@ -1361,6 +1361,7 @@ Resources:
           IDENTITY_STORE_ID: !GetAtt Precheck.IdentityStoreId
           REQUESTER_PS_NAME: ElevateRequester
           ADMIN_PS_NAME: ElevateAdmin
+          AUDITOR_PS_NAME: ElevateAuditor
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
@@ -1390,6 +1391,7 @@ Resources:
                 aws:PrincipalArn:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
           # In the same account an Allow alone refuses nobody (spike S5).
           - Sid: DenyEveryoneElse
             Effect: Deny
@@ -1401,6 +1403,7 @@ Resources:
                 aws:PrincipalArn:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
 
   ApiV1:
     Type: AWS::ApiGateway::Resource
@@ -1463,6 +1466,28 @@ Resources:
       InstanceArn: !GetAtt Precheck.InstanceArn
       Name: ElevateRequester
       Description: Call the aws-elevate API
+      SessionDuration: PT1H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CallApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*
+          - Sid: ReadApiAddress
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
+
+  # Same policy as ElevateRequester: the name only tells auditors what they are in the
+  # access portal. What they see through the API comes from their groups (design §3.3).
+  AuditorPs:
+    Type: AWS::SSO::PermissionSet
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      Name: ElevateAuditor
+      Description: Read aws-elevate
       SessionDuration: PT1H
       InlinePolicy:
         Version: "2012-10-17"
@@ -1561,13 +1586,14 @@ Resources:
       TargetType: AWS_ACCOUNT
       TargetId: !Ref AWS::AccountId
 
-  # Auditors only read, but they still need ElevateRequester to call the API (design §3.3).
+  # Auditors only read, but they still need a service permission set to call the API
+  # (design §3.3).
   AuditorAssignment:
     Type: AWS::SSO::Assignment
     Condition: HasAuditors
     Properties:
       InstanceArn: !GetAtt Precheck.InstanceArn
-      PermissionSetArn: !GetAtt RequesterPs.PermissionSetArn
+      PermissionSetArn: !GetAtt AuditorPs.PermissionSetArn
       PrincipalType: GROUP
       PrincipalId: !Ref AuditorGroupId
       TargetType: AWS_ACCOUNT

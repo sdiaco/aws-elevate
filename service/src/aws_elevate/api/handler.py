@@ -185,6 +185,7 @@ def _build_api() -> Api:
         store=store,
         requester_ps=os.environ["REQUESTER_PS_NAME"],
         admin_ps=os.environ["ADMIN_PS_NAME"],
+        auditor_ps=os.environ["AUDITOR_PS_NAME"],
         auditor_group=os.environ["AUDITOR_GROUP_ID"] or None,
     )
     grants = GrantRoutes(

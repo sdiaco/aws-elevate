@@ -320,6 +320,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "IDENTITY_STORE_ID": "d-1234567890",
         "REQUESTER_PS_NAME": "ElevateRequester",
         "ADMIN_PS_NAME": "ElevateAdmin",
+        "AUDITOR_PS_NAME": "ElevateAuditor",
         "MANAGEMENT_ACCOUNT_ID": "999999999999",
         "SERVICE_ACCOUNT_ID": "888888888888",
         "AUDITOR_GROUP_ID": "",

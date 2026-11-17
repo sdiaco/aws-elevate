@@ -21,9 +21,9 @@ admin group (a request cannot be approved by its requester), with E2E_USERS=1 al
 elevate-e2e-requester and elevate-e2e-auditor, one per group, for manual UI checks (each
 first login is done by hand: one-time password from the console),
 and the JIT-* permission sets the engine makes for e2e grants. The stack also
-creates the service permission sets ElevateRequester and ElevateAdmin, under their real
-names (the client looks them up by name; the maintainer approved it for the test
-organization). `down` removes all of them, including the resources the stack retains on
+creates the service permission sets ElevateRequester, ElevateAdmin and ElevateAuditor,
+under their real names (the client looks them up by name; the maintainer approved it for
+the test organization). `down` removes all of them, including the resources the stack retains on
 deletion (table, AppConfig application).
 
 A new stack is installed with the client (`aws-elevate install`, built into

@@ -7,16 +7,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
-// Service permission sets (design §10.1). Admin wins when a user has both.
+// Service permission sets (design §10.1). Admin wins over Requester, Requester over
+// Auditor: the service decides what each user may do from their groups.
 const (
 	RoleAdmin     = "ElevateAdmin"
 	RoleRequester = "ElevateRequester"
+	RoleAuditor   = "ElevateAuditor"
 )
 
 // ReadyTimeout bounds WaitReady. After SUCCEEDED the portal refuses the credentials for
@@ -95,8 +98,8 @@ func (s *Session) Discover(ctx context.Context, account string) (Target, error) 
 		if account != "" {
 			where = "account " + account
 		}
-		return Target{}, fmt.Errorf("no %s or %s role in %s of profile %q: ask an administrator for access",
-			RoleAdmin, RoleRequester, where, s.Profile.Name)
+		return Target{}, fmt.Errorf("no %s, %s or %s role in %s of profile %q: ask an administrator for access",
+			RoleAdmin, RoleRequester, RoleAuditor, where, s.Profile.Name)
 	case 1:
 	default:
 		names := make([]string, len(found))
@@ -120,16 +123,12 @@ func (s *Session) Discover(ctx context.Context, account string) (Target, error) 
 }
 
 func serviceRole(roles []string) string {
-	best := ""
-	for _, r := range roles {
-		if r == RoleAdmin {
-			return RoleAdmin
-		}
-		if r == RoleRequester {
-			best = RoleRequester
+	for _, want := range []string{RoleAdmin, RoleRequester, RoleAuditor} {
+		if slices.Contains(roles, want) {
+			return want
 		}
 	}
-	return best
+	return ""
 }
 
 // WaitReady retries until the grant's role gives credentials that a real call accepts,

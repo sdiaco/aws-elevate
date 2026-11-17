@@ -8,8 +8,13 @@ from aws_elevate.api.identity import IdentityResolver
 ACCOUNT = "111111111111"
 ADMIN_ROLE = "AWSReservedSSO_ElevateAdmin_0123456789abcdef"
 REQ_ROLE = "AWSReservedSSO_ElevateRequester_fedcba9876543210"
+AUDIT_ROLE = "AWSReservedSSO_ElevateAuditor_00112233aabbccdd"
 SSO_PATH = "/aws-reserved/sso.amazonaws.com/eu-west-1/"
-ROLES = {ADMIN_ROLE: ("AROAADMIN", SSO_PATH), REQ_ROLE: ("AROAREQ", SSO_PATH)}
+ROLES = {
+    ADMIN_ROLE: ("AROAADMIN", SSO_PATH),
+    REQ_ROLE: ("AROAREQ", SSO_PATH),
+    AUDIT_ROLE: ("AROAAUDIT", SSO_PATH),
+}
 
 
 class FakeRoles:
@@ -48,7 +53,12 @@ def event(
 
 def resolver(roles=ROLES, auditor="g-audit"):
     return IdentityResolver(
-        FakeRoles(roles), FakeStore(), "ElevateRequester", "ElevateAdmin", auditor or None
+        FakeRoles(roles),
+        FakeStore(),
+        "ElevateRequester",
+        "ElevateAdmin",
+        "ElevateAuditor",
+        auditor or None,
     )
 
 
@@ -65,6 +75,12 @@ def test_admin():
 
 def test_auditor_from_group():
     assert resolver().resolve(event()).is_auditor
+
+
+def test_auditor_role_is_a_service_role_that_grants_nothing_by_itself():
+    # What an auditor may do comes from the auditor group, never from the role name.
+    identity = resolver(auditor="").resolve(event(role=AUDIT_ROLE, role_id="AROAAUDIT"))
+    assert not identity.is_admin and not identity.is_auditor
 
 
 def forbidden(evt, roles=ROLES):
