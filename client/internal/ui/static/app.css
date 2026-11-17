@@ -157,6 +157,8 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-revoking { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-revoke_failed { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-closed { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
+.st-outcome { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
+.st-outcome-red { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-publishing { color: var(--info); background: var(--bg-info); --glyph: ""; }
 .st-deleting { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-ps_missing { color: var(--error); background: var(--bg-error); --glyph: "✕"; }

@@ -296,3 +296,26 @@ func TestExportReadsEveryPageAndNeutralisesFormulas(t *testing.T) {
 		t.Errorf("pages read %d", len(h.svc.queries))
 	}
 }
+
+func TestHistoryShowsTheOutcomeSecondAndTheRequesterOnlyForOthersRows(t *testing.T) {
+	h := newHarness("requester")
+	rejected, expired := grant("rej2345678", "closed", me), grant("exp2345678", "closed", me)
+	r, e := "rejected", "timed_out"
+	rejected.CloseReason, expired.CloseReason = &r, &e
+	h.svc.lists["mine"] = []api.Grant{rejected, expired}
+	out := h.get(t, "/history")
+	// One coloured label per outcome, right after the id, so it shows on a phone too.
+	contains(t, out, `<th>Id</th><th>Outcome</th>`, `class="st st-outcome-red">Rejected</span>`,
+		`class="st st-outcome">Not approved in time</span>`)
+	// Only the user's own rows: the requester column would repeat their name.
+	lacks(t, out, `<th>Requester</th>`, ">Closed<")
+
+	auditor := newHarness("auditor")
+	auditor.svc.lists["all"] = []api.Grant{rejected}
+	contains(t, auditor.get(t, "/history"), `<th>Requester</th>`)
+}
+
+func TestRequestsShowTheRequesterOnlyToWhoSeesOthersRequests(t *testing.T) {
+	lacks(t, requestsHarness("requester").get(t, "/requests"), `<th>Requester</th>`)
+	contains(t, requestsHarness("requester", "approver").get(t, "/requests"), `<th>Requester</th>`)
+}

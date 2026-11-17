@@ -108,6 +108,7 @@ type Cell struct {
 	Until    time.Time
 	At       time.Time
 	Refresh  string // a button next to the state reads the row again from this address
+	Outcome  string // a close reason, shown as one label: red when the access was refused or broke
 }
 
 // Action is a header button. Destructive actions are normal buttons, as in the console;
@@ -139,7 +140,17 @@ var stateLabels = map[string]string{
 }
 
 var funcs = template.FuncMap{
-	"stateLabel":  func(s string) string { return stateLabels[s] },
+	"stateLabel": func(s string) string { return stateLabels[s] },
+	"outcomeLabel": func(reason string) string {
+		label := reasonLabel(reason)
+		return strings.ToUpper(label[:1]) + label[1:]
+	},
+	"outcomeClass": func(reason string) string {
+		if reason == "rejected" || reason == "failed" {
+			return "st-outcome-red"
+		}
+		return "st-outcome"
+	},
 	"reasonLabel": reasonLabel,
 	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"exact":       func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },

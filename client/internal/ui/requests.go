@@ -38,6 +38,10 @@ func (a *App) requestFilters() []requestFilter {
 	return f
 }
 
+// seesOthers says whether Requests can show someone else's grants: a requester alone sees
+// only their own, and a Requester column would repeat their name on every row.
+func (a *App) seesOthers() bool { return a.has("approver") || a.has("admin") || a.has("auditor") }
+
 func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.me().User.UserID }
 
 // openGrants are the caller's open grants and those they see as approver, admin or
@@ -121,7 +125,10 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Requests", Search: true, Empty: "No open request.",
-		Columns: []string{"Id", "State", "Requester", "Permission set", "Account", "Ends in"},
+		Columns: []string{"Id", "State", "Permission set", "Account", "Ends in"},
+	}
+	if a.seesOthers() {
+		l.Columns = slices.Insert(l.Columns, 2, "Requester")
 	}
 	if a.has("requester") {
 		l.Tools = []Action{{Label: "New request", Path: "/requests/new", Primary: true}}
@@ -192,11 +199,13 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	row := Row{Key: g.ID, State: state, Cells: []Cell{
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
 		{State: state, Refresh: refreshOf(state, g.ID)},
-		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
 		{Until: countdown(g)},
 	}}
+	if a.seesOthers() {
+		row.Cells = slices.Insert(row.Cells, 2, Cell{Text: g.Requester.UserName})
+	}
 	for _, act := range requestActions {
 		if can(g, act.Name) {
 			row.Actions = append(row.Actions, act.Name)
@@ -498,14 +507,6 @@ func outcomeNotice(ok, failed []string, done string) notice {
 		Text:  fmt.Sprintf("%s: %s. %d failed.", count(len(ok), "request", "requests"), done, len(failed)),
 		Items: failed,
 	}
-}
-
-// closeReason is the reason next to a closed state, " expired" or "".
-func closeReason(g api.Grant) string {
-	if g.CloseReason == nil {
-		return ""
-	}
-	return " " + reasonLabel(*g.CloseReason)
 }
 
 // reasonLabel is a close reason in words. A request nobody approved in time says so: the
