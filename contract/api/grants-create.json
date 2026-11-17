@@ -40,6 +40,7 @@
       "closedAt": null,
       "revokedBy": null,
       "revokeReason": null,
+      "rejectReason": null,
       "error": null,
       "ruleRemoved": false,
       "actions": [

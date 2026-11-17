@@ -102,7 +102,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 var csvHeader = []string{
 	"id", "state", "closeReason", "ruleId", "permissionSet", "account", "requester", "approver",
 	"privileged", "durationSeconds", "reason", "createdAt", "activatedAt", "expiresAt", "closedAt",
-	"revokedBy", "revokeReason", "error", "configVersion",
+	"revokedBy", "revokeReason", "rejectReason", "error", "configVersion",
 }
 
 // historyExport writes every page of the period as CSV. It reads and encodes them all
@@ -156,7 +156,7 @@ func csvRow(g api.Grant) []string {
 		g.ID, g.State, str(g.CloseReason), g.RuleID, g.SourcePs.Name, g.Account, g.Requester.UserName,
 		user(g.Approver), strconv.FormatBool(g.Privileged), strconv.Itoa(g.DurationSeconds), g.Reason,
 		at(&g.CreatedAt), at(g.ActivatedAt), at(g.ExpiresAt), at(g.ClosedAt), user(g.RevokedBy),
-		str(g.RevokeReason), str(g.Error), strconv.Itoa(g.ConfigVersion),
+		str(g.RevokeReason), str(g.RejectReason), str(g.Error), strconv.Itoa(g.ConfigVersion),
 	}
 	for i, v := range row {
 		row[i] = inert(v)

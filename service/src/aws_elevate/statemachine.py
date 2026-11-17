@@ -36,7 +36,7 @@ _EVENT_RETRY = [
 _EVENT_FIELDS = (
     "grantId", "requester", "approver", "approverGroup", "rule", "sourcePs", "account",
     "approval", "privileged", "startsAt", "expiresAt", "configVersion", "reason",
-    "closeReason", "revokedBy", "revokeReason", "error",
+    "closeReason", "revokedBy", "revokeReason", "rejectReason", "error",
 )  # fmt: skip
 
 

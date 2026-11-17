@@ -138,7 +138,9 @@ func TestGrantActions(t *testing.T) {
 		body string
 	}{
 		{"approve", func(c *Client) (*Grant, error) { return c.Approve(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/approve", ""},
-		{"reject", func(c *Client) (*Grant, error) { return c.Reject(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/reject", ""},
+		{"reject", func(c *Client) (*Grant, error) {
+			return c.Reject(context.Background(), "abcde23456", "use the read-only rule")
+		}, "/api/v1/grants/abcde23456/reject", `{"reason":"use the read-only rule"}`},
 		{"cancel", func(c *Client) (*Grant, error) { return c.Cancel(context.Background(), "abcde23456") }, "/api/v1/grants/abcde23456/cancel", ""},
 		{"revoke", func(c *Client) (*Grant, error) {
 			return c.Revoke(context.Background(), "abcde23456", "incident closed")

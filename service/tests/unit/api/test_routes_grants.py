@@ -252,10 +252,20 @@ def test_approve_when_the_requester_left_the_group_invalidates(make, fx):
 
 def test_reject_closes_and_records_the_approver(make, fx):
     routes, table, sfn = make(fx.make_grant())
-    grant = routes.reject(fx.LEAD, "abcde23456")["grant"]
+    grant = routes.reject(fx.LEAD, "abcde23456", {"reason": "use the read-only rule"})["grant"]
     assert (grant["state"], grant["closeReason"]) == ("closed", "rejected")
     assert grant["approver"]["userId"] == "u-2"
+    assert grant["rejectReason"] == "use the read-only rule"
     assert sfn.sent == [(fx.TOKEN, {"decision": "rejected"})]
+
+
+@pytest.mark.parametrize("body", [None, {}, {"reason": "  "}, {"reason": "r" * 501}])
+def test_reject_needs_a_reason(make, fx, body):
+    # The requester reads why in the panel, in History and in the rejected event.
+    routes, table, sfn = make(fx.make_grant())
+    err = error_of(lambda: routes.reject(fx.LEAD, "abcde23456", body))
+    assert err.code == "invalid_request"
+    assert (table.transitions, sfn.sent) == ([], [])
 
 
 def test_requester_can_cancel_but_not_approve(make, fx):
@@ -385,7 +395,7 @@ def test_grant_view_has_every_contract_key(make, fx):
         "id", "state", "closeReason", "ruleId", "approval", "configVersion", "requester",
         "approver", "approverGroup", "sourcePs", "account", "durationSeconds", "reason",
         "privileged", "createdAt", "activatedAt", "expiresAt", "closedAt", "revokedBy",
-        "revokeReason", "error", "ruleRemoved", "actions", "approvalExpiresAt",
+        "revokeReason", "rejectReason", "error", "ruleRemoved", "actions", "approvalExpiresAt",
     }  # fmt: skip
 
 

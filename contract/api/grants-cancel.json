@@ -35,6 +35,7 @@
       "closedAt": "2026-11-15T10:00:00Z",
       "revokedBy": null,
       "revokeReason": null,
+      "rejectReason": null,
       "error": null,
       "ruleRemoved": false,
       "actions": [],

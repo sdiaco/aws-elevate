@@ -108,8 +108,8 @@ func (c *Client) Approve(ctx context.Context, id string) (*Grant, error) {
 	return c.action(ctx, id, "approve", nil)
 }
 
-func (c *Client) Reject(ctx context.Context, id string) (*Grant, error) {
-	return c.action(ctx, id, "reject", nil)
+func (c *Client) Reject(ctx context.Context, id, reason string) (*Grant, error) {
+	return c.action(ctx, id, "reject", reasonRequest{Reason: reason})
 }
 
 func (c *Client) Cancel(ctx context.Context, id string) (*Grant, error) {
@@ -117,7 +117,7 @@ func (c *Client) Cancel(ctx context.Context, id string) (*Grant, error) {
 }
 
 func (c *Client) Revoke(ctx context.Context, id, reason string) (*Grant, error) {
-	return c.action(ctx, id, "revoke", revokeRequest{Reason: reason})
+	return c.action(ctx, id, "revoke", reasonRequest{Reason: reason})
 }
 
 func (c *Client) Redrive(ctx context.Context, id string) (*Grant, error) {

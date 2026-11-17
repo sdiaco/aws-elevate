@@ -610,6 +610,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType": "elevate.request.created"
@@ -787,6 +788,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType": "elevate.request.approved"
@@ -842,6 +844,7 @@ Resources:
                       "closeReason.$": "$.snap.grant.closeReason",
                       "revokedBy.$": "$.snap.grant.revokedBy",
                       "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
                       "error.$": "$.snap.grant.error"
                     },
                     "DetailType.$": "States.Format('elevate.request.{}', $.snap.grant.closeReason)"
@@ -937,6 +940,7 @@ Resources:
                       "closeReason.$": "$.act.grant.closeReason",
                       "revokedBy.$": "$.act.grant.revokedBy",
                       "revokeReason.$": "$.act.grant.revokeReason",
+                      "rejectReason.$": "$.act.grant.rejectReason",
                       "error.$": "$.act.grant.error"
                     },
                     "DetailType": "elevate.grant.activated"
@@ -1100,6 +1104,7 @@ Resources:
                       "closeReason.$": "$.rev.grant.closeReason",
                       "revokedBy.$": "$.rev.grant.revokedBy",
                       "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
                       "error.$": "$.rev.grant.error",
                       "errorCode": "revoke_failed"
                     },
@@ -1187,6 +1192,7 @@ Resources:
                       "closeReason.$": "$.rev.grant.closeReason",
                       "revokedBy.$": "$.rev.grant.revokedBy",
                       "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
                       "error.$": "$.rev.grant.error"
                     },
                     "DetailType": "elevate.grant.closed"

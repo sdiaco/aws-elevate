@@ -35,6 +35,7 @@
       "userName": "admin@example.com"
     },
     "revokeReason": "incident closed",
+    "rejectReason": null,
     "error": "DeleteAccountAssignment: AccessDenied",
     "errorCode": "revoke_failed"
   }

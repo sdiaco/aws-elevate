@@ -32,6 +32,7 @@
     "closeReason": "rejected",
     "revokedBy": null,
     "revokeReason": null,
+    "rejectReason": "not needed, use the read-only rule",
     "error": null
   }
 }

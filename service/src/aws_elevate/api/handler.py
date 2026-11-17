@@ -24,7 +24,7 @@ _ROUTES = [
     ("GET", re.compile(r"grants"), "grants", "list", "query", 200),
     ("GET", re.compile(rf"grants/{_ID}"), "grants", "get", None, 200),
     ("POST", re.compile(rf"grants/{_ID}/approve"), "grants", "approve", None, 200),
-    ("POST", re.compile(rf"grants/{_ID}/reject"), "grants", "reject", None, 200),
+    ("POST", re.compile(rf"grants/{_ID}/reject"), "grants", "reject", "body", 200),
     ("POST", re.compile(rf"grants/{_ID}/cancel"), "grants", "cancel", None, 200),
     ("POST", re.compile(rf"grants/{_ID}/revoke"), "grants", "revoke", "body", 200),
     ("POST", re.compile(rf"grants/{_ID}/redrive"), "grants", "redrive", None, 200),

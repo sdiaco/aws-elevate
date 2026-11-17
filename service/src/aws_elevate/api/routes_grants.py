@@ -139,6 +139,7 @@ class GrantRoutes:
             "closedAt": g.closed_at,
             "revokedBy": _principal(g.revoked_by),
             "revokeReason": g.revoke_reason,
+            "rejectReason": g.reject_reason,
             "error": g.error,
             "ruleRemoved": g.rule_id not in rule_ids,
             "actions": sorted(actions(identity, g) - {"view"}),
@@ -240,7 +241,8 @@ class GrantRoutes:
             self._end_wait(grant, State.ACTIVATING, "approved", approver=_me(identity))
         return self._reply(identity, grant_id)
 
-    def reject(self, identity: Identity, grant_id: str) -> dict:
+    def reject(self, identity: Identity, grant_id: str, body) -> dict:
+        reason = _reason(body if isinstance(body, dict) else {})
         grant = self._pending(identity, "reject", grant_id)
         self._end_wait(
             grant,
@@ -248,6 +250,7 @@ class GrantRoutes:
             "rejected",
             close_reason=CloseReason.REJECTED,
             approver=_me(identity),
+            reject_reason=reason,
         )
         return self._reply(identity, grant_id)
 

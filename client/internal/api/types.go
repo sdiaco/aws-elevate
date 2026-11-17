@@ -61,6 +61,7 @@ type Grant struct {
 	ClosedAt        *time.Time    `json:"closedAt"`
 	RevokedBy       *User         `json:"revokedBy"`
 	RevokeReason    *string       `json:"revokeReason"`
+	RejectReason    *string       `json:"rejectReason"`
 	Error           *string       `json:"error"`
 	RuleRemoved     bool          `json:"ruleRemoved"`
 	// Actions the caller may take on this grant, decided by the service.
@@ -97,7 +98,8 @@ type CreateRequest struct {
 	Reason          string `json:"reason"`
 }
 
-type revokeRequest struct {
+// reasonRequest is the body of revoke and reject.
+type reasonRequest struct {
 	Reason string `json:"reason"`
 }
 

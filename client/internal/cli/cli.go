@@ -103,7 +103,7 @@ func init() {
 		"shell":   {"Open a shell with an active grant's profile", "shell [<id>]", runShell},
 		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
 		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
-		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject]", runApprove},
+		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject --reason \"why\"]", runApprove},
 		"ui":      {"Open the local web interface in your browser", "ui", runUI},
 		"update":  {"Replace this executable with the newest version that works with your service", "update", runUpdate},
 		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},

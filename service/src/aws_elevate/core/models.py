@@ -102,6 +102,7 @@ class Grant:
     closed_at: str | None = None
     revoked_by: Principal | None = None
     revoke_reason: str | None = None
+    reject_reason: str | None = None
     task_token: str | None = None
     error: str | None = None
     # ARN of JIT-<id>, recorded as soon as it exists so revocation never has to search.

@@ -118,7 +118,8 @@ func (f *fakeService) action(name, id string) (*api.Grant, error) {
 func (f *fakeService) Approve(_ context.Context, id string) (*api.Grant, error) {
 	return f.action("approve", id)
 }
-func (f *fakeService) Reject(_ context.Context, id string) (*api.Grant, error) {
+func (f *fakeService) Reject(_ context.Context, id, reason string) (*api.Grant, error) {
+	f.calls = append(f.calls, "reason "+reason)
 	return f.action("reject", id)
 }
 func (f *fakeService) Cancel(_ context.Context, id string) (*api.Grant, error) {
@@ -612,10 +613,16 @@ func TestApproveAndReject(t *testing.T) {
 	if got := h.run("approve", "pend000001", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000001: activating") {
 		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
 	}
-	if got := h.run("approve", "--reject", "pend000002", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000002: closed, rejected") {
+	if got := h.run("approve", "--reject", "pend000002", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "--reason") {
+		t.Fatalf("rejected without a reason: exit %d, %q", got, h.errOut.String())
+	}
+	if got := h.run("approve", "--reason", "not now", "pend000002", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "--reject") {
+		t.Fatalf("reason without --reject: exit %d, %q", got, h.errOut.String())
+	}
+	if got := h.run("approve", "--reject", "--reason", "use the read-only rule", "pend000002", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000002: closed, rejected") {
 		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
 	}
-	if strings.Join(h.svc.calls, ",") != "approve pend000001,reject pend000002" {
+	if strings.Join(h.svc.calls, ",") != "approve pend000001,reason use the read-only rule,reject pend000002" {
 		t.Errorf("calls %v", h.svc.calls)
 	}
 	if got := h.run("approve", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "usage: aws elevate approve") {

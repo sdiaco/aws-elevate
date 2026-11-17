@@ -29,6 +29,7 @@
     "closeReason": "timed_out",
     "revokedBy": null,
     "revokeReason": null,
+    "rejectReason": null,
     "error": null
   }
 }

@@ -21,7 +21,7 @@ type Service interface {
 	Grant(ctx context.Context, id string) (*api.GrantDetail, error)
 	Grants(ctx context.Context, q api.ListQuery) (*api.GrantList, error)
 	Approve(ctx context.Context, id string) (*api.Grant, error)
-	Reject(ctx context.Context, id string) (*api.Grant, error)
+	Reject(ctx context.Context, id, reason string) (*api.Grant, error)
 	Cancel(ctx context.Context, id string) (*api.Grant, error)
 	Revoke(ctx context.Context, id, reason string) (*api.Grant, error)
 	Redrive(ctx context.Context, id string) (*api.Grant, error)

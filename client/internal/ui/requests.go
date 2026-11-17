@@ -380,8 +380,8 @@ func (a *App) showConfirm(w http.ResponseWriter, r *http.Request, ids []string, 
 		c.Title, c.Button, c.Reason = "Revoke "+count(len(ids), "grant", "grants"), "Revoke", true
 		c.Text = "The access ends now. Each grant shows its own outcome."
 	case "/requests/reject":
-		c.Title, c.Button = "Reject "+count(len(ids), "request", "requests"), "Reject"
-		c.Text = "The requester is told the request was rejected."
+		c.Title, c.Button, c.Reason = "Reject "+count(len(ids), "request", "requests"), "Reject", true
+		c.Text = "The requester reads the reason in the request details and in the history."
 	case "/requests/cancel":
 		c.Title, c.Button = "Cancel "+count(len(ids), "request", "requests"), "Cancel request"
 		c.Text = "The request stops waiting for an approval."
@@ -390,17 +390,23 @@ func (a *App) showConfirm(w http.ResponseWriter, r *http.Request, ids []string, 
 }
 
 func (a *App) revoke(w http.ResponseWriter, r *http.Request) {
+	a.withReason(w, r, "/requests/revoke", "revocation started", a.Service.Revoke)
+}
+
+// withReason runs an action that needs a reason, or shows the confirmation again when
+// the reason is empty.
+func (a *App) withReason(w http.ResponseWriter, r *http.Request, action, done string, act func(ctx context.Context, id, reason string) (*api.Grant, error)) {
 	if err := r.ParseForm(); err != nil {
-		a.fail(w, "Revoke", "/requests", err)
+		a.fail(w, "Requests", "/requests", err)
 		return
 	}
 	reason := strings.TrimSpace(r.PostFormValue("reason"))
 	if reason == "" {
-		a.showConfirm(w, r, r.PostForm["id"], "/requests/revoke", Alert{Kind: "error", Text: "A reason is required."})
+		a.showConfirm(w, r, r.PostForm["id"], action, Alert{Kind: "error", Text: "A reason is required."})
 		return
 	}
-	a.results(w, r, "revocation started", func(ctx context.Context, id string) (*api.Grant, error) {
-		return a.Service.Revoke(ctx, id, reason)
+	a.results(w, r, done, func(ctx context.Context, id string) (*api.Grant, error) {
+		return act(ctx, id, reason)
 	})
 }
 
@@ -408,7 +414,7 @@ func (a *App) approve(w http.ResponseWriter, r *http.Request) {
 	a.results(w, r, "approved", a.Service.Approve)
 }
 func (a *App) reject(w http.ResponseWriter, r *http.Request) {
-	a.results(w, r, "rejected", a.Service.Reject)
+	a.withReason(w, r, "/requests/reject", "rejected", a.Service.Reject)
 }
 func (a *App) cancel(w http.ResponseWriter, r *http.Request) {
 	a.results(w, r, "cancelled", a.Service.Cancel)

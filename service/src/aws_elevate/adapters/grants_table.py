@@ -56,6 +56,7 @@ _FIELDS = {
     "closed_at": "closedAt",
     "revoked_by": "revokedBy",
     "revoke_reason": "revokeReason",
+    "reject_reason": "rejectReason",
     "task_token": "taskToken",
     "error": "error",
     "ephemeral_ps_arn": "ephemeralPsArn",

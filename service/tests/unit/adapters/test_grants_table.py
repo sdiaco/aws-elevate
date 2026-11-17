@@ -86,6 +86,7 @@ def test_item_round_trip_keeps_every_field():
             "approver": Principal(user_id="u-2", user_name="lead@example.com"),
             "revoked_by": Principal(user_id="u-2", user_name="lead@example.com"),
             "revoke_reason": "done",
+            "reject_reason": "not needed",
             "activated_at": "2026-11-15T10:00:00Z",
             "expires_at": "2026-11-15T11:00:00Z",
             "closed_at": "2026-11-15T10:30:00Z",
