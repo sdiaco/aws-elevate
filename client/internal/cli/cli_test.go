@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -771,6 +772,22 @@ func TestRequestWithoutAccountOnSeveralSaysWhichToAdd(t *testing.T) {
 	}
 	want := "ssm-prod has several accounts: add --account with one of prod (222222222222), stage (333333333333)"
 	if !strings.Contains(h.errOut.String(), want) {
+		t.Errorf("stderr %q", h.errOut.String())
+	}
+}
+
+func TestAnExpiredSessionSaysOnlyWhatToRun(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.env.Open = func(context.Context, string) (Backend, error) {
+		return nil, fmt.Errorf("get ElevateAdmin credentials: %w",
+			&awsx.SessionExpiredError{Profile: "work", Err: errors.New("operation error SSO OIDC: CreateToken, StatusCode: 400")})
+	}
+	if got := h.run("status", "--profile", "work"); got != 1 {
+		t.Fatalf("exit %d", got)
+	}
+	want := "aws-elevate: your AWS session for profile work has expired. Run:\n  aws sso login --profile work\n"
+	if h.errOut.String() != want {
 		t.Errorf("stderr %q", h.errOut.String())
 	}
 }
