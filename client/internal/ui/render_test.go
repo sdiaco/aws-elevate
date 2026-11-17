@@ -131,7 +131,7 @@ func TestListWithActionsHasSelectionAndEveryKindOfCell(t *testing.T) {
 		`<input type="checkbox" name="id" value="k3f9x2m7qa" data-select`,
 		`<span class="st st-active">Active</span>`,
 		`<a href="/rules/ssm-write">ssm-write</a> <span class="tag">removed</span>`,
-		`<time data-until datetime="` + until.UTC().Format(time.RFC3339) + `" title="` + until.Local().Format("2006-01-02 15:04:05") + `">38 min</time>`,
+		`<time data-until datetime="` + until.UTC().Format(time.RFC3339) + `" title="` + strings.ReplaceAll(until.Local().Format("2006-01-02 15:04:05 MST (UTC-07:00)"), "+", "&#43;") + `">38 min</time>`,
 		`>4 min ago</time>`,
 		`<button type="button" class="copy" data-copy="k3f9x2m7qa"`,
 		`<button class="btn" formaction="/revoke" disabled data-action="">Revoke…<span data-selected-count></span></button>`,

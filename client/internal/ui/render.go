@@ -169,7 +169,8 @@ var funcs = template.FuncMap{
 	},
 	"reasonLabel": reasonLabel,
 	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"exact":       func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
+	"exact":       exact,
+	"at":          at,
 	"left":        left,
 	"ago":         ago,
 	"short":       short,
@@ -280,6 +281,16 @@ func short(seconds int) string {
 }
 
 // left is the countdown text, the same app.js updates every second.
+// exact is the full local time with its zone, for a tooltip: the interface runs on the
+// user's own computer, so its zone is the browser's.
+func exact(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05 MST (UTC-07:00)") }
+
+// at is a moment shown in a page: short and local, the full date on hover.
+func at(t time.Time) template.HTML {
+	return template.HTML(`<time datetime="` + t.UTC().Format(time.RFC3339) + `" title="` +
+		template.HTMLEscapeString(exact(t)) + `">` + t.Local().Format("Jan 2, 15:04 MST") + `</time>`)
+}
+
 func left(until time.Time) string {
 	s := int(time.Until(until).Round(time.Second).Seconds())
 	switch {

@@ -215,9 +215,17 @@ func TestThePanelShowsWhenTheRequestWasApproved(t *testing.T) {
 	g := grant("mine234567", api.StateActive, me, "revoke")
 	g.Approver = &other
 	h.svc.grants["mine234567"] = g
-	at := time.Date(2026, 11, 15, 9, 3, 0, 0, time.Local)
+	rome, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		t.Skip("no time zone data")
+	}
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = rome
+	at := time.Date(2026, 11, 15, 9, 3, 0, 0, time.UTC)
 	h.svc.timeline = []api.TimelineEntry{{At: at.Add(-3 * time.Minute), State: "pending"}, {At: at, State: "activating"}}
-	contains(t, h.get(t, "/panel/mine234567"), "Approved by", "other@example.com · 2026-11-15 09:03:00")
+	// Local time with its zone, short; the full date on hover.
+	contains(t, h.get(t, "/panel/mine234567"), "Approved by",
+		`other@example.com · <time datetime="2026-11-15T09:03:00Z" title="2026-11-15 10:03:00 CET (UTC+01:00)">Nov 15, 10:03 CET</time>`)
 }
 
 func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {

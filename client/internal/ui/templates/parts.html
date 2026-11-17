@@ -89,12 +89,12 @@
 <div><dt>Reason</dt><dd>{{$g.Reason}}</dd></div>
 <div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
-<div><dt>Requested</dt><dd>{{exact $g.CreatedAt}}</dd></div>
-{{with $g.Approver}}{{if $g.RejectReason}}<div><dt>Rejected by</dt><dd>{{.UserName}}: {{$g.RejectReason}}</dd></div>{{else}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{exact $.ApprovedAt}}{{end}}</dd></div>{{end}}{{end}}
-{{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
-{{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
-{{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}
-{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{exact .}}{{with $g.CloseReason}} · {{reasonLabel .}}{{end}}</dd></div>{{end}}
+<div><dt>Requested</dt><dd>{{at $g.CreatedAt}}</dd></div>
+{{with $g.Approver}}{{if $g.RejectReason}}<div><dt>Rejected by</dt><dd>{{.UserName}}: {{$g.RejectReason}}</dd></div>{{else}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{at $.ApprovedAt}}{{end}}</dd></div>{{end}}{{end}}
+{{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{at .}}</dd></div>{{end}}{{end}}
+{{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{at .}}</dd></div>{{end}}
+{{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{at .}}</dd></div>{{end}}
+{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{at .}}{{with $g.CloseReason}} · {{reasonLabel .}}{{end}}</dd></div>{{end}}
 {{with $g.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $g.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
 {{if ne $g.State "revoke_failed"}}{{with $g.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}{{end}}
 <div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{$g.ID}}" title="Copy">{{$g.ID}}</button></dd></div>
@@ -141,7 +141,7 @@
 <div class="box"><h3>Details</h3>
 <dl class="kv cols4">
 <div><dt>Author</dt><dd>{{with $v.Author}}{{.}}{{else}}<span class="muted">author being verified</span>{{end}}</dd></div>
-<div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{exact .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
+<div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{at .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
 <div><dt>Validity</dt><dd>{{if $v.Valid}}Valid{{else}}Not valid, ignored{{end}}</dd></div>
 {{with $v.Errors}}<div><dt>Errors</dt><dd>{{range .}}<span class="tag">{{.}}</span> {{end}}</dd></div>{{end}}
 </dl></div>
