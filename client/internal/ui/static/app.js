@@ -794,3 +794,10 @@ document.addEventListener("submit", (e) => {
 ["input", "change"].forEach((type) => document.addEventListener(type, (e) => {
   if (e.target.getAttribute?.("aria-invalid") && e.target.checkValidity()) clearError(e.target);
 }));
+
+// A file input with data-file-name shows the chosen file's name in that element.
+document.addEventListener("change", (e) => {
+  const input = e.target;
+  if (!input.matches?.("input[type=file][data-file-name]")) return;
+  document.getElementById(input.dataset.fileName).textContent = input.files[0]?.name || "No file chosen";
+});

@@ -3,7 +3,8 @@
 <form method="post" action="/rules/import" enctype="multipart/form-data" class="form-box">
 <div class="box"><h2>Rules file</h2>
 <div class="field"><span class="desc">A file exported from Config versions, or with aws elevate admin export. JSON, at most 1 MB.</span>
-<label class="file-drop" for="doc"><input type="file" name="doc" id="doc" accept=".json,application/json" required data-error="Choose a rules file."></label></div>
+<div class="file-pick"><input type="file" name="doc" id="doc" accept=".json,application/json" required data-error="Choose a rules file." data-file-name="doc-name">
+<label class="btn" for="doc">Choose file</label><span class="muted" id="doc-name">No file chosen</span></div></div>
 <div class="alert info" role="status">The rules in use are replaced, not merged: a rule missing from the file is deleted.</div>
 </div>
 <div class="form-actions"><a class="btn link" href="/rules">Cancel</a><button class="btn primary">Review changes</button></div>

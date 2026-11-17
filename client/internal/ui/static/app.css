@@ -405,10 +405,6 @@ details.diff-rule { margin-top: 16px; }
 .diff p.muted { margin: 0; padding: 12px; border: 1px dashed var(--divider); border-radius: 2px; }
 
 /* A file chosen from disk, with the console's dashed drop area. */
-.file-drop { display: block; border: 1px dashed var(--input-border); border-radius: 4px; padding: 20px; text-align: center; background: var(--surface-soft); }
-.file-drop input[type=file] { font: inherit; color: var(--text-2); }
-.file-drop input[type=file]::file-selector-button { font: inherit; font-weight: 500; margin-right: 12px; border-radius: 4px; padding: 4px 12px; min-height: 30px; cursor: pointer; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--btn-text); }
-.file-drop input[type=file]::file-selector-button:hover { background: var(--btn-hover); }
 .perms h3:first-child { margin-top: 0; }
 .perms .table-wrap + h3 { margin-top: 20px; }
 .launch .box > h2 + p.muted { margin: 8px 0 0; }
@@ -430,3 +426,8 @@ tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
 [aria-invalid="true"] { border-color: var(--error) !important; }
 .nav-user-name { display: block; color: var(--text); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
 .nav-user-roles { display: block; }
+/* The browser's file control speaks its own language: a console button and the name instead.
+   The input stays focusable, for the keyboard and for its error. */
+.file-pick { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.file-pick input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-pick input[type=file]:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
