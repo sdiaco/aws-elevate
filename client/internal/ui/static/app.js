@@ -78,6 +78,17 @@ function tick() {
   });
 }
 
+// The open panel follows its row: a new state may bring new actions or the console. The
+// tab shown stays the one the person chose.
+async function followPanel(next, moved) {
+  if (!moved || !next.classList.contains("open")) return;
+  const link = next.querySelector("a[data-panel]");
+  if (!link) return;
+  const tab = document.querySelector("[data-panel-slot] [data-tab][aria-selected=true]")?.dataset.tab;
+  if (!(await openPanel(link)) || !tab) return;
+  document.querySelector(`[data-panel-slot] [data-tab="${CSS.escape(tab)}"]`)?.click();
+}
+
 // Expiry: an active row changes only when the grant ends, so the page asks nothing while
 // it runs. Once the countdown ends it reads the row 20 seconds later, time for the service
 // to close the grant, then at most 3 more times; a row still active after that keeps
@@ -90,10 +101,7 @@ function expire(el, attempt) {
     if (!el.isConnected) return;
     try {
       const { next, moved } = await replace(el, el.dataset.expire);
-      if (moved && next.classList.contains("open")) {
-        const link = next.querySelector("a[data-panel]");
-        if (link) openPanel(link); // the panel loses the Access box with the grant
-      }
+      followPanel(next, moved); // the panel loses the Access box with the grant
       if (next.dataset.poll) return poll(next, 0); // revoking: the polling takes over
       if (next.dataset.expire) {
         next.dataset.expiring = "1";
@@ -122,7 +130,8 @@ function sync(next) {
     const address = other.dataset.poll || other.querySelector("[data-refresh]")?.dataset.refresh;
     if (!address) return;
     try {
-      const { next: fresh } = await replace(other, address, false);
+      const { next: fresh, moved } = await replace(other, address, false);
+      followPanel(fresh, moved);
       if (fresh.dataset.poll && !other.dataset.poll) poll(fresh, 0);
     } catch {
       other.title = "Status not refreshed: reload the page";
@@ -159,11 +168,7 @@ function poll(el, attempt, since = Date.now()) {
     if (!el.isConnected) return; // the page around it changed
     try {
       const { next, moved } = await replace(el, el.dataset.poll);
-      // The open panel follows its row: a new state may bring new actions or the console.
-      if (moved && next.classList.contains("open")) {
-        const link = next.querySelector("a[data-panel]");
-        if (link) openPanel(link);
-      }
+      followPanel(next, moved);
       if (!next.dataset.poll) return;
       if (moved) return poll(next, 0);
       if (Date.now() - since > pollLimit) return stopPolling(next);
@@ -206,7 +211,8 @@ document.addEventListener("click", async (e) => {
   btn.after(note);
   hidden.forEach((h) => { h.hidden = true; });
   try {
-    const { next } = await replace(el, btn.dataset.refresh);
+    const { next, moved } = await replace(el, btn.dataset.refresh);
+    followPanel(next, moved);
     if (next.dataset.poll) return poll(next, 0);
     // A state waits for a person: asking again within seconds only costs calls.
     const again = next.querySelector("[data-refresh]");
