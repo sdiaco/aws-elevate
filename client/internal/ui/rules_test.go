@@ -26,7 +26,7 @@ type fakeAdmin struct {
 
 func (f *fakeAdmin) PermissionSets(_ context.Context, refresh bool) ([]awsx.Named, error) {
 	f.refreshed = f.refreshed || refresh
-	return []awsx.Named{{ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-1", Name: "ssm-write"}, {ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-9", Name: "db-admin"}}, nil
+	return []awsx.Named{{ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-1", Name: "ssm-write"}, {ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-9", Name: "db-admin"}, {ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-7", Name: "JIT-abcde23456"}, {ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-8", Name: "ElevateAdmin"}}, nil
 }
 func (f *fakeAdmin) Accounts(context.Context) ([]awsx.Named, error) {
 	return []awsx.Named{{ID: "111111111111", Name: "dev"}, {ID: "222222222222", Name: "prod"}}, nil
@@ -295,4 +295,11 @@ func TestTheRuleFormIsLaidOutLikeNewRequest(t *testing.T) {
 	out := h.get(t, "/rules/edit")
 	contains(t, out, `class="launch rule-launch"`, `class="box launch-summary"`, `data-mirror="approval approver"`,
 		`data-show-when="approval=manual"`, "Review changes")
+}
+
+func TestTheRuleFormDoesNotOfferReservedPermissionSets(t *testing.T) {
+	h, _ := rulesHarness()
+	out := h.get(t, "/rules/edit")
+	contains(t, out, `<option value="ssm-write">`)
+	lacks(t, out, `<option value="JIT-abcde23456">`, `<option value="ElevateAdmin">`)
 }

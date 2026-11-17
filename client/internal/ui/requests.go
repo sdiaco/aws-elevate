@@ -278,6 +278,27 @@ func (a *App) panel(ctx context.Context, id, closeTo string) (*panel, error) {
 	return p, nil
 }
 
+// profilePart writes the CLI profile of the user's own active grant and shows its name, for
+// the Access box of the panel: read after the panel shows, since AWS may need a few seconds
+// to accept a role that just became active (spike C12).
+func (a *App) profilePart(w http.ResponseWriter, r *http.Request) {
+	d, err := a.Service.Grant(r.Context(), r.PathValue("id"))
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	if !a.mine(d.Grant) || d.Grant.State != api.StateActive {
+		partError(w, fmt.Errorf("grant %s is not an active grant of yours", d.Grant.ID))
+		return
+	}
+	profile, err := a.Ready(r.Context(), d.Grant)
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	part(w, "profile-command", profile)
+}
+
 // approvedAt is when an approver let the request go on: the grant has no field for it,
 // its timeline has the step out of pending.
 func approvedAt(d api.GrantDetail) time.Time {

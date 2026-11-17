@@ -63,7 +63,7 @@ func TestListReadsTypeAndMinimumsAndSkipsDraftsAndPrereleases(t *testing.T) {
 
 func TestListFailsWithTheStatus(t *testing.T) {
 	_, err := serve(t, 404, `{"message":"Not Found"}`).List(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "404") {
+	if err == nil || !strings.Contains(err.Error(), "404: the repository is not reachable") || strings.Contains(err.Error(), "{") {
 		t.Fatalf("err %v", err)
 	}
 }

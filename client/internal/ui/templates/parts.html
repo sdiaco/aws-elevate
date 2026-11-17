@@ -19,6 +19,7 @@
 
 {{/* A command to copy, shown where it must be easy to find. */}}
 {{define "command"}}<div class="command"><code>{{.}}</code>{{template "copy-button" .}}</div>{{end}}
+{{define "profile-command"}}{{template "command" (print "--profile " .)}}{{end}}
 {{define "copy-button"}}<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy" title="Copy"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg></button>{{end}}
 
 {{/* The request just sent, followed at the top of Requests (design §11.1). */}}
@@ -30,7 +31,7 @@
 {{define "flash-icon"}}<svg class="flash-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/>
 {{- if eq . "success"}}<path d="M5 8.2l2 2 4-4.2"/>{{else if eq . "error"}}<path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/>{{else if eq . "warning"}}<path d="M8 4.8v3.8M8 11h.01"/>{{else}}<path d="M8 7.4v3.8M8 5h.01"/>{{end}}</svg>{{end}}
 
-{{define "flash"}}<div class="flash {{.Kind}}" role="status" data-state="{{.Grant.State}}"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
+{{define "flash"}}<div class="flash {{.Kind}}" role="status" data-grant="{{.Grant.ID}}" data-state="{{.Grant.State}}"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
 <div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}{{template "flash-icon" .Kind}}{{end}}
 <span class="flash-text"><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span>
 {{- with .Refresh}}{{template "refresh-button" .}}{{end}}
@@ -75,7 +76,9 @@
 {{if eq $g.State "revoke_failed"}}<div class="alert error" role="status">The revocation failed: {{with $g.Error}}{{.}}{{end}}. Still usable for {{with $g.ExpiresAt}}<time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time>{{end}}.</div>{{end}}
 {{with .Console}}<div class="box access"><h3>Access</h3>
 <p class="desc">Open the AWS console with this access, or use it from a terminal.</p>
-<div class="access-row"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{template "command" (print "aws elevate shell " $g.ID)}}</div></div>{{end}}
+<div class="access-row"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>
+<div class="access-commands">{{template "command" (print "aws elevate shell " $g.ID)}}
+<div data-fill="/requests/profile/{{$g.ID}}"><div class="command pending"><code class="muted">Preparing the CLI profile…</code></div></div></div></div></div>{{end}}
 <div class="box"><h3>Details</h3>
 <dl class="kv cols4">
 <div><dt>Requester</dt><dd>{{$g.Requester.UserName}}</dd></div>

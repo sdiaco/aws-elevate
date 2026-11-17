@@ -158,6 +158,8 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-closed { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
 .st-activating::before, .st-revoking::before { border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.stalled .st::before { animation: none; }
+.checking { color: var(--text-2); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .st::before { animation: none !important; } }
 
 /* Buttons and fields: 30px, radius 4. */
@@ -290,6 +292,8 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 }
 .access .desc { margin: -8px 0 12px; color: var(--text-2); }
 .access-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.access-commands { display: contents; }
+.command.pending { padding: 0 12px; }
 .command { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--divider); border-radius: 4px; padding: 3px 4px 3px 12px; background: var(--surface-soft); max-width: 100%; }
 .command code { font-size: 13px; overflow-wrap: anywhere; color: var(--text-strong); }
 .btn.copied::after { content: " ✓"; color: var(--success); }

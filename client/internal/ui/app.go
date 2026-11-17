@@ -65,6 +65,7 @@ func Pages(a *App) http.Handler {
 	mux.HandleFunc("GET /requests/flash/{id}", a.flashPart)
 	mux.HandleFunc("GET /requests/row/{id}", a.requestRow)
 	mux.HandleFunc("GET /panel/{id}", a.panelPart)
+	mux.HandleFunc("GET /requests/profile/{id}", a.profilePart)
 	mux.HandleFunc("POST /requests/approve", a.approve)
 	mux.HandleFunc("GET /requests/reject", a.rejectConfirm)
 	mux.HandleFunc("POST /requests/reject", a.reject)

@@ -77,7 +77,25 @@ const pollDelays = [2000, 4000, 8000, 16000, 30000];
 
 // replace swaps el for the HTML at address, keeping its selection and the open-row mark.
 // It returns the new element and whether its state moved.
-async function replace(el, address) {
+// sync reads again the other elements showing the same grant (its row, its flash), so a
+// change seen in one is not contradicted by the other.
+function sync(next) {
+  const id = next.dataset.grant;
+  if (!id) return;
+  document.querySelectorAll(`[data-grant="${CSS.escape(id)}"]`).forEach(async (other) => {
+    if (other === next || other.dataset.state === next.dataset.state) return;
+    const address = other.dataset.poll || other.querySelector("[data-refresh]")?.dataset.refresh;
+    if (!address) return;
+    try {
+      const { next: fresh } = await replace(other, address, false);
+      if (fresh.dataset.poll && !other.dataset.poll) poll(fresh, 0);
+    } catch {
+      other.title = "Status not refreshed: reload the page";
+    }
+  });
+}
+
+async function replace(el, address, follow = true) {
   const res = await fetch(address, { headers: { Accept: "text/html" } });
   if (!res.ok) throw new Error(res.status);
   const tpl = document.createElement("template");
@@ -92,21 +110,49 @@ async function replace(el, address) {
   const list = next.closest("[data-list]");
   if (list) updateSelection(list);
   tick();
+  if (moved && follow) sync(next);
   return { next, moved };
 }
 
-function poll(el, attempt) {
+// A state that has not moved for 2 minutes is stuck or slow: the page stops asking, so a
+// tab left open makes no calls, and offers the refresh button instead.
+const pollLimit = 120000;
+
+function poll(el, attempt, since = Date.now()) {
   const delay = pollDelays[Math.min(attempt, pollDelays.length - 1)];
   setTimeout(async () => {
     if (!el.isConnected) return; // the page around it changed
     try {
       const { next, moved } = await replace(el, el.dataset.poll);
-      if (next.dataset.poll) poll(next, moved ? 0 : attempt + 1);
+      // The open panel follows its row: a new state may bring new actions or the console.
+      if (moved && next.classList.contains("open")) {
+        const link = next.querySelector("a[data-panel]");
+        if (link) openPanel(link);
+      }
+      if (!next.dataset.poll) return;
+      if (moved) return poll(next, 0);
+      if (Date.now() - since > pollLimit) return stopPolling(next);
+      poll(next, attempt + 1, since);
     } catch {
       el.title = "Status not refreshed: reload the page";
     }
   }, delay);
 }
+
+// stopPolling swaps the spinner of an element for a refresh button on the same address.
+function stopPolling(el) {
+  const address = el.dataset.poll;
+  delete el.dataset.poll;
+  el.classList.add("stalled"); // the state icon stops turning: nothing is asking
+  const state = el.querySelector(".st") || el.querySelector(".flash-text");
+  if (!state || el.querySelector("[data-refresh]")) return;
+  const tpl = document.getElementById("refresh-button");
+  const btn = tpl.content.firstElementChild.cloneNode(true);
+  btn.dataset.refresh = address;
+  state.after(" ", btn);
+}
+
+const refreshPause = 5000;
 
 // Refresh: a [data-refresh] button reads its row or flash again once. A pending request
 // waits for a person, so the page does not ask on its own; when the state moves on to one
@@ -116,13 +162,27 @@ document.addEventListener("click", async (e) => {
   if (!btn) return;
   const el = btn.closest("tr, .flash");
   btn.disabled = true;
-  btn.classList.add("busy");
+  // "Checking…" takes the place of the state and the button, so nothing moves.
+  const state = btn.parentElement.querySelector(".st");
+  const hidden = [btn, state].filter(Boolean);
+  const note = document.createElement("span");
+  note.className = "checking";
+  note.textContent = "Checking…";
+  btn.after(note);
+  hidden.forEach((h) => { h.hidden = true; });
   try {
     const { next } = await replace(el, btn.dataset.refresh);
-    if (next.dataset.poll) poll(next, 0);
+    if (next.dataset.poll) return poll(next, 0);
+    // A state waits for a person: asking again within seconds only costs calls.
+    const again = next.querySelector("[data-refresh]");
+    if (again) {
+      again.disabled = true;
+      setTimeout(() => { again.disabled = false; }, refreshPause);
+    }
   } catch {
+    note.remove();
+    hidden.forEach((h) => { h.hidden = false; });
     btn.disabled = false;
-    btn.classList.remove("busy");
     btn.title = "Not refreshed: try again, or reload the page";
   }
 });
@@ -192,6 +252,7 @@ async function openPanel(link) {
     const next = tpl.content.firstElementChild;
     if (!next || !next.matches("[data-panel-slot]")) throw new Error("not a panel");
     slot.replaceWith(next);
+    fillAll(next);
     history.replaceState(null, "", link.href);
     document.querySelectorAll("tr.open").forEach((tr) => tr.classList.remove("open"));
     link.closest("tr")?.classList.add("open");
@@ -442,3 +503,14 @@ document.querySelectorAll("[data-mirror-form], form:has([data-show-when])").forE
   form.addEventListener("input", () => mirror(form));
   form.addEventListener("change", () => mirror(form));
 });
+
+// Parts read after the page shows: [data-fill] is replaced by the HTML at its address,
+// once. The panel uses it for what takes AWS a few seconds, such as the CLI profile.
+function fillAll(root) {
+  root.querySelectorAll("[data-fill]").forEach(async (box) => {
+    const address = box.dataset.fill;
+    delete box.dataset.fill;
+    await fill(box, address);
+  });
+}
+fillAll(document);
