@@ -16,5 +16,5 @@
     "config_unavailable",
     "internal"
   ],
-  "checkCodes": ["invalid", "ps_not_found", "limits"]
+  "checkCodes": ["invalid", "ps_not_found", "limits", "reserved"]
 }

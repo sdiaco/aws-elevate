@@ -8,13 +8,14 @@ import re
 from datetime import UTC, datetime
 
 from ..adapters.sso_read import PsNotFound
+from ..core.ids import reserved_source
 from ..core.models import Identity, Rule, SourcePs
 from ..core.policy import build_inline, check_limits, summarize
 from ..core.rules import PS_ARN, InvalidRules, parse, requestable, rule_to_dict
 from .errors import ApiError, forbidden
 
 # Codes of the entries of POST /rules/check, as in contract/vocabulary.json checkCodes.
-CHECK_CODES = ("invalid", "ps_not_found", "limits")
+CHECK_CODES = ("invalid", "ps_not_found", "limits", "reserved")
 # Only the length of the expiry statement matters for the limits, and every timestamp
 # has the same length.
 _SAMPLE_EXPIRY = datetime(2000, 1, 1, tzinfo=UTC)
@@ -54,6 +55,12 @@ def _rule_errors(rule: Rule, source: SourcePs | None) -> list[dict]:
             "does not exist in Identity Center"
         )
         return [_entry(rule.id, "ps_not_found", message)]
+    if reserved_source(source.name):
+        message = (
+            f"permission set {source.name} is reserved to aws-elevate (JIT-* copies and "
+            "Elevate* service sets): choose another one"
+        )
+        return [_entry(rule.id, "reserved", message)]
     # Same check the engine runs at activation (design §5.4).
     limits = check_limits(
         build_inline(source.inline, _SAMPLE_EXPIRY),
