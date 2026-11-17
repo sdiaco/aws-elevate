@@ -242,6 +242,21 @@ func TestHistoryPagesReplaceAndTheDetailOpensAside(t *testing.T) {
 	}
 }
 
+func TestHistoryOpensOnEveryoneForWhoNeverRequests(t *testing.T) {
+	// "Mine" is always empty for a user who cannot request.
+	for roles, want := range map[string]string{"auditor": "all", "admin": "all", "auditor,requester": "mine"} {
+		h := newHarness(strings.Split(roles, ",")...)
+		h.get(t, "/history")
+		if q := h.svc.queries[0]; q.Scope != want {
+			t.Errorf("%s: scope %q, want %q", roles, q.Scope, want)
+		}
+		h.get(t, "/history?scope=mine")
+		if q := h.svc.queries[1]; q.Scope != "mine" {
+			t.Errorf("%s: chosen Mine became %q", roles, q.Scope)
+		}
+	}
+}
+
 func TestARejectedGrantShowsWhoRejectedItAndWhy(t *testing.T) {
 	h := newHarness("requester")
 	g := grant("rej2345678", "closed", me)

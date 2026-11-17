@@ -66,8 +66,51 @@ function remaining(until) {
 
 function tick() {
   document.querySelectorAll("time[data-until]").forEach((t) => {
-    t.textContent = remaining(Date.parse(t.dateTime));
+    const until = Date.parse(t.dateTime);
+    const row = t.closest("[data-expire]");
+    const ended = until <= Date.now();
+    // A row past its end says so until the service closes it, not "0 min".
+    t.textContent = row && ended ? "Ending…" : remaining(until);
+    if (row && ended && !row.dataset.expiring) {
+      row.dataset.expiring = "1";
+      expire(row, 0);
+    }
   });
+}
+
+// The open panel follows its row: a new state may bring new actions or the console. The
+// tab shown stays the one the person chose.
+async function followPanel(next, moved) {
+  if (!moved || !next.classList.contains("open")) return;
+  const link = next.querySelector("a[data-panel]");
+  if (!link) return;
+  const tab = document.querySelector("[data-panel-slot] [data-tab][aria-selected=true]")?.dataset.tab;
+  if (!(await openPanel(link)) || !tab) return;
+  document.querySelector(`[data-panel-slot] [data-tab="${CSS.escape(tab)}"]`)?.click();
+}
+
+// Expiry: an active row changes only when the grant ends, so the page asks nothing while
+// it runs. Once the countdown ends it reads the row 20 seconds later, time for the service
+// to close the grant, then at most 3 more times; a row still active after that keeps
+// saying "Ending…" until the page is reloaded (design §11.1).
+const expireDelays = [20000, 30000, 30000, 30000];
+
+function expire(el, attempt) {
+  if (attempt >= expireDelays.length) return;
+  setTimeout(async () => {
+    if (!el.isConnected) return;
+    try {
+      const { next, moved } = await replace(el, el.dataset.expire);
+      followPanel(next, moved); // the panel loses the Access box with the grant
+      if (next.dataset.poll) return poll(next, 0); // revoking: the polling takes over
+      if (next.dataset.expire) {
+        next.dataset.expiring = "1";
+        expire(next, attempt + 1);
+      }
+    } catch {
+      el.title = "Status not refreshed: reload the page";
+    }
+  }, expireDelays[attempt]);
 }
 
 // Polling: an element with data-poll is replaced by the HTML at that address after
@@ -87,7 +130,8 @@ function sync(next) {
     const address = other.dataset.poll || other.querySelector("[data-refresh]")?.dataset.refresh;
     if (!address) return;
     try {
-      const { next: fresh } = await replace(other, address, false);
+      const { next: fresh, moved } = await replace(other, address, false);
+      followPanel(fresh, moved);
       if (fresh.dataset.poll && !other.dataset.poll) poll(fresh, 0);
     } catch {
       other.title = "Status not refreshed: reload the page";
@@ -111,7 +155,52 @@ async function replace(el, address, follow = true) {
   if (list) updateSelection(list);
   tick();
   if (moved && follow) sync(next);
+  if (moved) sumUp();
   return { next, moved };
+}
+
+// sumUp rewrites a notice that started revocations once none of its grants is still
+// revoking, from the states their rows show: "2 grants revoked.", "1 revoked, 1 failed."
+// It asks the service nothing: the rows are already being polled.
+function sumUp() {
+  document.querySelectorAll(".flash[data-follow]").forEach((flash) => {
+    const ids = flash.dataset.follow.split(" ");
+    const rows = ids.map((id) => document.querySelector(`tr[data-grant="${CSS.escape(id)}"]`));
+    if (rows.some((r) => !r || r.dataset.state === "revoking")) return;
+    const failedIds = ids.filter((id, i) => rows[i].dataset.state === "revoke_failed");
+    const revoked = ids.length - failedIds.length;
+    const failed = failedIds.length + Number(flash.dataset.followFailed || 0);
+    let kind, text;
+    if (failed === 0) {
+      kind = "success";
+      text = ids.length === 1 ? `Grant ${ids[0]} revoked.` : `${ids.length} grants revoked.`;
+    } else if (revoked === 0) {
+      kind = "error";
+      text = failed === 1 ? "The revocation failed." : `${failed} revocations failed.`;
+    } else {
+      kind = "warning";
+      text = `${revoked} revoked, ${failed} failed.`;
+    }
+    if (failedIds.length) {
+      let list = flash.querySelector(".flash-list");
+      if (!list) {
+        list = document.createElement("ul");
+        list.className = "flash-body flash-list";
+        flash.append(list);
+      }
+      failedIds.forEach((id) => {
+        const li = document.createElement("li");
+        li.textContent = `${id}: revocation failed, the access may still work. Open it for the error and Retry.`;
+        list.append(li);
+      });
+    }
+    flash.classList.remove("success", "warning", "error");
+    flash.classList.add(kind);
+    const icon = document.getElementById(`flash-icon-${kind}`).content.firstElementChild.cloneNode(true);
+    flash.querySelector(".flash-icon")?.replaceWith(icon);
+    flash.querySelector(".flash-text").textContent = text;
+    delete flash.dataset.follow;
+  });
 }
 
 // A state that has not moved for 2 minutes is stuck or slow: the page stops asking, so a
@@ -124,11 +213,7 @@ function poll(el, attempt, since = Date.now()) {
     if (!el.isConnected) return; // the page around it changed
     try {
       const { next, moved } = await replace(el, el.dataset.poll);
-      // The open panel follows its row: a new state may bring new actions or the console.
-      if (moved && next.classList.contains("open")) {
-        const link = next.querySelector("a[data-panel]");
-        if (link) openPanel(link);
-      }
+      followPanel(next, moved);
       if (!next.dataset.poll) return;
       if (moved) return poll(next, 0);
       if (Date.now() - since > pollLimit) return stopPolling(next);
@@ -171,7 +256,8 @@ document.addEventListener("click", async (e) => {
   btn.after(note);
   hidden.forEach((h) => { h.hidden = true; });
   try {
-    const { next } = await replace(el, btn.dataset.refresh);
+    const { next, moved } = await replace(el, btn.dataset.refresh);
+    followPanel(next, moved);
     if (next.dataset.poll) return poll(next, 0);
     // A state waits for a person: asking again within seconds only costs calls.
     const again = next.querySelector("[data-refresh]");
@@ -460,6 +546,39 @@ function start(root) {
 }
 
 start(document);
+// Reload: a list with data-reload has rows the service has not caught up with yet, as
+// rules for about 30 seconds after a publish. It reads its rows again 30 seconds after the
+// page opened, then every 10 seconds, for at most 2 minutes, keeping the selection.
+const reloadFirst = 30000;
+const reloadEvery = 10000;
+const reloadLimit = 120000;
+
+function reloadList(list, since) {
+  setTimeout(async () => {
+    if (!list.isConnected) return;
+    try {
+      const res = await fetch(location.href, { headers: { Accept: "text/html" } });
+      if (!res.ok) throw new Error(res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      const fresh = doc.querySelector("form[data-reload], form[data-list]");
+      const checked = new Set([...list.querySelectorAll("[data-select]:checked")].map((b) => b.value));
+      const open = list.querySelector("tr.open")?.dataset.grant;
+      list.querySelector("tbody").replaceWith(fresh.querySelector("tbody"));
+      list.querySelector(".counter").replaceWith(fresh.querySelector(".counter"));
+      list.querySelectorAll("[data-select]").forEach((b) => { b.checked = checked.has(b.value); });
+      if (open) list.querySelector(`tr[data-grant="${CSS.escape(open)}"]`)?.classList.add("open");
+      updateSelection(list);
+      list.querySelector("[data-search]")?.dispatchEvent(new Event("input", { bubbles: true })); // keep the filter
+      if (!fresh.hasAttribute("data-reload")) return list.removeAttribute("data-reload");
+      if (Date.now() - since < reloadLimit) reloadList(list, since);
+    } catch {
+      list.title = "List not refreshed: reload the page";
+    }
+  }, Date.now() - since < reloadFirst ? reloadFirst : reloadEvery);
+}
+
+document.querySelectorAll("form[data-reload]").forEach((list) => reloadList(list, Date.now()));
+
 setInterval(tick, 1000);
 
 // Summary of a form: each [data-mirror="name ..."] shows what the named fields hold now,

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -39,9 +40,10 @@ const maxImport = 1 << 20
 // version number, valid or not, which AppConfig wants as the version a publication
 // starts from.
 type base struct {
-	Doc    json.RawMessage
-	From   *int // version of Doc; nil before the first one
-	Latest *int
+	Doc     json.RawMessage
+	From    *int // version of Doc; nil before the first one
+	Latest  *int
+	Current *int // version the service uses; behind From for about 30 s after a publish
 }
 
 func (a *App) base(ctx context.Context) (base, error) {
@@ -51,7 +53,7 @@ func (a *App) base(ctx context.Context) (base, error) {
 	}
 	// Not v.Current: for about 30 seconds after a publish the service still uses the
 	// previous version, and a change built on it would drop the newer one's changes.
-	b := base{Doc: json.RawMessage(emptyDoc)}
+	b := base{Doc: json.RawMessage(emptyDoc), Current: v.Current}
 	for _, info := range v.Versions {
 		n := info.Number
 		if b.Latest == nil || n > *b.Latest {
@@ -84,33 +86,36 @@ func rulesOf(doc json.RawMessage) ([]api.Rule, error) {
 }
 
 func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
-	rules, sets, err := a.rulesAndSets(r.Context())
+	b, rules, sets, err := a.rulesAndSets(r.Context())
+	if err != nil {
+		a.fail(w, "Rules", "/rules", err)
+		return
+	}
+	inUse, err := a.rulesBehind(r.Context(), b)
 	if err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return
 	}
 	l := List{
 		Title: "Rules", Search: true, Empty: "No rule yet.",
-		Columns: []string{"Rule", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
+		Columns: []string{"Rule", "Status", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
 		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit", Primary: true}},
 	}
 	for _, rule := range rules {
-		var tags []string
-		if psMissing(rule, sets) {
-			tags = append(tags, "PS not found")
+		state := ruleState(rule, inUse, sets)
+		l.Rows = append(l.Rows, ruleRow(rule, state, Cell{
+			Text: rule.ID, Href: "/rules?open=" + url.QueryEscape(rule.ID), Panel: "/rules/panel?id=" + url.QueryEscape(rule.ID),
+		}))
+		l.Reload = l.Reload || state == "publishing"
+	}
+	// A rule removed by the newest version shows until the service stops using it.
+	for _, rule := range inUse {
+		if !slices.ContainsFunc(rules, func(r api.Rule) bool { return r.ID == rule.ID }) {
+			row := ruleRow(rule, "deleting", Cell{Text: rule.ID})
+			row.ID = "" // in no version to edit: it cannot be selected
+			l.Rows = append(l.Rows, row)
+			l.Reload = true
 		}
-		approval := Cell{Text: approvalText(rule)}
-		if rule.Privileged {
-			approval.Tags = []string{"privileged"}
-		}
-		l.Rows = append(l.Rows, Row{ID: rule.ID, Key: rule.ID, Cells: []Cell{
-			{Text: rule.ID, Href: "/rules?open=" + url.QueryEscape(rule.ID), Panel: "/rules/panel?id=" + url.QueryEscape(rule.ID)},
-			{Text: rule.Group.Name},
-			{Text: rule.PermissionSet.Name, Tags: tags},
-			{Text: accountNames(rule)},
-			{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
-			approval,
-		}})
 	}
 	if len(l.Rows) > 0 {
 		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true}}
@@ -127,18 +132,63 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	a.show(w, http.StatusOK, "listpanel", "Rules", "/rules", view)
 }
 
-// rulesAndSets reads the rules in use and the permission sets of Identity Center.
-func (a *App) rulesAndSets(ctx context.Context) ([]api.Rule, []awsx.Named, error) {
+// rulesAndSets reads the newest valid rules and the permission sets of Identity Center.
+func (a *App) rulesAndSets(ctx context.Context) (base, []api.Rule, []awsx.Named, error) {
 	b, err := a.base(ctx)
 	if err != nil {
-		return nil, nil, err
+		return b, nil, nil, err
 	}
 	rules, err := rulesOf(b.Doc)
 	if err != nil {
-		return nil, nil, err
+		return b, nil, nil, err
 	}
 	sets, err := a.Admin.PermissionSets(ctx, false)
-	return rules, sets, err
+	return b, rules, sets, err
+}
+
+// rulesBehind are the rules of the version the service uses, when it is behind the newest
+// valid one: only for the 30 seconds or so after a publish, so the list costs one more
+// call just then. Otherwise it returns nil, and every rule is in use.
+func (a *App) rulesBehind(ctx context.Context, b base) ([]api.Rule, error) {
+	if b.Current == nil || b.From == nil || *b.Current == *b.From {
+		return nil, nil
+	}
+	doc, err := a.Service.ConfigVersion(ctx, *b.Current)
+	if err != nil {
+		return nil, err
+	}
+	return rulesOf(doc.Doc)
+}
+
+// ruleState is the Status of a rule of the newest version: "publishing" while the
+// service still uses a version where it is absent or different (design §11.2).
+func ruleState(rule api.Rule, inUse []api.Rule, sets []awsx.Named) string {
+	if inUse != nil {
+		i := slices.IndexFunc(inUse, func(r api.Rule) bool { return r.ID == rule.ID })
+		if i < 0 || !reflect.DeepEqual(inUse[i], rule) {
+			return "publishing"
+		}
+	}
+	if psMissing(rule, sets) {
+		return "ps_missing"
+	}
+	return api.StateActive
+}
+
+func ruleRow(rule api.Rule, state string, id Cell) Row {
+	approval := Cell{Text: approvalText(rule)}
+	if rule.Privileged {
+		approval.Tags = []string{"privileged"}
+	}
+	return Row{ID: rule.ID, Key: rule.ID, State: state, Cells: []Cell{
+		id,
+		{State: state},
+		{Text: rule.Group.Name},
+		{Text: rule.PermissionSet.Name},
+		{Text: accountNames(rule)},
+		{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
+		approval,
+	}}
 }
 
 func psMissing(rule api.Rule, sets []awsx.Named) bool {
@@ -179,7 +229,7 @@ func rulePanelOf(rules []api.Rule, sets []awsx.Named, id string) *rulePanel {
 
 // rulePanelPart is the panel of one rule alone, fetched when a row is chosen.
 func (a *App) rulePanelPart(w http.ResponseWriter, r *http.Request) {
-	rules, sets, err := a.rulesAndSets(r.Context())
+	_, rules, sets, err := a.rulesAndSets(r.Context())
 	if err != nil {
 		partError(w, err)
 		return

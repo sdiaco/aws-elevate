@@ -157,7 +157,10 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-revoking { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-revoke_failed { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-closed { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
-.st-activating::before, .st-starting::before, .st-revoking::before { border-right-color: transparent; animation: spin .8s linear infinite; }
+.st-publishing { color: var(--info); background: var(--bg-info); --glyph: ""; }
+.st-deleting { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
+.st-ps_missing { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
+.st-activating::before, .st-starting::before, .st-revoking::before, .st-publishing::before, .st-deleting::before { border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stalled .st::before { animation: none; }
 .checking { color: var(--text-2); white-space: nowrap; }
@@ -300,6 +303,7 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .btn.copied::after { content: " ✓"; color: var(--success); }
 .btn.icon { padding: 4px 8px; }
 tr.open > td { background: var(--surface-soft); }
+tr[data-state="closed"] > td { color: var(--inactive); } /* closed while the page is open: gone from Requests on reload */
 #request-form:not(:empty) { margin-top: 16px; }
 .main:has(.split-panel:not([hidden])) { padding-bottom: calc(var(--panel-h) + 40px); }
 @media (max-width: 800px) { .split-panel { left: 0; } }

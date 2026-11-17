@@ -45,7 +45,7 @@
 </div>{{end}}
 
 {{/* The outcome of an action, once, at the top of the page it returned to. */}}
-{{define "notice"}}<div class="flash {{.Kind}}" role="status">
+{{define "notice"}}<div class="flash {{.Kind}}" role="status"{{with .Follow}} data-follow="{{join . " "}}"{{end}}{{if .Follow}} data-follow-failed="{{.Refused}}"{{end}}>
 <div class="flash-head">{{template "flash-icon" .Kind}}<span class="flash-text">{{.Text}}</span>{{template "dismiss-button"}}</div>
 {{with .Items}}<ul class="flash-body flash-list">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
 </div>{{end}}

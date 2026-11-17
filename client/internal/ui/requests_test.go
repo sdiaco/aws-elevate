@@ -117,6 +117,19 @@ func TestAnAdminAlsoFiltersFailedRevocations(t *testing.T) {
 	contains(t, h.get(t, "/requests?f=nope"), `aria-current="true">All (5)</a>`)
 }
 
+func TestAnAuditorSeesEveryOpenGrantWithoutActions(t *testing.T) {
+	// An auditor only reads (design §3.3): every open grant, and no action button.
+	h := requestsHarness("auditor")
+	out := h.get(t, "/requests")
+	contains(t, out, `<span class="counter">(5)</span>`, "ask2345678", "their23456", "fail234567")
+	lacks(t, out, `/requests/revoke`, `href="/requests/new"`, `class="segmented"`)
+	if scopes(h) != "mine,all" {
+		t.Errorf("scopes %s", scopes(h))
+	}
+	// Also a requester: Revoke… for their own grants comes back.
+	contains(t, requestsHarness("auditor", "requester").get(t, "/requests"), `/requests/revoke`)
+}
+
 func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
@@ -229,7 +242,7 @@ func followed(t *testing.T, h *harness, w *httptest.ResponseRecorder, prefix str
 		t.Fatalf("%d %q %s", w.Code, loc, w.Body)
 	}
 	out := h.get(t, loc)
-	lacks(t, h.get(t, loc), `class="flash`) // the notice shows once
+	lacks(t, h.get(t, loc), `<div class="flash`) // the notice shows once
 	return out
 }
 
@@ -245,7 +258,9 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	contains(t, w.Body.String(), `class="alert error"`, "A reason is required")
 	h.svc.afterAction = api.StateClosed
 	w = h.do(t, "POST", "/requests/reject", url.Values{"id": {"ask2345678"}, "reason": {"use the read-only rule"}})
-	contains(t, followed(t, h, w, "/requests"), "Request ask2345678: rejected.")
+	out = followed(t, h, w, "/requests")
+	contains(t, out, "Request ask2345678: rejected.")
+	lacks(t, out, "data-follow") // a rejection is final: nothing to follow
 
 	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
@@ -275,14 +290,16 @@ func TestRevokeAsksForReasonAndShowsEachOutcome(t *testing.T) {
 		t.Errorf("calls %v", h.svc.calls)
 	}
 	contains(t, followed(t, h, w, "/requests"), `class="flash warning"`,
-		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed")
+		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed",
+		// The page follows the started revocation and sums up its end (design §11.1).
+		`data-follow="mine234567"`, `data-follow-failed="1"`)
 }
 
 func TestRetryRunsTheFailedRevocationAgain(t *testing.T) {
 	h := requestsHarness("admin")
 	h.svc.afterAction = api.StateRevoking
 	w := h.do(t, "POST", "/requests/retry", url.Values{"id": {"fail234567"}})
-	contains(t, followed(t, h, w, "/requests"), "Request fail234567: revocation retried.")
+	contains(t, followed(t, h, w, "/requests"), "Request fail234567: revocation retried.", `data-follow="fail234567"`)
 	if h.svc.calls[len(h.svc.calls)-1] != "redrive fail234567" {
 		t.Errorf("calls %v", h.svc.calls)
 	}
@@ -446,4 +463,22 @@ func TestThePanelOfOwnActiveGrantLoadsTheProfileAfterShowing(t *testing.T) {
 	}
 	contains(t, h.get(t, "/requests/profile/mine234567"), `data-copy="--profile `)
 	contains(t, h.get(t, "/requests/profile/their23456"), `class="alert error"`, "not an active grant of yours")
+}
+
+func TestAnActiveRowReadsItselfOnceItEndsAndAClosedOneStaysGrey(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	h.svc.grants["mine234567"] = grant("mine234567", api.StateActive, me, "revoke")
+	out := h.get(t, "/requests/row/mine234567")
+	// No timer while it is active: one read when its countdown reaches zero (design §11.1).
+	contains(t, out, `data-expire="/requests/row/mine234567"`, `<time data-until`)
+	lacks(t, out, "data-poll")
+	// With the selection column, the row read again keeps it.
+	h.svc.lists["mine"] = []api.Grant{h.svc.grants["mine234567"]}
+	contains(t, h.get(t, "/requests"), `data-expire="/requests/row/mine234567?check=1"`)
+	contains(t, h.get(t, "/requests/row/mine234567?check=1"), `data-expire="/requests/row/mine234567?check=1"`)
+
+	h.svc.grants["mine234567"] = grant("mine234567", api.StateClosed, me)
+	out = h.get(t, "/requests/row/mine234567")
+	contains(t, out, `data-state="closed"`, `<span class="st st-closed">Closed</span>`)
+	lacks(t, out, "data-expire", "data-poll", "<time data-until", `data-actions="revoke"`)
 }

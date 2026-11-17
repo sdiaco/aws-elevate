@@ -40,12 +40,12 @@ func (a *App) requestFilters() []requestFilter {
 
 func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.me().User.UserID }
 
-// openGrants are the caller's open grants and those they see as approver or admin, each
-// once, the soonest to end first.
+// openGrants are the caller's open grants and those they see as approver, admin or
+// auditor, each once, the soonest to end first.
 func (a *App) openGrants(ctx context.Context) ([]api.Grant, error) {
 	queries := []api.ListQuery{{Scope: "mine", Open: true}}
 	switch {
-	case a.has("admin"):
+	case a.has("admin") || a.has("auditor"):
 		queries = append(queries, api.ListQuery{Scope: "all", Open: true})
 	case a.has("approver"):
 		queries = append(queries, api.ListQuery{Scope: "approvable"})
@@ -150,12 +150,18 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	for _, g := range kept {
 		l.Rows = append(l.Rows, a.requestRowOf(g, here))
 	}
-	// The selection column is always there, as in the console: Revoke stays disabled until
-	// the selected rows are all ones the service lets this user revoke.
-	l.Actions = requestActions
+	// The selection column is there for whoever may act, as in the console: Revoke stays
+	// disabled until the selected rows are all ones the service lets this user revoke. An
+	// auditor only reads, and gets no action at all (design §3.3).
+	if a.has("requester") || a.has("approver") || a.has("admin") {
+		l.Actions = requestActions
+	}
 	for i := range l.Rows {
 		if l.Rows[i].Poll != "" {
 			l.Rows[i].Poll += "?check=1"
+		}
+		if l.Rows[i].Expire != "" {
+			l.Rows[i].Expire += "?check=1"
 		}
 	}
 	v := listView{List: l, Notice: a.noticeOf(r)}
@@ -189,7 +195,7 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
-		{Until: ends(g)},
+		{Until: countdown(g)},
 	}}
 	for _, act := range requestActions {
 		if can(g, act.Name) {
@@ -201,7 +207,20 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	if inMotion(state) {
 		row.Poll = "/requests/row/" + g.ID
 	}
+	// An active grant changes only when it ends: the page reads it once then, with no timer
+	// meanwhile, so an open tab costs no calls (design §11.1).
+	if state == api.StateActive {
+		row.Expire = "/requests/row/" + g.ID
+	}
 	return row
+}
+
+// countdown is the end shown on a row: none once the grant is closed.
+func countdown(g api.Grant) time.Time {
+	if g.State == api.StateClosed {
+		return time.Time{}
+	}
+	return ends(g)
 }
 
 // shownState is the state on screen: "starting" for a request the service says cannot
@@ -263,6 +282,9 @@ func (a *App) freshRow(w http.ResponseWriter, r *http.Request, rowOf func(api.Gr
 	check := r.URL.Query().Get("check") == "1"
 	if check && row.Poll != "" {
 		row.Poll += checkSuffix
+	}
+	if check && row.Expire != "" {
+		row.Expire += checkSuffix
 	}
 	part(w, "row", rowCtx{Row: row, Check: check})
 }
@@ -400,12 +422,12 @@ func (a *App) showConfirm(w http.ResponseWriter, r *http.Request, ids []string, 
 }
 
 func (a *App) revoke(w http.ResponseWriter, r *http.Request) {
-	a.withReason(w, r, "/requests/revoke", "revocation started", a.Service.Revoke)
+	a.withReason(w, r, "/requests/revoke", "revocation started", true, a.Service.Revoke)
 }
 
 // withReason runs an action that needs a reason, or shows the confirmation again when
 // the reason is empty.
-func (a *App) withReason(w http.ResponseWriter, r *http.Request, action, done string, act func(ctx context.Context, id, reason string) (*api.Grant, error)) {
+func (a *App) withReason(w http.ResponseWriter, r *http.Request, action, done string, follow bool, act func(ctx context.Context, id, reason string) (*api.Grant, error)) {
 	if err := r.ParseForm(); err != nil {
 		a.fail(w, "Requests", "/requests", err)
 		return
@@ -415,28 +437,29 @@ func (a *App) withReason(w http.ResponseWriter, r *http.Request, action, done st
 		a.showConfirm(w, r, r.PostForm["id"], action, Alert{Kind: "error", Text: "A reason is required."})
 		return
 	}
-	a.results(w, r, done, func(ctx context.Context, id string) (*api.Grant, error) {
+	a.results(w, r, done, follow, func(ctx context.Context, id string) (*api.Grant, error) {
 		return act(ctx, id, reason)
 	})
 }
 
 func (a *App) approve(w http.ResponseWriter, r *http.Request) {
-	a.results(w, r, "approved", a.Service.Approve)
+	a.results(w, r, "approved", false, a.Service.Approve)
 }
 func (a *App) reject(w http.ResponseWriter, r *http.Request) {
-	a.withReason(w, r, "/requests/reject", "rejected", a.Service.Reject)
+	a.withReason(w, r, "/requests/reject", "rejected", false, a.Service.Reject)
 }
 func (a *App) cancel(w http.ResponseWriter, r *http.Request) {
-	a.results(w, r, "cancelled", a.Service.Cancel)
+	a.results(w, r, "cancelled", false, a.Service.Cancel)
 }
 func (a *App) retry(w http.ResponseWriter, r *http.Request) {
-	a.results(w, r, "revocation retried", a.Service.Redrive)
+	a.results(w, r, "revocation retried", true, a.Service.Redrive)
 }
 
 // results runs one action on each selected grant and goes back to Requests, which shows
 // the outcome at its top: one line, plus one line per grant the service refused. The rows
-// show each grant's new state.
-func (a *App) results(w http.ResponseWriter, r *http.Request, done string, act func(ctx context.Context, id string) (*api.Grant, error)) {
+// show each grant's new state. With follow, the action only starts a change the rows poll
+// for, and the notice names the started grants so the page can sum up how they ended.
+func (a *App) results(w http.ResponseWriter, r *http.Request, done string, follow bool, act func(ctx context.Context, id string) (*api.Grant, error)) {
 	if err := r.ParseForm(); err != nil {
 		a.fail(w, "Requests", "/requests", err)
 		return
@@ -451,7 +474,11 @@ func (a *App) results(w http.ResponseWriter, r *http.Request, done string, act f
 		}
 		ok = append(ok, id)
 	}
-	a.redirectWithNotice(w, r, "/requests", outcomeNotice(ok, failed, done))
+	n := outcomeNotice(ok, failed, done)
+	if follow {
+		n.Follow, n.Refused = ok, len(failed)
+	}
+	a.redirectWithNotice(w, r, "/requests", n)
 }
 
 // outcomeNotice sums up an action on some grants.

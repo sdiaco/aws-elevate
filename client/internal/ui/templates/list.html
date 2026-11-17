@@ -1,7 +1,7 @@
 {{/* The one list of the interface (design §11.1): header with title, counter and
      actions, search, quick filters, table. Actions stay disabled until rows are
      selected and send the selected ids as id=… to their address. */}}
-{{define "list"}}<form class="list" data-list method="get">
+{{define "list"}}<form class="list" data-list method="get"{{if .Reload}} data-reload{{end}}>
 <div class="list-head"><h1>{{.Title}} <span class="counter">({{len .Rows}}{{if .Next}}+{{end}})</span></h1>
 {{if or .Actions .Tools}}<div class="actions">{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}" disabled data-action="{{.Name}}"{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
 </div>
@@ -22,7 +22,7 @@
 {{if or .First .Next}}<div class="pager">{{if .First}}<a class="btn" href="{{.First}}">Newest</a>{{end}}{{if .Next}}<a class="btn" href="{{.Next}}">Next page</a>{{end}}</div>{{end}}
 </form>{{end}}
 
-{{define "row"}}<tr data-row{{with .Row.Key}} data-grant="{{.}}"{{end}}{{if .Row.Open}} class="open"{{end}}{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
+{{define "row"}}<tr data-row{{with .Row.Key}} data-grant="{{.}}"{{end}}{{if .Row.Open}} class="open"{{end}}{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.Expire}} data-expire="{{.}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
 
 {{define "cell"}}{{if .State}}{{template "state" .State}}{{with .Refresh}} {{template "refresh-button" .}}{{end}}{{end}}
 {{- if .Href}}<a href="{{.Href}}"{{with .Panel}} data-panel="{{.}}"{{end}}{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}>{{.Text}}</span>{{end}}

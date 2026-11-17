@@ -13,6 +13,10 @@ type notice struct {
 	Kind  string   // success, warning or error
 	Text  string   // the summary line
 	Items []string // one line per grant that did not go as asked
+	// Follow names the grants whose revocation the action started; Refused counts those
+	// the service refused at once. The page sums up the end from their rows.
+	Follow  []string
+	Refused int
 }
 
 // notices hold each outcome until the page after the redirect shows it.

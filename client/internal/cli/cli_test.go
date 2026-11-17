@@ -25,6 +25,7 @@ type fakeService struct {
 	lists    map[string][]api.Grant
 	calls    []string
 	revokeBy map[string]string
+	roles    []string // roles of GET /me; requester when empty
 	// admin side
 	installation *api.Installation
 	check        *api.CheckResult
@@ -37,7 +38,11 @@ func (f *fakeService) Me(context.Context) (*api.Me, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: []string{"requester"}, InfraVersion: "0.0.1", MinClient: "0.0.1", Installation: f.installation}, nil
+	roles := f.roles
+	if roles == nil {
+		roles = []string{"requester"}
+	}
+	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: roles, InfraVersion: "0.0.1", MinClient: "0.0.1", Installation: f.installation}, nil
 }
 
 func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {
@@ -315,6 +320,24 @@ func TestSetupRemembersTheServiceAndAddsTheAlias(t *testing.T) {
 	}
 	if !strings.Contains(h.out.String(), "user@example.com") {
 		t.Errorf("output %q", h.out.String())
+	}
+}
+
+func TestSetupSuggestsWhatTheRoleCanDo(t *testing.T) {
+	for roles, want := range map[string]string{
+		"requester":          "Next: aws elevate request",
+		"approver,requester": "Next: aws elevate request",
+		"auditor":            "Next: aws elevate ui",
+		"approver":           "Next: aws elevate ui",
+	} {
+		h := newHarness(t)
+		h.svc.roles = strings.Split(roles, ",")
+		if got := h.run("setup", "--profile", "work"); got != 0 {
+			t.Fatalf("exit %d: %s", got, h.errOut.String())
+		}
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("%s: output %q, want %q", roles, h.out.String(), want)
+		}
 	}
 }
 
