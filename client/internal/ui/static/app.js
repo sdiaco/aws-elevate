@@ -724,3 +724,61 @@ document.addEventListener("submit", (e) => {
   const query = new URLSearchParams(ids.map((id) => ["id", id]));
   confirmDialog(`${button.getAttribute("formaction")}?${query}`, button);
 });
+
+// Validation in the console's style (design §11.1): the browser's own bubbles speak its
+// language and show one field at a time, so forms check themselves on submit and show
+// every error in red under its field, in English. The submit button stays enabled; an
+// error goes away when its field changes. Without the script the browser checks.
+document.querySelectorAll("form").forEach((f) => { f.noValidate = true; });
+new MutationObserver((records) => records.forEach((rec) => rec.addedNodes.forEach((n) => {
+  if (n.nodeType !== 1) return;
+  if (n.matches("form")) n.noValidate = true;
+  n.querySelectorAll("form").forEach((f) => { f.noValidate = true; });
+}))).observe(document.body, { childList: true, subtree: true });
+
+function fieldLabel(el) {
+  const label = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+  const text = label ? label.textContent : el.closest("fieldset")?.querySelector("legend")?.textContent;
+  return (text || "This field").trim();
+}
+
+function errorText(el) {
+  if (el.dataset.error) return el.dataset.error;
+  if (el.validity.valueMissing) return `${fieldLabel(el)} is required.`;
+  return el.title || `Enter a valid ${fieldLabel(el).toLowerCase()}.`;
+}
+
+function clearError(el) {
+  const field = el.closest(".field") || el.parentElement;
+  field.querySelector(".field-error")?.remove();
+  el.removeAttribute("aria-invalid");
+}
+
+document.addEventListener("submit", (e) => {
+  const form = e.target;
+  if (!form.noValidate || (e.submitter && e.submitter.formNoValidate)) return;
+  const invalid = [...form.elements].filter((el) => el.willValidate && !el.checkValidity());
+  form.querySelectorAll(".field-error").forEach((p) => p.remove());
+  form.querySelectorAll("[aria-invalid]").forEach((el) => el.removeAttribute("aria-invalid"));
+  if (!invalid.length) return;
+  e.preventDefault();
+  e.stopImmediatePropagation(); // nothing else acts on a form that is not ready
+  const shown = new Set();
+  invalid.forEach((el) => {
+    const field = el.closest(".field") || el.parentElement;
+    if (shown.has(field)) return; // one message per field, as for a group of radios
+    shown.add(field);
+    const p = document.createElement("p");
+    p.className = "field-error";
+    p.id = `${el.name || "field"}-error`;
+    p.append(document.getElementById("flash-icon-error").content.firstElementChild.cloneNode(true), errorText(el));
+    field.append(p);
+    el.setAttribute("aria-invalid", "true");
+    el.setAttribute("aria-describedby", p.id);
+  });
+  invalid[0].focus();
+}, true); // before the handlers that open dialogs or send the form
+
+["input", "change"].forEach((type) => document.addEventListener(type, (e) => {
+  if (e.target.getAttribute?.("aria-invalid") && e.target.checkValidity()) clearError(e.target);
+}));

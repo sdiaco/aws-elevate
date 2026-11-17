@@ -154,7 +154,7 @@
 <h2>Details</h2>
 <input type="hidden" name="rule" value="{{.ID}}">
 <div class="field"><label for="account">Account</label>
-<select id="account" name="account" required>{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<select id="account" name="account" required data-error="Choose an account.">{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
 <div class="field"><label for="duration">Duration <span class="optional">- optional</span></label>
 <input type="text" id="duration" name="duration" value="{{$.Form.Duration}}" placeholder="{{short .Duration.DefaultSeconds}}">
 <span class="constraint">Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}. For example 45m or 2h.</span></div>

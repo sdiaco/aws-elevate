@@ -14,7 +14,7 @@
 
 {{define "rule-who"}}<div class="field"><label for="group">Who can request</label>
 <span class="desc">An Identity Center group.</span>
-<select id="group" name="group" required><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Group}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>
+<select id="group" name="group" required data-error="Choose a group."><option value="">Choose a group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Group}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>
 <fieldset class="field"><legend>Approval</legend>
 <div class="choices">
 <label class="choice"><input type="radio" name="approval" value="auto"{{if eq .Form.Approval "auto"}} checked{{end}}> Automatic</label>
