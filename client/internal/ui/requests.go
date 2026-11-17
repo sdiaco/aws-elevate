@@ -83,7 +83,7 @@ func ends(g api.Grant) time.Time {
 // decisions on one request (approve, reject, cancel, retry) are in the panel, next to its
 // detail (design §11.2). Each is enabled only when every selected row allows it.
 var requestActions = []Action{
-	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true},
+	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true, Confirm: true},
 }
 
 // listView is a page of one list and its bottom panel: Requests, History, Rules and

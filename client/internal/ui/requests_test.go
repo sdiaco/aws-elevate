@@ -138,7 +138,7 @@ func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	contains(t, out,
 		`value="mine234567" data-select data-actions="revoke"`,
 		`value="ask2345678" data-select aria-label`,
-		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`,
+		`formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`,
 	)
 	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/cancel"`, `formaction="/requests/retry"`)
 }
@@ -262,7 +262,10 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	contains(t, out, "Request ask2345678: rejected.")
 	lacks(t, out, "data-follow") // a rejection is final: nothing to follow
 
-	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
+	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request",
+		// The page is the fallback of a dialog (design §11.1): "Go back" leaves the view as it was.
+		`data-close autofocus>Go back</a>`)
+	contains(t, h.get(t, "/requests?open=own2345678"), `href="/requests/cancel?id=own2345678" data-confirm>Cancel request…`)
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
 	if got := strings.Join(h.svc.calls, ","); !strings.Contains(got, "approve ask2345678") ||
 		!strings.Contains(got, "reject use the read-only rule ask2345678") || !strings.Contains(got, "cancel own2345678") {
@@ -442,7 +445,7 @@ func TestTheSelectionColumnIsThereEvenWithNothingToRevoke(t *testing.T) {
 	h.svc.lists["mine"] = []api.Grant{grant("own2345678", api.StatePending, me, "cancel")}
 	out := h.get(t, "/requests")
 	contains(t, out, `data-select-all`, `value="own2345678" data-select`,
-		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`)
+		`formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`)
 }
 
 func TestARequestNobodyApprovedInTimeSaysSo(t *testing.T) {

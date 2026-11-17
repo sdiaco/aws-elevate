@@ -418,3 +418,6 @@ tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
 .modal { max-width: 600px; width: calc(100% - 32px); background: var(--surface); color: var(--text); border: 1px solid var(--divider); border-radius: 2px; padding: 16px 20px 20px; }
 .modal::backdrop { background: rgb(0 0 0 / 50%); }
 .modal h2 { margin: 0 0 12px; font-size: 18px; color: var(--text-strong); }
+.modal form > p { margin: 0 0 12px; }
+.modal table.compact { width: 100%; margin: 0 0 16px; }
+.modal table.compact th, .modal table.compact td { padding: 6px 12px; }

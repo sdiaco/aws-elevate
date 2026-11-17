@@ -638,7 +638,89 @@ fillAll(document);
 // "Go back" closes them. The opener gets the focus back.
 document.addEventListener("click", (e) => {
   const open = e.target.closest("[data-dialog]");
-  if (open) document.getElementById(open.dataset.dialog).showModal();
+  if (open) {
+    const dialog = document.getElementById(open.dataset.dialog);
+    dialog.addEventListener("close", () => open.focus(), { once: true });
+    dialog.showModal();
+  }
   const close = e.target.closest("dialog [data-close]");
-  if (close) close.closest("dialog").close();
+  if (close) {
+    e.preventDefault(); // a link back to the list when the page opened without a dialog
+    close.closest("dialog").close();
+  }
+});
+
+// What cannot be undone asks over the page (design §11.1): a [data-confirm] link or list
+// action opens its confirmation page's form in a dialog, the chosen grants shown as a
+// small table taken from their rows. Without the script, or if the page cannot be read,
+// the confirmation opens as a page.
+async function confirmDialog(address, opener) {
+  let doc;
+  try {
+    const res = await fetch(address, { headers: { Accept: "text/html" } });
+    if (!res.ok) throw new Error(res.status);
+    doc = new DOMParser().parseFromString(await res.text(), "text/html");
+  } catch {
+    location.href = address;
+    return;
+  }
+  const form = doc.querySelector(".confirm form");
+  if (!form) {
+    location.href = address;
+    return;
+  }
+  const dialog = document.createElement("dialog");
+  dialog.className = "modal";
+  dialog.setAttribute("aria-labelledby", "confirm-title");
+  const title = document.createElement("h2");
+  title.id = "confirm-title";
+  title.textContent = doc.querySelector("h1").textContent;
+  const ids = form.querySelector("ul.ids");
+  if (ids) {
+    ids.querySelectorAll("input").forEach((input) => form.prepend(input));
+    ids.replaceWith(grantTable([...form.querySelectorAll("input[name=id]")].map((i) => i.value)));
+  }
+  dialog.append(title, form);
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    opener.focus();
+  });
+  dialog.showModal();
+}
+
+// grantTable lists the grants with the permission set and account their rows show.
+function grantTable(ids) {
+  const table = document.createElement("table");
+  table.className = "compact";
+  const names = ["Permission set", "Account"];
+  table.innerHTML = "<thead><tr><th>Id</th><th>Permission set</th><th>Account</th></tr></thead><tbody></tbody>";
+  ids.forEach((id) => {
+    const tr = document.createElement("tr");
+    const row = document.querySelector(`tr[data-grant="${CSS.escape(id)}"]`);
+    const heads = row ? [...row.closest("table").querySelectorAll("thead th")].map((th) => th.textContent.trim()) : [];
+    [id, ...names.map((n) => row?.cells[heads.indexOf(n)]?.textContent.trim() ?? "")].forEach((text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.append(td);
+    });
+    table.tBodies[0].append(tr);
+  });
+  return table;
+}
+
+document.addEventListener("click", (e) => {
+  const link = e.target.closest("a[data-confirm]");
+  if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  confirmDialog(link.href, link);
+});
+
+document.addEventListener("submit", (e) => {
+  const button = e.submitter;
+  if (!button || !button.matches("[data-confirm]")) return;
+  e.preventDefault();
+  const ids = new FormData(e.target).getAll("id");
+  const query = new URLSearchParams(ids.map((id) => ["id", id]));
+  confirmDialog(`${button.getAttribute("formaction")}?${query}`, button);
 });

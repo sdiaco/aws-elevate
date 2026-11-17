@@ -61,9 +61,9 @@
 
 {{define "grant-panel"}}{{$g := .Grant}}<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
 <form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$g.ID}}">
-{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel request…</a>{{end}}
-{{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}">Revoke…</a>{{end}}
-{{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}">Reject…</a>{{end}}
+{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}" data-confirm>Cancel request…</a>{{end}}
+{{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}" data-confirm>Revoke…</a>{{end}}
+{{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}" data-confirm>Reject…</a>{{end}}
 {{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
 {{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
 {{with .Console}}<a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}

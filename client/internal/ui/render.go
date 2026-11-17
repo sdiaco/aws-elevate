@@ -118,6 +118,7 @@ type Action struct {
 	Path    string
 	Name    string
 	Danger  bool
+	Confirm bool // the address is a confirmation page, opened as a dialog over the list
 	Primary bool
 	Count   int // the action needs exactly this many rows, when not 0
 }
