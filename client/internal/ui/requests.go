@@ -474,6 +474,20 @@ func (a *App) retry(w http.ResponseWriter, r *http.Request) {
 	a.results(w, r, "revocation retried", true, a.Service.Redrive)
 }
 
+// backToFilter is Requests with the filter of the page the action came from, so an
+// approver stays on To approve. Only a known filter is kept: the Referer is input.
+func (a *App) backToFilter(r *http.Request) string {
+	from, err := url.Parse(r.Referer())
+	if err != nil || from.Path != "/requests" {
+		return "/requests"
+	}
+	key := from.Query().Get("f")
+	if key == "" || !slices.ContainsFunc(a.requestFilters(), func(f requestFilter) bool { return f.key == key }) {
+		return "/requests"
+	}
+	return "/requests?f=" + url.QueryEscape(key)
+}
+
 // results runs one action on each selected grant and goes back to Requests, which shows
 // the outcome at its top: one line, plus one line per grant the service refused. The rows
 // show each grant's new state. With follow, the action only starts a change the rows poll
@@ -497,7 +511,7 @@ func (a *App) results(w http.ResponseWriter, r *http.Request, done string, follo
 	if follow {
 		n.Follow, n.Refused = ok, len(failed)
 	}
-	a.redirectWithNotice(w, r, "/requests", n)
+	a.redirectWithNotice(w, r, a.backToFilter(r), n)
 }
 
 // outcomeNotice sums up an action on some grants.

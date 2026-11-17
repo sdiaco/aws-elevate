@@ -524,3 +524,25 @@ func TestTheOnlyRequestableRuleIsAlreadyChosen(t *testing.T) {
 	// With two or more, the user chooses: nothing is picked for them.
 	lacks(t, twoRules(newHarness("requester")).get(t, "/requests/new"), `<textarea name="reason"`)
 }
+
+// An action from the panel goes back to the filter it was taken from, read from the
+// page that sent it; anything but a known filter goes back to all requests.
+func TestAnActionGoesBackToTheFilterItCameFrom(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	h.svc.afterAction = api.StateActivating
+	for referer, want := range map[string]string{
+		"http://127.0.0.1:1/requests?f=approve&open=ask2345678": "/requests?f=approve&notice=",
+		"http://127.0.0.1:1/requests?f=evil":                    "/requests?notice=",
+		"http://127.0.0.1:1/history?f=approve":                  "/requests?notice=",
+		"":                                                      "/requests?notice=",
+	} {
+		r := httptest.NewRequest("POST", "/requests/approve", strings.NewReader("id=ask2345678"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Referer", referer)
+		w := httptest.NewRecorder()
+		Pages(h.app).ServeHTTP(w, r)
+		if got := w.Header().Get("Location"); !strings.HasPrefix(got, want) {
+			t.Errorf("from %q: went to %q, want %s…", referer, got, want)
+		}
+	}
+}
