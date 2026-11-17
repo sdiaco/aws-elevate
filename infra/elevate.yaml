@@ -1432,7 +1432,9 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
 
-  ApiDeployment:
+  # The suffix is a fingerprint of the API: a stack update republishes the API only through
+  # a new deployment, so a test makes every change to the API rename this resource.
+  ApiDeployment7F48D219:
     Type: AWS::ApiGateway::Deployment
     DependsOn: ApiMethod
     Properties:
@@ -1450,7 +1452,7 @@ Resources:
   # Fixed name: aws-elevate setup finds the API here (design §10.1).
   ApiUrlParameter:
     Type: AWS::SSM::Parameter
-    DependsOn: ApiDeployment
+    DependsOn: ApiDeployment7F48D219
     Properties:
       Name: /elevate/api-url
       Type: String

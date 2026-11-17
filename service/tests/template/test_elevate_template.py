@@ -1,6 +1,7 @@
 """What each role of infra/elevate.yaml can and cannot do, and the guarantees the
 design puts on the template (design §8.2, §8.3, §12.1)."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -382,6 +383,28 @@ SERVICE_ROLES = [
     "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
     "AWSReservedSSO_ElevateAuditor_*",
 ]
+
+
+def api_fingerprint() -> str:
+    """Short hash of what an API Gateway deployment publishes: the API with its resource
+    policy, its paths and its methods."""
+    published = {
+        name: r
+        for name, r in RESOURCES.items()
+        if r["Type"].startswith("AWS::ApiGateway::") and r["Type"] != "AWS::ApiGateway::Deployment"
+    }
+    return hashlib.sha256(json.dumps(published, sort_keys=True).encode()).hexdigest()[:8].upper()
+
+
+def test_a_change_to_the_api_gets_a_new_deployment():
+    # A stack update changes the API but republishes it only through a new deployment;
+    # with a fixed logical id the stage keeps serving the first one forever (seen in the
+    # e2e stack: a new role stayed denied after the update). The id carries a fingerprint
+    # of the API, so any change to it forces a rename and CloudFormation deploys again.
+    (deployment,) = [n for n, r in RESOURCES.items() if r["Type"] == "AWS::ApiGateway::Deployment"]
+    assert deployment == f"ApiDeployment{api_fingerprint()}", (
+        f"the API changed: rename {deployment} to ApiDeployment{api_fingerprint()}"
+    )
 
 
 def test_resource_policy_allows_the_two_roles_and_denies_everyone_else_explicitly():
