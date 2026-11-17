@@ -391,7 +391,7 @@ func TestRequestWithNoRules(t *testing.T) {
 	}
 }
 
-func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
+func TestRequestWaitsWritesTheProfileAndPrintsIt(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
 	h.svc.rules = []api.Rule{rule}
@@ -412,7 +412,8 @@ func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
 	if h.backend.readyRole != "222222222222/JIT-abcde12345" {
 		t.Errorf("waited for %q", h.backend.readyRole)
 	}
-	if h.out.String() != "export AWS_PROFILE=jit-ssm-write-222222222222\n" {
+	// The same --profile the interface shows, so one form is learned everywhere.
+	if h.out.String() != "--profile jit-ssm-write-222222222222\n" {
 		t.Errorf("stdout %q", h.out.String())
 	}
 	cfg, _ := os.ReadFile(h.env.ConfigFile)

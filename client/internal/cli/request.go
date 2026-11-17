@@ -76,8 +76,8 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(e.Stderr, "Ready. Use it with aws elevate shell, or run:\n")
-	fmt.Fprintf(e.Stdout, "export AWS_PROFILE=%s\n", name)
+	fmt.Fprintf(e.Stderr, "Ready. Use it with aws elevate shell, or add to your aws commands:\n")
+	fmt.Fprintf(e.Stdout, "--profile %s\n", name)
 	return nil
 }
 
