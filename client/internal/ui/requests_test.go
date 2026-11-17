@@ -117,6 +117,19 @@ func TestAnAdminAlsoFiltersFailedRevocations(t *testing.T) {
 	contains(t, h.get(t, "/requests?f=nope"), `aria-current="true">All (5)</a>`)
 }
 
+func TestAnAuditorSeesEveryOpenGrantWithoutActions(t *testing.T) {
+	// An auditor only reads (design §3.3): every open grant, and no action button.
+	h := requestsHarness("auditor")
+	out := h.get(t, "/requests")
+	contains(t, out, `<span class="counter">(5)</span>`, "ask2345678", "their23456", "fail234567")
+	lacks(t, out, `/requests/revoke`, `href="/requests/new"`, `class="segmented"`)
+	if scopes(h) != "mine,all" {
+		t.Errorf("scopes %s", scopes(h))
+	}
+	// Also a requester: Revoke… for their own grants comes back.
+	contains(t, requestsHarness("auditor", "requester").get(t, "/requests"), `/requests/revoke`)
+}
+
 func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")

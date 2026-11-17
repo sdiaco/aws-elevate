@@ -22,16 +22,21 @@ var periods = []struct {
 }
 
 // historyQuery reads period and scope from the address; unknown values fall back to the
-// defaults, and "all" only for the roles the service gives it to.
+// defaults, and "all" only for the roles the service gives it to. Who never requests
+// starts on "all": their own history is always empty.
 func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQuery) {
 	period, scope = periods[0].key, "mine"
+	want := r.URL.Query().Get("scope")
+	if want == "" && !a.has("requester") {
+		want = "all"
+	}
 	from := periods[0].from
 	for _, p := range periods {
 		if p.key == r.URL.Query().Get("period") {
 			period, from = p.key, p.from
 		}
 	}
-	if r.URL.Query().Get("scope") == "all" && a.seesAll() {
+	if want == "all" && a.seesAll() {
 		scope = "all"
 	}
 	return period, scope, api.ListQuery{Scope: scope, Closed: true, From: from(time.Now()).UTC().Format(time.RFC3339)}

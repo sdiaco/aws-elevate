@@ -40,12 +40,12 @@ func (a *App) requestFilters() []requestFilter {
 
 func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.me().User.UserID }
 
-// openGrants are the caller's open grants and those they see as approver or admin, each
-// once, the soonest to end first.
+// openGrants are the caller's open grants and those they see as approver, admin or
+// auditor, each once, the soonest to end first.
 func (a *App) openGrants(ctx context.Context) ([]api.Grant, error) {
 	queries := []api.ListQuery{{Scope: "mine", Open: true}}
 	switch {
-	case a.has("admin"):
+	case a.has("admin") || a.has("auditor"):
 		queries = append(queries, api.ListQuery{Scope: "all", Open: true})
 	case a.has("approver"):
 		queries = append(queries, api.ListQuery{Scope: "approvable"})
@@ -150,9 +150,12 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	for _, g := range kept {
 		l.Rows = append(l.Rows, a.requestRowOf(g, here))
 	}
-	// The selection column is always there, as in the console: Revoke stays disabled until
-	// the selected rows are all ones the service lets this user revoke.
-	l.Actions = requestActions
+	// The selection column is there for whoever may act, as in the console: Revoke stays
+	// disabled until the selected rows are all ones the service lets this user revoke. An
+	// auditor only reads, and gets no action at all (design §3.3).
+	if a.has("requester") || a.has("approver") || a.has("admin") {
+		l.Actions = requestActions
+	}
 	for i := range l.Rows {
 		if l.Rows[i].Poll != "" {
 			l.Rows[i].Poll += "?check=1"
