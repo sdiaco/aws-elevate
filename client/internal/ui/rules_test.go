@@ -119,6 +119,12 @@ func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
 	}
 }
 
+func TestRuleFormSaysWhichAccountsAreNeverListed(t *testing.T) {
+	h, _ := rulesHarness()
+	contains(t, h.get(t, "/rules/edit"),
+		"The management account and the aws-elevate account are never listed.")
+}
+
 func TestNewRuleFormShowsWhatThePermissionSetContains(t *testing.T) {
 	h, _ := rulesHarness()
 	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`)
