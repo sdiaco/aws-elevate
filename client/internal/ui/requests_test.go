@@ -389,7 +389,10 @@ func TestWhatYouWillGetIsAFragment(t *testing.T) {
 
 func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 	h := newHarness("requester")
-	h.svc.grants["new4567890"] = grant("new4567890", api.StatePending, me, "cancel")
+	sent := grant("new4567890", api.StatePending, me, "cancel")
+	exp := time.Now().Add(30 * time.Minute)
+	sent.ApprovalExpiresAt = &exp
+	h.svc.grants["new4567890"] = sent
 	w := h.do(t, "POST", "/requests/new", url.Values{"rule": {"ssm-prod"}, "account": {"222222222222"}, "duration": {"45m"}, "reason": {"incident 42"}})
 	if w.Code != 303 || w.Header().Get("Location") != "/requests?sent=new4567890" {
 		t.Fatalf("%d %s %s", w.Code, w.Header().Get("Location"), w.Body)
@@ -400,8 +403,9 @@ func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 	}
 
 	out := h.get(t, "/requests?sent=new4567890")
-	contains(t, out, `class="flash info"`, `data-refresh="/requests/flash/new4567890"`, "Waiting for approval by leads")
-	lacks(t, out, `data-poll="/requests/flash/`, `class="spinner"`, "data-dismiss")
+	// Sent, and nothing more to follow here: the row in the table tracks it.
+	contains(t, out, `class="flash success"`, "submitted. An approver in leads must approve it within", "data-dismiss")
+	lacks(t, out, `data-poll="/requests/flash/`, `data-refresh="/requests/flash/`, `class="spinner"`)
 	lacks(t, out, "console?account_id")
 }
 

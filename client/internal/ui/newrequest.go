@@ -128,6 +128,7 @@ type flash struct {
 	Kind    string
 	Text    string
 	Until   time.Time
+	Within  bool   // Until is a deadline for someone else: "within", not "left"
 	Poll    string // the address that refreshes it, while it changes by itself
 	Refresh string // the address a refresh button reads it again from, while pending
 	Ready   bool   // AWS accepts the role: the profile is written
@@ -140,9 +141,9 @@ func (a *App) flashOf(g api.Grant) flash {
 	f := flash{Grant: g, Kind: "info", Poll: "/requests/flash/" + g.ID}
 	switch g.State {
 	case api.StatePending:
-		// A person decides, within 30 minutes: the flash waits for a click, not a timer.
-		f.Poll, f.Refresh = "", "/requests/flash/"+g.ID
-		f.Text = "Waiting for approval by " + approvers(g)
+		// Sent: a person decides later, and the row in the table follows it from here.
+		f.Kind, f.Poll, f.Within = "success", "", true
+		f.Text = "submitted. An approver in " + approvers(g) + " must approve it"
 		if g.ApprovalExpiresAt != nil {
 			f.Until = *g.ApprovalExpiresAt
 		}
