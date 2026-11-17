@@ -34,6 +34,21 @@ document.addEventListener("change", (e) => {
   if (e.target.matches("[data-select-all], [data-select]")) updateSelection(list);
 });
 
+// A click on a row, outside its links and controls, selects it as its box or radio would
+// (Cloudscape): the 16-pixel control alone is hard to hit, above all on a phone. Only the
+// id link opens the panel (design §11.1).
+document.addEventListener("click", (e) => {
+  const tr = e.target.closest("tbody tr");
+  if (!tr || e.target.closest("a, button, input, label, select, textarea, summary")) return;
+  const controls = tr.querySelectorAll("input[type=checkbox], input[type=radio]");
+  if (controls.length !== 1 || controls[0].disabled) return;
+  const control = controls[0];
+  if (control.type === "radio" && control.checked) return;
+  control.checked = control.type === "radio" ? true : !control.checked;
+  control.dispatchEvent(new Event("change", { bubbles: true }));
+  control.dispatchEvent(new Event("input", { bubbles: true }));
+});
+
 document.addEventListener("click", (e) => {
   const copy = e.target.closest("[data-copy]");
   if (copy) {
@@ -356,15 +371,6 @@ document.addEventListener("click", async (e) => {
   if (!(await openPanel(link))) location.href = link.href;
 });
 
-document.addEventListener("change", (e) => {
-  const list = e.target.closest("[data-list]");
-  if (!list || !e.target.matches("[data-select]")) return;
-  const picked = [...list.querySelectorAll("[data-select]:checked")];
-  if (picked.length === 1) {
-    const link = picked[0].closest("tr").querySelector("a[data-panel]");
-    if (link) openPanel(link);
-  }
-});
 
 // Closing the panel hides it until a row is chosen again; deselecting a row keeps it, as
 // in the console. The close link works without the script.
