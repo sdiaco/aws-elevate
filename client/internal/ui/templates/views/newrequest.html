@@ -4,7 +4,7 @@
 {{if .Rules}}<div class="table-wrap"><table>
 <thead><tr><th class="check"></th><th>Permission set</th><th>Rule</th><th>Accounts</th><th>Approval</th><th>Max duration</th></tr></thead>
 <tbody>{{range .Rules}}<tr{{if and $.Rule (eq .ID $.Rule.ID)}} class="selected"{{end}}>
-<td class="check"><input type="radio" name="rule" value="{{.ID}}" id="rule-{{.ID}}"{{if and $.Rule (eq .ID $.Rule.ID)}} checked{{end}} data-autosubmit></td>
+<td class="check"><input type="radio" name="rule" value="{{.ID}}" id="rule-{{.ID}}"{{if and $.Rule (eq .ID $.Rule.ID)}} checked{{end}} data-swap="/requests/new/form?rule=" data-swap-into="request-form" data-swap-url="/requests/new?rule="></td>
 <td><label for="rule-{{.ID}}">{{.PermissionSet.Name}}</label>{{if .Privileged}} <span class="tag">privileged</span>{{end}}</td>
 <td>{{.ID}}</td>
 <td>{{range $i, $a := .Accounts}}{{if $i}}, {{end}}{{$a.Name}}{{end}}</td>
@@ -15,17 +15,4 @@
 <noscript><div class="form-actions"><button class="btn">Choose</button></div></noscript>
 {{else}}<p class="muted">No rule lets you request access. Ask an administrator.</p>{{end}}
 </form>
-{{with .Rule}}<form method="post" action="/requests/new" class="box">
-<h2>2. Details</h2>
-<input type="hidden" name="rule" value="{{.ID}}">
-<div class="field"><label for="account">Account</label>
-<select id="account" name="account" required>{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
-<div class="field"><label for="duration">Duration <span class="optional">- optional</span></label>
-<input type="text" id="duration" name="duration" value="{{$.Form.Duration}}" placeholder="{{short .Duration.DefaultSeconds}}">
-<span class="constraint">Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}. For example 45m or 2h.</span></div>
-<div class="field"><label for="reason">Reason</label>
-<span class="desc">Who reads the request and the history sees it.</span>
-<textarea name="reason" id="reason" rows="3" required>{{$.Form.Reason}}</textarea></div>
-<details class="expand" data-load="/requests/permissions?rule={{.ID}}"><summary>What you will get</summary><div data-load-target><p class="muted">Loading…</p></div></details>
-<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary">Submit</button></div>
-</form>{{end}}{{end}}
+<div id="request-form">{{template "requestform" .}}</div>{{end}}

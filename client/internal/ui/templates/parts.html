@@ -15,52 +15,84 @@
 <details class="expand"><summary>Full JSON</summary><pre>{{indent .Inline}}</pre></details>{{end}}
 </div>{{end}}
 
+{{/* A command to copy, shown where it must be easy to find. */}}
+{{define "command"}}<div class="command"><code>{{.}}</code><button type="button" class="btn" data-copy="{{.}}">Copy</button></div>{{end}}
+
 {{/* The request just sent, followed at the top of Requests (design §11.1). */}}
 {{define "flash"}}<div class="flash {{.Kind}}" role="status"{{if .Poll}} data-poll="{{.Poll}}" data-state="{{.Grant.State}}"{{end}}>
 <div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}<span class="flash-icon" aria-hidden="true"></span>{{end}}
 <span><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span></div>
 {{with .Error}}<p class="flash-body">{{.}}</p>{{end}}
 {{if eq .Grant.State "active"}}<div class="flash-body">
-<pre><button type="button" class="copy" data-copy="aws elevate shell {{.Grant.ID}}" title="Copy">aws elevate shell {{.Grant.ID}}</button></pre>
-{{if .Ready}}<pre><button type="button" class="copy" data-copy="export AWS_PROFILE={{.Profile}}" title="Copy">export AWS_PROFILE={{.Profile}}</button></pre>
-<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a>{{end}}
+{{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
+{{template "command" (print "aws elevate shell " .Grant.ID)}}
+{{if .Ready}}{{template "command" (print "export AWS_PROFILE=" .Profile)}}{{end}}
 </div>{{end}}
 </div>{{end}}
 
-{{/* The detail of one grant at the bottom of the page, as the console's split panel. */}}
-{{define "panel"}}{{$g := .Detail.Grant}}<section class="split-panel" aria-label="Grant {{$g.ID}}">
-<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
+{{/* The bottom panel (console split panel): always on the page, filled with the chosen
+     grant. Its tabs are Details and Permissions; the decisions on the grant are here. */}}
+{{define "panel"}}<section class="split-panel" data-panel-slot aria-label="Details">
+<div class="split-panel-handle" data-panel-resize role="separator" aria-orientation="horizontal" aria-label="Resize" tabindex="0"></div>
+{{with .Panel}}{{$g := .Grant}}<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
 <form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$g.ID}}">
-{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel…</a>{{end}}
+{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel request…</a>{{end}}
 {{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}">Revoke…</a>{{end}}
-{{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
 {{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}">Reject…</a>{{end}}
+{{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
 {{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
+{{with .Console}}<a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 </form>
-<a class="btn icon" href="{{.Close}}" aria-label="Close">✕</a></div>
+<a class="btn icon" href="{{.Close}}" data-panel-close aria-label="Close">✕</a></div>
+<div class="tabs" data-tabs>
+<div class="tab-list" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="details">Details</button>{{if not $g.RuleRemoved}}<button type="button" role="tab" aria-selected="false" data-tab="permissions">Permissions</button>{{end}}</div>
 <div class="split-panel-body">
+<div role="tabpanel" data-tabpanel="details">
 {{if eq $g.State "revoke_failed"}}<div class="alert error" role="status">The revocation failed: {{with $g.Error}}{{.}}{{end}}. Still usable for {{with $g.ExpiresAt}}<time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time>{{end}}.</div>{{end}}
-{{if .Console}}<div class="panel-use">
-<pre><button type="button" class="copy" data-copy="aws elevate shell {{$g.ID}}" title="Copy">aws elevate shell {{$g.ID}}</button></pre>
-<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console</a></div>{{end}}
-<dl class="kv cols">
+{{with .Console}}<div class="box access"><h3>Access</h3>
+<p class="desc">Open the AWS console with this access, or use it from a terminal.</p>
+<div class="access-row"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{template "command" (print "aws elevate shell " $g.ID)}}</div></div>{{end}}
+<div class="box"><h3>Details</h3>
+<dl class="kv cols4">
 <div><dt>Requester</dt><dd>{{$g.Requester.UserName}}</dd></div>
 <div><dt>Permission set</dt><dd>{{$g.SourcePs.Name}}</dd></div>
 <div><dt>Account</dt><dd>{{$g.Account}}</dd></div>
-<div><dt>Reason</dt><dd>{{$g.Reason}}</dd></div>
 <div><dt>Rule</dt><dd>{{$g.RuleID}} · config v{{$g.ConfigVersion}}</dd></div>
+<div><dt>Reason</dt><dd>{{$g.Reason}}</dd></div>
 <div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
-<div><dt>Requested</dt><dd><time datetime="{{iso $g.CreatedAt}}" title="{{exact $g.CreatedAt}}">{{ago $g.CreatedAt}}</time></dd></div>
-{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}</dd></div>{{end}}
+<div><dt>Requested</dt><dd>{{exact $g.CreatedAt}}</dd></div>
+{{with $g.Approver}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.Panel.ApprovedAt.IsZero}} · {{exact $.Panel.ApprovedAt}}{{end}}</dd></div>{{end}}
+{{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
+{{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
+{{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}
+{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{exact .}}{{with $g.CloseReason}} · {{.}}{{end}}</dd></div>{{end}}
 {{with $g.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $g.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
 {{if ne $g.State "revoke_failed"}}{{with $g.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}{{end}}
-</dl>
-{{if not $g.RuleRemoved}}<details class="expand" data-load="/requests/permissions?rule={{$g.RuleID}}"><summary>What it gives</summary><div data-load-target><p class="muted">Loading…</p></div></details>{{end}}
-<h3>Timeline</h3>
-<ol class="timeline">{{range .Detail.Timeline}}<li><time datetime="{{iso .At}}">{{exact .At}}</time> {{template "state" .State}}{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</li>{{end}}</ol>
+<div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{$g.ID}}" title="Copy">{{$g.ID}}</button></dd></div>
+</dl></div>
 </div>
+{{if not $g.RuleRemoved}}<div role="tabpanel" data-tabpanel="permissions" data-load="/requests/permissions?rule={{$g.RuleID}}" hidden><div class="box" data-load-target><p class="muted">Loading…</p></div></div>{{end}}
+</div></div>
+{{else}}<div class="split-panel-head"><h2>Details</h2></div>
+<div class="split-panel-body"><p class="muted">{{.Empty}}</p></div>{{end}}
 </section>{{end}}
+
+{{/* The details of a new request, for the rule chosen above (fetched when it changes). */}}
+{{define "requestform"}}{{with .Rule}}<form method="post" action="/requests/new" class="box">
+<h2>2. Details</h2>
+<input type="hidden" name="rule" value="{{.ID}}">
+<div class="field"><label for="account">Account</label>
+<select id="account" name="account" required>{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<div class="field"><label for="duration">Duration <span class="optional">- optional</span></label>
+<input type="text" id="duration" name="duration" value="{{$.Form.Duration}}" placeholder="{{short .Duration.DefaultSeconds}}">
+<span class="constraint">Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}. For example 45m or 2h.</span></div>
+<div class="field"><label for="reason">Reason</label>
+<span class="desc">Who reads the request and the history sees it.</span>
+<textarea name="reason" id="reason" rows="3" required>{{$.Form.Reason}}</textarea></div>
+<details class="expand" data-load="/requests/permissions?rule={{.ID}}"><summary>What you will get</summary><div data-load-target><p class="muted">Loading…</p></div></details>
+<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary">Submit</button></div>
+</form>{{end}}{{end}}
 
 {{/* What changes between two rules documents, rule by rule. */}}
 {{define "changes"}}<div class="compare">

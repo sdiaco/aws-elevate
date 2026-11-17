@@ -87,6 +87,7 @@ function poll(el, attempt) {
       const box = el.querySelector("[data-select]");
       const kept = next.querySelector("[data-select]");
       if (box && kept) kept.checked = box.checked;
+      if (el.classList.contains("open")) next.classList.add("open");
       el.replaceWith(next);
       const list = next.closest("[data-list]");
       if (list) updateSelection(list);
@@ -98,6 +99,20 @@ function poll(el, attempt) {
   }, delay);
 }
 
+// fill puts the HTML at an address into box; it says so in the box when it fails.
+async function fill(box, address) {
+  try {
+    const res = await fetch(address, { headers: { Accept: "text/html" } });
+    if (!res.ok) throw new Error(res.status);
+    box.innerHTML = await res.text();
+    tick();
+    return true;
+  } catch {
+    box.textContent = "Not loaded: try again, or reload the page.";
+    return false;
+  }
+}
+
 // Details read when opened: <details data-load="/address"> fills its
 // [data-load-target] with the HTML at that address, once. With data-load-from="<input id>"
 // the address ends with that input's value, and changing the input reads it again.
@@ -105,19 +120,129 @@ document.addEventListener("toggle", async (e) => {
   const d = e.target;
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.dataset.load || d.dataset.loaded) return;
   d.dataset.loaded = "1";
-  const box = d.querySelector("[data-load-target]");
   const from = d.dataset.loadFrom && document.getElementById(d.dataset.loadFrom);
   const address = d.dataset.load + (from ? encodeURIComponent(from.value) : "");
-  try {
-    const res = await fetch(address, { headers: { Accept: "text/html" } });
-    if (!res.ok) throw new Error(res.status);
-    box.innerHTML = await res.text();
-    tick();
-  } catch {
-    box.textContent = "Not loaded: close and open again, or reload the page.";
-    delete d.dataset.loaded;
-  }
+  if (!(await fill(d.querySelector("[data-load-target]"), address))) delete d.dataset.loaded;
 }, true); // toggle does not bubble
+
+// Tabs: [data-tabs] shows the [data-tabpanel] of the chosen [data-tab]; a panel with
+// data-load is read the first time it shows.
+document.addEventListener("click", async (e) => {
+  const tab = e.target.closest("[data-tabs] [data-tab]");
+  if (!tab) return;
+  const tabs = tab.closest("[data-tabs]");
+  tabs.querySelectorAll("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+  let shown;
+  tabs.querySelectorAll("[data-tabpanel]").forEach((p) => {
+    p.hidden = p.dataset.tabpanel !== tab.dataset.tab;
+    if (!p.hidden) shown = p;
+  });
+  if (shown && shown.dataset.load && !shown.dataset.loaded) {
+    shown.dataset.loaded = "1";
+    if (!(await fill(shown.querySelector("[data-load-target]"), shown.dataset.load))) delete shown.dataset.loaded;
+  }
+});
+
+// The bottom panel follows the chosen row without reloading the page: a link with
+// data-panel, or a single selected row, fills [data-panel-slot] from that address. The
+// page address changes too, so a reload or a shared link opens the same grant.
+async function openPanel(link) {
+  const slot = document.querySelector("[data-panel-slot]");
+  if (!slot) return false;
+  try {
+    const res = await fetch(link.dataset.panel, { headers: { Accept: "text/html" } });
+    if (!res.ok) throw new Error(res.status);
+    const tpl = document.createElement("template");
+    tpl.innerHTML = (await res.text()).trim();
+    const next = tpl.content.firstElementChild;
+    if (!next || !next.matches("[data-panel-slot]")) throw new Error("not a panel");
+    slot.replaceWith(next);
+    history.replaceState(null, "", link.href);
+    document.querySelectorAll("tr.open").forEach((tr) => tr.classList.remove("open"));
+    link.closest("tr")?.classList.add("open");
+    tick();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+document.addEventListener("click", async (e) => {
+  const link = e.target.closest("a[data-panel]");
+  if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  if (!(await openPanel(link))) location.href = link.href;
+});
+
+document.addEventListener("change", (e) => {
+  const list = e.target.closest("[data-list]");
+  if (!list || !e.target.matches("[data-select]")) return;
+  const picked = [...list.querySelectorAll("[data-select]:checked")];
+  if (picked.length === 1) {
+    const link = picked[0].closest("tr").querySelector("a[data-panel]");
+    if (link) openPanel(link);
+  }
+});
+
+// Closing the panel folds it to its header; the close link works without the script.
+document.addEventListener("click", (e) => {
+  const close = e.target.closest("[data-panel-close]");
+  if (!close) return;
+  e.preventDefault();
+  const panel = close.closest("[data-panel-slot]");
+  panel.classList.toggle("folded");
+  close.setAttribute("aria-label", panel.classList.contains("folded") ? "Open" : "Close");
+});
+
+// Resize: dragging the handle sets the panel height, remembered by this browser only.
+function setPanelHeight(px) {
+  const h = Math.max(120, Math.min(px, Math.round(window.innerHeight * 0.8)));
+  document.documentElement.style.setProperty("--panel-h", h + "px");
+  return h;
+}
+
+try {
+  const saved = Number(localStorage.getItem("panelHeight"));
+  if (saved > 0) setPanelHeight(saved);
+} catch { /* storage may be blocked: the default height stays */ }
+
+document.addEventListener("pointerdown", (e) => {
+  const handle = e.target.closest("[data-panel-resize]");
+  if (!handle) return;
+  e.preventDefault();
+  handle.setPointerCapture(e.pointerId);
+  let h;
+  const move = (ev) => { h = setPanelHeight(window.innerHeight - ev.clientY); };
+  const up = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", up);
+    try { if (h) localStorage.setItem("panelHeight", String(h)); } catch { /* not kept */ }
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", up);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!e.target.matches("[data-panel-resize]") || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+  e.preventDefault();
+  const now = e.target.closest("[data-panel-slot]").getBoundingClientRect().height;
+  const h = setPanelHeight(now + (e.key === "ArrowUp" ? 40 : -40));
+  try { localStorage.setItem("panelHeight", String(h)); } catch { /* not kept */ }
+});
+
+// A choice that changes part of the page: <input data-swap="/address?x=" data-swap-into="id"
+// data-swap-url="/page?x="> fills that element with the HTML for the chosen value and
+// updates the page address. Without the script, the form's own button sends it.
+document.addEventListener("change", async (e) => {
+  const input = e.target;
+  if (!input.matches("[data-swap]")) return;
+  const value = encodeURIComponent(input.value);
+  const into = document.getElementById(input.dataset.swapInto);
+  input.closest("tbody")?.querySelectorAll("tr").forEach((tr) => tr.classList.toggle("selected", tr.contains(input)));
+  if (into && (await fill(into, input.dataset.swap + value))) {
+    history.replaceState(null, "", input.dataset.swapUrl + value);
+  }
+});
 
 document.addEventListener("change", (e) => {
   document.querySelectorAll(`details[data-load-from="${e.target.id}"]`).forEach((d) => {
@@ -151,11 +276,6 @@ function steps(form) {
   });
   show();
 }
-
-// A choice that is a navigation: <input data-autosubmit> sends its form when changed.
-document.addEventListener("change", (e) => {
-  if (e.target.matches("[data-autosubmit]")) e.target.form.requestSubmit();
-});
 
 document.querySelectorAll("form[data-steps]").forEach(steps);
 document.querySelectorAll("[data-list]").forEach(updateSelection);

@@ -119,17 +119,14 @@ func TestAnAdminAlsoFiltersFailedRevocations(t *testing.T) {
 func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
+	// Only what is done on several rows sits in the header; every row can be selected to
+	// open its panel.
 	contains(t, out,
-		`value="ask2345678" data-select data-actions="reject approve"`,
-		`value="own2345678" data-select data-actions="cancel"`,
-		`formaction="/requests/approve" disabled data-action="approve">Approve`,
-		`formaction="/requests/reject" disabled data-action="reject">Reject…`,
-		`formaction="/requests/cancel" disabled data-action="cancel">Cancel…`,
+		`value="mine234567" data-select data-actions="revoke"`,
+		`value="ask2345678" data-select aria-label`,
 		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`,
 	)
-	// Retry is only for whoever the service gives it to.
-	lacks(t, out, `data-action="redrive"`)
-	contains(t, requestsHarness("admin").get(t, "/requests"), `formaction="/requests/retry" disabled data-action="redrive">Retry`)
+	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/cancel"`, `formaction="/requests/retry"`)
 }
 
 func TestRowsInMotionPollTheirState(t *testing.T) {
@@ -142,28 +139,54 @@ func TestRowsInMotionPollTheirState(t *testing.T) {
 	if !strings.HasPrefix(out, "<tr") {
 		t.Fatalf("not a row: %s", out)
 	}
-	contains(t, out, `data-poll="/requests/row/ask2345678?check=1"`, `data-actions="reject approve"`)
+	contains(t, out, `data-poll="/requests/row/ask2345678?check=1"`, `value="ask2345678" data-select`)
 	h.svc.grants["ask2345678"] = grant("ask2345678", api.StateActive, other)
 	out = h.get(t, "/requests/row/ask2345678?check=1")
 	lacks(t, out, "data-poll")
-	contains(t, out, `data-state="active"`, `<td class="check"></td>`)
+	contains(t, out, `data-state="active"`, `value="ask2345678" data-select aria-label`)
 }
 
-func TestTheIdOpensTheBottomPanel(t *testing.T) {
+func TestTheBottomPanelIsAlwaysThereAndFollowsTheChosenRow(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests?f=approve")
-	contains(t, out, `href="/requests?f=approve&amp;open=ask2345678"`)
-	lacks(t, out, `class="split-panel"`, "get ask2345678")
+	contains(t, out,
+		`<section class="split-panel" data-panel-slot`, "Select a request above",
+		`href="/requests?f=approve&amp;open=ask2345678" data-panel="/panel/ask2345678?from=requests"`,
+		`data-panel-resize`,
+	)
+	lacks(t, out, "get ask2345678")
 
 	out = h.get(t, "/requests?f=approve&open=ask2345678")
 	contains(t, out,
-		`<section class="split-panel" aria-label="Grant ask2345678">`,
-		`href="/requests?f=approve" aria-label="Close"`,
+		`<tr data-row class="open"`,
+		`href="/requests?f=approve" data-panel-close aria-label="Close"`,
+		`data-tab="details"`, `data-tab="permissions"`,
+		`data-tabpanel="permissions" data-load="/requests/permissions?rule=ssm-prod" hidden`,
 		"incident 42", "leads",
-		`data-load="/requests/permissions?rule=ssm-prod"`,
 		`formaction="/requests/approve"`, `href="/requests/reject?id=ask2345678"`,
 	)
-	lacks(t, out, "Open in console", "/requests/retry")
+	lacks(t, out, "Open in console", "/requests/retry", "Timeline")
+
+	// The fragment the page fetches when a row is chosen.
+	out = h.get(t, "/panel/ask2345678?from=requests")
+	if !strings.HasPrefix(out, `<section class="split-panel"`) {
+		t.Fatalf("not a panel: %s", out)
+	}
+	contains(t, out, `href="/requests" data-panel-close`, "incident 42")
+	lacks(t, out, `class="nav"`)
+	contains(t, h.get(t, "/panel/ask2345678?from=history"), `href="/history" data-panel-close`)
+	contains(t, h.get(t, "/panel/ask2345678?from=elsewhere"), `href="/requests" data-panel-close`)
+	contains(t, h.get(t, "/panel/nope234567"), `class="alert error"`, "no grant nope234567")
+}
+
+func TestThePanelShowsWhenTheRequestWasApproved(t *testing.T) {
+	h := requestsHarness("requester")
+	g := grant("mine234567", api.StateActive, me, "revoke")
+	g.Approver = &other
+	h.svc.grants["mine234567"] = g
+	at := time.Date(2026, 11, 15, 9, 3, 0, 0, time.Local)
+	h.svc.timeline = []api.TimelineEntry{{At: at.Add(-3 * time.Minute), State: "pending"}, {At: at, State: "activating"}}
+	contains(t, h.get(t, "/panel/mine234567"), "Approved by", "other@example.com · 2026-11-15 09:03:00")
 }
 
 func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {
@@ -174,8 +197,8 @@ func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {
 
 func TestThePanelOfOwnActiveGrantOpensTheConsole(t *testing.T) {
 	out := requestsHarness("requester").get(t, "/requests?open=mine234567")
-	contains(t, out, "aws elevate shell mine234567",
-		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer"`)
+	contains(t, out, `class="box access"`, `data-copy="aws elevate shell mine234567"`,
+		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗`)
 	out = requestsHarness("admin").get(t, "/requests?open=their23456")
 	lacks(t, out, "Open in console", "aws elevate shell")
 }
@@ -271,6 +294,20 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 	}
 }
 
+func TestChoosingARuleFetchesOnlyItsForm(t *testing.T) {
+	h := newHarness("requester")
+	contains(t, h.get(t, "/requests/new"), `data-swap="/requests/new/form?rule="`, `data-swap-into="request-form"`, `<div id="request-form">`)
+	out := h.get(t, "/requests/new/form?rule=ssm-prod")
+	if !strings.HasPrefix(out, `<form method="post" action="/requests/new"`) {
+		t.Fatalf("not the form: %s", out)
+	}
+	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`)
+	lacks(t, out, `class="nav"`)
+	if out := h.get(t, "/requests/new/form?rule=nope"); strings.TrimSpace(out) != "" {
+		t.Errorf("form of an unknown rule: %s", out)
+	}
+}
+
 func TestWhatYouWillGetIsAFragment(t *testing.T) {
 	h := newHarness("requester")
 	out := h.get(t, "/requests/permissions?rule=ssm-prod")
@@ -328,7 +365,7 @@ func TestTheFlashWaitsForTheRoleBeforeTheConsole(t *testing.T) {
 	}
 	contains(t, out, `class="flash success"`,
 		"aws elevate shell new4567890", "export AWS_PROFILE=jit-ssm-write-222222222222",
-		`<a class="btn primary" href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console</a>`,
+		`<a class="btn primary" href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗</a>`,
 	)
 	lacks(t, out, "data-poll", `class="nav"`)
 }

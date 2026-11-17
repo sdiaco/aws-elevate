@@ -250,23 +250,53 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .flash.error .flash-icon { color: var(--error); }
 .flash.error .flash-icon::before { content: "✕"; }
 .flash-body { margin: 8px 0 0 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.flash-body pre, .panel-use pre { margin: 0; padding: 4px 12px; }
 .spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--info); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 
-/* The detail of one row at the bottom of the page (console split panel). The page keeps
-   room below the table so the panel never hides its last rows. */
-.split-panel { position: fixed; left: 250px; right: 0; bottom: 0; z-index: 10; max-height: 45vh; display: flex; flex-direction: column; background: var(--surface); border-top: 1px solid var(--divider); }
-.split-panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 24px; border-bottom: 1px solid var(--divider); }
-.split-panel-head h2 { margin: 0 4px 0 0; }
+/* The bottom panel (console split panel): always docked under the content, resizable
+   from the handle on its top edge, folded to its header by its close button. The page
+   keeps room below the table so the panel never hides its last rows. */
+:root { --panel-h: 40vh; }
+.split-panel { position: fixed; left: 250px; right: 0; bottom: 0; z-index: 10; height: var(--panel-h); display: flex; flex-direction: column; background: var(--bg); border-top: 1px solid var(--divider); font-size: 13px; line-height: 20px; }
+.split-panel.folded { height: auto; }
+.split-panel.folded .tabs, .split-panel.folded .split-panel-body { display: none; }
+.split-panel-handle { position: absolute; top: -4px; left: 0; right: 0; height: 9px; cursor: ns-resize; touch-action: none; }
+.split-panel-handle::after { content: ""; position: absolute; left: 50%; top: 4px; width: 16px; margin-left: -8px; border-top: 1px solid var(--text-2); }
+.split-panel-handle:focus-visible { outline: 2px solid var(--accent); }
+.split-panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px 8px; }
+.split-panel-head h2 { margin: 0 4px 0 0; font-size: 20px; line-height: 24px; font-weight: 700; }
 .panel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-.split-panel-body { overflow: auto; padding: 16px 24px 20px; }
-.split-panel .kv { margin-bottom: 4px; }
-.split-panel h3 { margin: 20px 0 8px; }
-.panel-use { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.tabs { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.tab-list { display: flex; margin: 0 20px; border-bottom: 1px solid var(--divider); }
+.tab-list [role="tab"] { position: relative; font: inherit; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--text-strong); background: none; border: 0; padding: 9px 16px 11px; cursor: pointer; }
+.tab-list [role="tab"] + [role="tab"]::before { content: ""; position: absolute; left: 0; top: 11px; height: 18px; border-left: 1px solid var(--divider); }
+.tab-list [role="tab"]:hover { color: var(--accent); }
+.tab-list [role="tab"][aria-selected="true"] { color: var(--accent); }
+.tab-list [role="tab"][aria-selected="true"]::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 4px; border-radius: 4px; background: var(--accent); }
+.split-panel-body { overflow: auto; padding: 16px 20px 20px; flex: 1; }
+.split-panel .box + .box, .split-panel .alert + .box { margin-top: 16px; }
+.split-panel .box h3 { margin: 0 0 12px; font-size: 20px; line-height: 24px; font-weight: 500; }
+.split-panel .kv dt { font-size: 13px; font-weight: 500; }
+.split-panel .kv dd { font-size: 13px; color: var(--text-strong); }
+.kv.cols4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 0; }
+.kv.cols4 > div { padding: 0 20px; border-left: 1px solid var(--divider); }
+.kv.cols4 > div:nth-child(4n+1) { padding-left: 0; border-left: 0; }
+@media (max-width: 1000px) {
+  .kv.cols4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kv.cols4 > div:nth-child(4n+1) { padding-left: 20px; border-left: 1px solid var(--divider); }
+  .kv.cols4 > div:nth-child(2n+1) { padding-left: 0; border-left: 0; }
+}
+.access .desc { margin: -8px 0 12px; color: var(--text-2); }
+.access-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.command { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--divider); border-radius: 4px; padding: 3px 4px 3px 12px; background: var(--surface-soft); max-width: 100%; }
+.command code { font-size: 13px; overflow-wrap: anywhere; color: var(--text-strong); }
+.btn.copied::after { content: " ✓"; color: var(--success); }
 .btn.icon { padding: 4px 8px; }
-.main:has(.split-panel) { padding-bottom: calc(45vh + 40px); }
-@media (max-width: 800px) { .split-panel { left: 0; max-height: 60vh; } .main:has(.split-panel) { padding-bottom: calc(60vh + 40px); } }
+tr.open > td { background: var(--surface-soft); }
+#request-form:not(:empty) { margin-top: 16px; }
+.main:has(.split-panel) { padding-bottom: calc(var(--panel-h) + 40px); }
+.main:has(.split-panel.folded) { padding-bottom: 100px; }
+@media (max-width: 800px) { .split-panel { left: 0; } }
 
 /* Key-value pairs and sections. */
 .section { margin-top: 32px; }

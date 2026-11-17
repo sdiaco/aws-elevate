@@ -79,21 +79,24 @@ func ends(g api.Grant) time.Time {
 	return time.Time{}
 }
 
-// requestActions are the header buttons, in this order; each is enabled only when every
-// selected row allows it.
+// requestActions are the header buttons: only what is done on several rows at once. The
+// decisions on one request (approve, reject, cancel, retry) are in the panel, next to its
+// detail (design §11.2). Each is enabled only when every selected row allows it.
 var requestActions = []Action{
-	{Label: "Cancel…", Path: "/requests/cancel", Name: "cancel", Danger: true},
 	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true},
-	{Label: "Retry", Path: "/requests/retry", Name: "redrive"},
-	{Label: "Reject…", Path: "/requests/reject", Name: "reject", Danger: true},
-	{Label: "Approve", Path: "/requests/approve", Name: "approve"},
 }
 
 type requestsView struct {
 	List  List
 	Flash *flash
-	Panel *panel
+	Panel panelSlot
 	Alert *Alert
+}
+
+// panelSlot is the bottom panel of a page: the open grant, or a hint when none is.
+type panelSlot struct {
+	Panel *panel
+	Empty string
 }
 
 func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +162,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	v := requestsView{List: l}
+	v := requestsView{List: l, Panel: panelSlot{Empty: "Select a request above to see its details."}}
 	if id := r.URL.Query().Get("sent"); id != "" {
 		if d, err := a.Service.Grant(r.Context(), id); err != nil {
 			v.Alert = &Alert{Kind: "error", Text: err.Error()}
@@ -175,15 +178,16 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, "Requests", "/requests", err)
 			return
 		}
-		v.Panel = p
+		v.Panel.Panel = p
+		markOpen(v.List.Rows, id)
 	}
 	a.show(w, http.StatusOK, "requests", "Requests", "/requests", v)
 }
 
 // requestRowOf is one row; its id opens the panel on the page at here.
 func (a *App) requestRowOf(g api.Grant, here string) Row {
-	row := Row{State: g.State, Cells: []Cell{
-		{Text: g.ID, Href: withParam(here, "open", g.ID)},
+	row := Row{Key: g.ID, State: g.State, Cells: []Cell{
+		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
 		{State: g.State},
 		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
@@ -195,9 +199,8 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 			row.Actions = append(row.Actions, act.Name)
 		}
 	}
-	if len(row.Actions) > 0 {
-		row.ID = g.ID
-	}
+	// Every row can be selected: a single selection opens its panel, as in the console.
+	row.ID = g.ID
 	if inMotion(g.State) {
 		row.Poll = "/requests/row/" + g.ID
 	}
@@ -250,10 +253,10 @@ func (a *App) freshRow(w http.ResponseWriter, r *http.Request, rowOf func(api.Gr
 
 // panel is the detail of one grant at the bottom of the page, shared with History.
 type panel struct {
-	Detail  api.GrantDetail
-	Close   string
-	Mine    bool
-	Console string
+	Grant      api.Grant
+	ApprovedAt time.Time
+	Close      string
+	Console    string
 }
 
 func (a *App) panel(ctx context.Context, id, closeTo string) (*panel, error) {
@@ -261,12 +264,51 @@ func (a *App) panel(ctx context.Context, id, closeTo string) (*panel, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &panel{Detail: *d, Close: closeTo, Mine: a.mine(d.Grant)}
+	p := &panel{Grant: d.Grant, Close: closeTo, ApprovedAt: approvedAt(*d)}
 	// Only the requester has the grant's role.
-	if p.Mine && d.Grant.State == api.StateActive {
+	if a.mine(d.Grant) && d.Grant.State == api.StateActive {
 		p.Console = a.Console(d.Grant)
 	}
 	return p, nil
+}
+
+// approvedAt is when an approver let the request go on: the grant has no field for it,
+// its timeline has the step out of pending.
+func approvedAt(d api.GrantDetail) time.Time {
+	if d.Grant.Approver == nil {
+		return time.Time{}
+	}
+	for _, e := range d.Timeline {
+		if e.State == api.StateActivating {
+			return e.At
+		}
+	}
+	return time.Time{}
+}
+
+// panelPages are the pages a panel fragment can belong to, and where its close link goes
+// without the script.
+var panelPages = map[string]string{"requests": "/requests", "history": "/history"}
+
+// panelPart is the panel of one grant alone, fetched when a row is chosen.
+func (a *App) panelPart(w http.ResponseWriter, r *http.Request) {
+	closeTo, ok := panelPages[r.URL.Query().Get("from")]
+	if !ok {
+		closeTo = "/requests"
+	}
+	p, err := a.panel(r.Context(), r.PathValue("id"), closeTo)
+	if err != nil {
+		partError(w, err)
+		return
+	}
+	part(w, "panel", panelSlot{Panel: p})
+}
+
+// markOpen highlights the row whose panel is open.
+func markOpen(rows []Row, id string) {
+	for i := range rows {
+		rows[i].Open = rows[i].Key == id
+	}
 }
 
 // confirm asks before an action on grants: it lists the ids and, for a revocation, asks
