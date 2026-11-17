@@ -244,11 +244,15 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .flash.success { border-color: var(--success); background: var(--alert-success); }
 .flash.error { border-color: var(--error); background: var(--alert-error); }
 .flash-head { display: flex; align-items: center; gap: 8px; }
-.flash-icon::before { content: "i"; display: inline-grid; place-items: center; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 700; }
-.flash.success .flash-icon { color: var(--success); }
-.flash.success .flash-icon::before { content: "✓"; }
-.flash.error .flash-icon { color: var(--error); }
-.flash.error .flash-icon::before { content: "✕"; }
+.flash-text { flex: 1; }
+.flash-icon { flex: none; fill: none; stroke: var(--info); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.flash.success .flash-icon { stroke: var(--success); }
+.flash.error .flash-icon { stroke: var(--error); }
+.flash.warning { border-color: var(--warning); background: var(--alert-warning); }
+.flash.warning .flash-icon { stroke: var(--warning); }
+.flash-list { display: block; padding-left: 16px; }
+.icon-btn.small { width: 22px; height: 22px; vertical-align: middle; }
+.icon-btn.busy svg { animation: spin 0.8s linear infinite; }
 .flash-body { margin: 8px 0 0 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--info); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
@@ -355,6 +359,10 @@ label.choice { display: inline-flex; align-items: center; gap: 8px; font-weight:
 .launch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: "rules summary" "details summary"; gap: 16px 20px; align-items: start; }
 .launch-slot { display: contents; }
 .launch-rules { grid-area: rules; }
+.rule-launch { grid-template-areas: "main summary"; }
+.launch-main { grid-area: main; display: grid; gap: 16px; min-width: 0; }
+.launch-main .box + .box { margin-top: 0; }
+.launch-summary dd { overflow-wrap: anywhere; }
 .launch-details { grid-area: details; }
 .launch-summary { grid-area: summary; position: sticky; top: 20px; }
 .launch-summary .kv { grid-template-columns: 1fr; gap: 12px; }
@@ -363,6 +371,7 @@ label.choice { display: inline-flex; align-items: center; gap: 8px; font-weight:
 .launch .box > p.desc { margin: 2px 0 16px; }
 @media (max-width: 960px) {
   .launch { grid-template-columns: minmax(0, 1fr); grid-template-areas: "rules" "details" "summary"; }
+  .rule-launch { grid-template-areas: "main" "summary"; }
   .launch-summary { position: static; }
 }
 

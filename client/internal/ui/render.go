@@ -105,6 +105,7 @@ type Cell struct {
 	Copy     string
 	Until    time.Time
 	At       time.Time
+	Refresh  string // a button next to the state reads the row again from this address
 }
 
 // Action is a header button. Destructive actions are normal buttons, as in the console;
@@ -130,20 +131,21 @@ var stateLabels = map[string]string{
 }
 
 var funcs = template.FuncMap{
-	"stateLabel": func(s string) string { return stateLabels[s] },
-	"iso":        func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"exact":      func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
-	"left":       left,
-	"ago":        ago,
-	"short":      short,
-	"can":        can,
-	"has":        func(list []string, s string) bool { return slices.Contains(list, s) },
-	"indent":     indent,
-	"join":       strings.Join,
-	"tags":       tags,
-	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
-	"policyName": policyName,
-	"policyDoc":  policyDoc,
+	"stateLabel":  func(s string) string { return stateLabels[s] },
+	"reasonLabel": reasonLabel,
+	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+	"exact":       func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
+	"left":        left,
+	"ago":         ago,
+	"short":       short,
+	"can":         can,
+	"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
+	"indent":      indent,
+	"join":        strings.Join,
+	"tags":        tags,
+	"row":         func(r Row, check bool) rowCtx { return rowCtx{r, check} },
+	"policyName":  policyName,
+	"policyDoc":   policyDoc,
 	"diff": func(v compareView, c ruleChange, kind string) ruleDiff {
 		return ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
 	},

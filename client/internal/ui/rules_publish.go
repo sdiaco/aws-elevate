@@ -195,14 +195,11 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	if b.Latest != nil && n <= *b.Latest {
 		text = fmt.Sprintf("No change: version %d already has this content.", n)
 	}
-	a.show(w, http.StatusOK, "done", "Rules", "/rules", done{
-		Title: "Rules", Back: "/rules", Label: "Back to rules",
-		Text: "The rules list shows the new version once the service has read it, within about 30 seconds.",
-	}, Alert{Kind: "success", Text: text})
+	a.redirectWithNotice(w, r, "/rules", notice{
+		Kind: "success",
+		Text: text + " The list shows it once the service has read it.",
+	})
 }
-
-// done ends a flow with a way back.
-type done struct{ Title, Text, Back, Label string }
 
 func samePtr(x, y *int) bool { return (x == nil && y == nil) || (x != nil && y != nil && *x == *y) }
 

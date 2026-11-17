@@ -9,7 +9,7 @@
 <details class="expand" data-load="/rules/ps-permissions?ps=" data-load-from="ps"><summary>What it contains</summary><div data-load-target><p class="muted">Loading…</p></div></details></div>{{end}}
 
 {{define "rule-where"}}<fieldset class="field"><legend>Accounts</legend>
-<span class="desc">Where the permission set can be given. The management account is never listed.</span>
+<span class="desc">The management account is never listed.</span>
 <div class="choices">{{range .Accounts}}<label class="choice"><input type="checkbox" name="account" value="{{.ID}}"{{if has $.Form.Accounts .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.ID}}</span></label>{{end}}</div></fieldset>{{end}}
 
 {{define "rule-who"}}<div class="field"><label for="group">Who can request</label>
@@ -20,7 +20,7 @@
 <label class="choice"><input type="radio" name="approval" value="auto"{{if eq .Form.Approval "auto"}} checked{{end}}> Automatic</label>
 <label class="choice"><input type="radio" name="approval" value="manual"{{if eq .Form.Approval "manual"}} checked{{end}}> Manual</label>
 </div></fieldset>
-<div class="field"><label for="approver">Who approves <span class="optional">- only with manual approval</span></label>
+<div class="field" data-show-when="approval=manual"><label for="approver">Who approves</label>
 <select id="approver" name="approver"><option value="">No group</option>{{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Form.Approver}} selected{{end}}>{{.Name}}</option>{{end}}</select></div>{{end}}
 
 {{define "rule-how"}}<div class="field"><div class="field-row">

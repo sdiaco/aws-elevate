@@ -168,7 +168,7 @@ func TestSavingARuleShowsTheChangesThenPublishesFromTheNewestVersion(t *testing.
 		t.Fatalf("published before confirmation, calls %v", h.svc.calls)
 	}
 	w = h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
-	contains(t, w.Body.String(), `class="alert success"`, "Published rules version 5", "about 30 seconds")
+	contains(t, followed(t, h, w, "/rules"), `class="flash success"`, "Published rules version 5", "about 30 seconds")
 	if len(adm.published) != 1 || *adm.latest[0] != 4 {
 		t.Fatalf("published %v latest %v", adm.published, adm.latest)
 	}
@@ -288,4 +288,11 @@ func TestARuleOpensInThePanelWithItsDecisions(t *testing.T) {
 	lacks(t, part, `class="nav"`)
 	contains(t, h.get(t, "/rules/panel?id=nope"), "no such rule")
 	contains(t, h.get(t, "/rules?open=nope"), "No rule nope")
+}
+
+func TestTheRuleFormIsLaidOutLikeNewRequest(t *testing.T) {
+	h, _ := rulesHarness()
+	out := h.get(t, "/rules/edit")
+	contains(t, out, `class="launch rule-launch"`, `class="box launch-summary"`, `data-mirror="approval approver"`,
+		`data-show-when="approval=manual"`, "Review changes")
 }
