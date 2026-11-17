@@ -313,8 +313,16 @@ func TestRetryRunsTheFailedRevocationAgain(t *testing.T) {
 
 // --- New request ---
 
+// twoRules gives the harness a second requestable rule, so none is chosen for the user.
+func twoRules(h *harness) *harness {
+	other := ruleSSM()
+	other.ID = "ssm-dev"
+	h.svc.rules = append(h.svc.rules, other)
+	return h
+}
+
 func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
-	h := newHarness("requester")
+	h := twoRules(newHarness("requester"))
 	out := h.get(t, "/requests/new")
 	contains(t, out, `<form method="get" action="/requests/new"`, `type="radio" name="rule" value="ssm-prod"`,
 		"ssm-write", "Manual · leads", "4h")
@@ -501,4 +509,11 @@ func TestAPendingRowSaysWithinWhenToApprove(t *testing.T) {
 	h := requestsHarness("requester")
 	out := h.get(t, "/requests")
 	contains(t, out, `<span class="muted">Approve within </span><time`)
+}
+
+func TestTheOnlyRequestableRuleIsAlreadyChosen(t *testing.T) {
+	out := newHarness("requester").get(t, "/requests/new")
+	contains(t, out, `value="ssm-prod" id="rule-ssm-prod" checked`, `<textarea name="reason"`)
+	// With two or more, the user chooses: nothing is picked for them.
+	lacks(t, twoRules(newHarness("requester")).get(t, "/requests/new"), `<textarea name="reason"`)
 }

@@ -60,6 +60,10 @@ func (a *App) newRequestView(r *http.Request, ruleID string, form requestForm) (
 		return newRequestView{}, err
 	}
 	v := newRequestView{Rules: rules.Rules, Form: form}
+	// A single rule leaves nothing to choose; with more, the user picks.
+	if ruleID == "" && len(rules.Rules) == 1 {
+		ruleID = rules.Rules[0].ID
+	}
 	for i := range rules.Rules {
 		if rules.Rules[i].ID == ruleID {
 			v.Rule = &rules.Rules[i]
