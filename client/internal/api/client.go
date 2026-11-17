@@ -205,7 +205,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("call aws-elevate: %w", err)
+		return fmt.Errorf("cannot reach the aws-elevate service at %s: check your network, or run aws elevate setup again if the service moved: %w", c.base, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)

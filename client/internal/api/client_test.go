@@ -335,3 +335,14 @@ func TestClientTooOldCarriesTheInfraVersion(t *testing.T) {
 		t.Fatalf("got %#v", err)
 	}
 }
+
+func TestAnUnreachableServiceSaysWhatToCheck(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close() // nothing listens at this address any more
+	cfg := aws.Config{Region: "eu-west-1", Credentials: credentials.NewStaticCredentialsProvider("a", "b", "c")}
+	_, err := New(cfg, srv.URL+"/api").Me(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cannot reach the aws-elevate service at "+srv.URL+"/api") ||
+		!strings.Contains(err.Error(), "aws elevate setup") {
+		t.Errorf("got %v", err)
+	}
+}
