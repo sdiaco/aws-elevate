@@ -197,72 +197,123 @@ sso_start_url = https://example.awsapps.com/start
 sso_region = eu-west-1
 `
 
-func TestWriteProfileKeepsOtherProfiles(t *testing.T) {
+const wantBegin = "# >>> aws-elevate: managed block, rewritten automatically, do not edit >>>\n"
+const wantEnd = "# <<< aws-elevate <<<\n"
+
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "config")
-	if err := os.WriteFile(path, []byte(otherProfiles), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	src := SourceProfile{Name: "work", SSOSession: "corp", SSORegion: "eu-west-1", Region: "eu-west-1"}
+	return path
+}
 
-	name, err := WriteProfile(path, src, "AdministratorAccess", "222222222222", "JIT-abcdefghij")
+func readConfig(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+var corp = SourceProfile{Name: "work", SSOSession: "corp", SSORegion: "eu-west-1", Region: "eu-west-1"}
+
+func TestWriteProfileAppendsTheManagedBlock(t *testing.T) {
+	path := writeConfig(t, otherProfiles)
+
+	name, err := WriteProfile(path, corp, "AdministratorAccess", "222222222222", "JIT-abcdefghij")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if name != "jit-AdministratorAccess-222222222222" {
 		t.Fatalf("name %q", name)
 	}
-	// A second grant on the same source PS and account reuses the profile name.
-	if _, err := WriteProfile(path, src, "AdministratorAccess", "222222222222", "JIT-klmnopqrst"); err != nil {
-		t.Fatal(err)
-	}
-
-	data, _ := os.ReadFile(path)
-	got := string(data)
-	if !strings.HasPrefix(got, otherProfiles) {
-		t.Fatalf("other profiles changed:\n%s", got)
-	}
-	want := "\n[profile jit-AdministratorAccess-222222222222]\n" +
+	want := otherProfiles + "\n" + wantBegin +
+		"[profile jit-AdministratorAccess-222222222222]\n" +
 		"sso_session = corp\n" +
 		"sso_account_id = 222222222222\n" +
-		"sso_role_name = JIT-klmnopqrst\n" +
-		"region = eu-west-1\n"
-	if got != otherProfiles+want {
-		t.Fatalf("got:\n%s\nwant suffix:\n%s", got, want)
-	}
-}
-
-func TestWriteProfileReplacesInTheMiddle(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config")
-	before := "[profile jit-PS-222222222222]\nsso_role_name = JIT-old\n\n[profile after]\nregion = us-east-1\n"
-	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	src := SourceProfile{Name: "legacy", SSOStartURL: "https://example.awsapps.com/start", SSORegion: "eu-west-1", Region: "eu-west-1"}
-	if _, err := WriteProfile(path, src, "PS", "222222222222", "JIT-new"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(path)
-	want := "[profile jit-PS-222222222222]\n" +
-		"sso_start_url = https://example.awsapps.com/start\n" +
-		"sso_region = eu-west-1\n" +
-		"sso_account_id = 222222222222\n" +
-		"sso_role_name = JIT-new\n" +
+		"sso_role_name = JIT-abcdefghij\n" +
 		"region = eu-west-1\n" +
-		"\n[profile after]\nregion = us-east-1\n"
-	if string(data) != want {
-		t.Fatalf("got:\n%s\nwant:\n%s", data, want)
+		wantEnd
+	if got := readConfig(t, path); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 
-func TestWriteProfileCreatesTheFile(t *testing.T) {
+func TestWriteProfileReplacesAndAddsInsideTheBlock(t *testing.T) {
+	path := writeConfig(t, otherProfiles)
+	for _, w := range []struct{ ps, role string }{{"A", "JIT-old"}, {"B", "JIT-b"}, {"A", "JIT-new"}} {
+		if _, err := WriteProfile(path, corp, w.ps, "222222222222", w.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := readConfig(t, path)
+	if !strings.HasPrefix(got, otherProfiles) {
+		t.Fatalf("user profiles changed:\n%s", got)
+	}
+	if strings.Count(got, wantBegin) != 1 || strings.Count(got, wantEnd) != 1 || !strings.HasSuffix(got, wantEnd) {
+		t.Fatalf("one block at the end expected:\n%s", got)
+	}
+	if strings.Contains(got, "JIT-old") || !strings.Contains(got, "JIT-new") || !strings.Contains(got, "[profile jit-B-222222222222]") {
+		t.Fatalf("profiles not replaced or kept:\n%s", got)
+	}
+}
+
+func TestWriteProfileMovesTheBlockToTheEnd(t *testing.T) {
+	// Lines written after the block would belong to its last section, so the block
+	// always goes back to the end; the user's lines keep their order.
+	user := "[profile after]\nregion = us-east-1\n"
+	path := writeConfig(t, wantBegin+"[profile jit-A-222222222222]\nsso_role_name = JIT-old\n"+wantEnd+"\n"+user)
+	if _, err := WriteProfile(path, corp, "B", "222222222222", "JIT-b"); err != nil {
+		t.Fatal(err)
+	}
+	got := readConfig(t, path)
+	if !strings.HasPrefix(got, user) || !strings.HasSuffix(got, wantEnd) {
+		t.Fatalf("got:\n%s", got)
+	}
+	if !strings.Contains(got, "[profile jit-A-222222222222]") {
+		t.Fatalf("existing managed profile lost:\n%s", got)
+	}
+}
+
+func TestWriteProfileRefusesAProfileOutsideTheBlock(t *testing.T) {
+	before := "[profile jit-PS-222222222222]\nsso_role_name = Mine\n"
+	path := writeConfig(t, before)
+	_, err := WriteProfile(path, corp, "PS", "222222222222", "JIT-new")
+	if err == nil || !strings.Contains(err.Error(), "jit-PS-222222222222") {
+		t.Fatalf("want an error naming the profile, got %v", err)
+	}
+	if readConfig(t, path) != before {
+		t.Fatal("file changed")
+	}
+}
+
+func TestWriteProfileRefusesABrokenBlock(t *testing.T) {
+	before := otherProfiles + wantBegin + "[profile jit-A-222222222222]\n"
+	path := writeConfig(t, before)
+	if _, err := WriteProfile(path, corp, "B", "222222222222", "JIT-b"); err == nil {
+		t.Fatal("want an error for a block without its end line")
+	}
+	if readConfig(t, path) != before {
+		t.Fatal("file changed")
+	}
+}
+
+func TestWriteProfileLegacySourceAndNewFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "config")
-	src := SourceProfile{Name: "work", SSOSession: "corp", Region: "eu-west-1"}
+	src := SourceProfile{Name: "legacy", SSOStartURL: "https://example.awsapps.com/start", SSORegion: "eu-west-1"}
 	if _, err := WriteProfile(path, src, "PS", "222222222222", "JIT-abcdefghij"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || !strings.HasPrefix(string(data), "[profile jit-PS-222222222222]\n") {
-		t.Fatalf("got %q, %v", data, err)
+	want := wantBegin + "[profile jit-PS-222222222222]\n" +
+		"sso_start_url = https://example.awsapps.com/start\n" +
+		"sso_region = eu-west-1\n" +
+		"sso_account_id = 222222222222\n" +
+		"sso_role_name = JIT-abcdefghij\n" + wantEnd
+	if got := readConfig(t, path); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 
