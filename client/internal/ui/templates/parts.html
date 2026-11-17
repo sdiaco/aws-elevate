@@ -33,7 +33,7 @@
 
 {{define "flash"}}<div class="flash {{.Kind}}" role="status" data-grant="{{.Grant.ID}}" data-state="{{.Grant.State}}"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
 <div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}{{template "flash-icon" .Kind}}{{end}}
-<span class="flash-text"><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}}{{if .Within}} within <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>.{{else}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}{{end}}</span>
+<span class="flash-text"><strong>Request {{.Grant.ID}}</strong>{{if .Within}} {{else}} · {{end}}{{.Text}}{{if not .Until.IsZero}}{{if .Within}} within <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>.{{else}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}{{end}}</span>
 {{- with .Refresh}}{{template "refresh-button" .}}{{end}}
 {{- if or (eq .Kind "success") (eq .Kind "error")}}{{template "dismiss-button"}}{{end}}</div>
 {{with .Error}}<p class="flash-body">{{.}}</p>{{end}}

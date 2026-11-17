@@ -128,7 +128,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Requests", Search: true, Empty: noOwnRequest,
-		Columns: []string{"Id", "State", "Permission set", "Account", "Ends in"},
+		Columns: []string{"Id", "State", "Permission set", "Account", "Time left"},
 	}
 	if a.seesOthers() {
 		l.Empty = "No open request."

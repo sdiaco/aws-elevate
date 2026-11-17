@@ -81,8 +81,8 @@ func scopes(h *harness) string {
 func TestARequesterSeesOnlyTheirRequestsWithoutFilters(t *testing.T) {
 	h := requestsHarness("requester")
 	out := h.get(t, "/requests")
-	contains(t, out, `<span class="counter">(2)</span>`, "mine234567", "own2345678", `href="/requests/new"`)
-	lacks(t, out, `class="segmented"`, "ask2345678", "their23456")
+	contains(t, out, `<span class="counter">(2)</span>`, "mine234567", "own2345678", `href="/requests/new"`, ">Time left<")
+	lacks(t, out, `class="segmented"`, "ask2345678", "their23456", ">Ends in<")
 	if scopes(h) != "mine" || !h.svc.queries[0].Open {
 		t.Errorf("queries %+v", h.svc.queries)
 	}
@@ -412,7 +412,7 @@ func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 
 	out := h.get(t, "/requests?sent=new4567890")
 	// Sent, and nothing more to follow here: the row in the table tracks it.
-	contains(t, out, `class="flash success"`, "submitted. An approver in leads must approve it within", "data-dismiss")
+	contains(t, out, `class="flash success"`, "<strong>Request new4567890</strong> submitted. An approver in leads must approve it within", "data-dismiss")
 	lacks(t, out, `data-poll="/requests/flash/`, `data-refresh="/requests/flash/`, `class="spinner"`)
 	lacks(t, out, "console?account_id")
 }
