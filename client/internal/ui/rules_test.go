@@ -360,7 +360,10 @@ func TestConflictBeforeTheServiceReadsTheNewVersionComparesWithIt(t *testing.T) 
 func TestDeletingRules(t *testing.T) {
 	h, adm := rulesHarness()
 	out := h.do(t, "POST", "/rules/delete", url.Values{"id": {"ssm-prod"}}).Body.String()
-	contains(t, out, "Review changes", "Removed", "ssm-prod")
+	contains(t, out, "Review changes", "Removed", "ssm-prod",
+		// Deleting cannot be undone from here: one more confirmation in a dialog (design §11.1).
+		`data-dialog="delete">Delete and publish…`, "Delete 1 rule?", `<li><code>ssm-prod</code></li>`)
+	lacks(t, out, `>Publish</button>`)
 	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
 	if len(adm.published) != 1 || strings.Contains(adm.published[0], "ssm-prod") || !strings.Contains(adm.published[0], "ssm-dev") {
 		t.Errorf("published %v", adm.published)

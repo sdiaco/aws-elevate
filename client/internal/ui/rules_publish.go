@@ -91,6 +91,10 @@ type reviewView struct {
 	// Replaces are rules another admin changed meanwhile that this publish overwrites:
 	// publishing them needs one more confirmation (design §7.2).
 	Replaces []string
+	// Deletes are the rules this publish removes; deleting asks once more in a dialog
+	// (design §11.1).
+	Deletes     []string
+	DeleteTitle string
 }
 
 // review asks the service to check the changed document, then shows what changes and
@@ -132,6 +136,10 @@ func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change,
 	}
 	diff.OldLabel, diff.NewLabel = "In use", "After publishing"
 	v := reviewView{Changes: diff, Change: string(raw), Replaces: replaces}
+	for _, rc := range diff.Removed {
+		v.Deletes = append(v.Deletes, rc.ID)
+	}
+	v.DeleteTitle = "Delete " + count(len(v.Deletes), "rule", "rules") + "?"
 	if b.Latest != nil {
 		v.Latest = strconv.Itoa(*b.Latest)
 	}
