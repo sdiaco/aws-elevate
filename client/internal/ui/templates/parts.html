@@ -154,8 +154,7 @@
 {{define "requestform"}}{{with .Rule}}<form method="post" action="/requests/new" class="box launch-details" id="request">
 <h2>Details</h2>
 <input type="hidden" name="rule" value="{{.ID}}">
-<div class="field"><label for="account">Account</label>
-<select id="account" name="account" required data-error="Choose an account.">{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<fieldset class="field"><legend>Account</legend>{{template "account-cards" $.Accounts}}</fieldset>
 <div class="field"><label for="duration">Duration <span class="optional">- optional</span></label>
 <input type="text" id="duration" name="duration" value="{{$.Form.Duration}}" placeholder="{{short .Duration.DefaultSeconds}}">
 <span class="constraint">Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}. For example 45m or 2h.</span></div>
@@ -191,3 +190,16 @@
 {{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div>
 <div><h3>{{.NewLabel}}</h3>{{if .Change.AfterLines}}<pre>{{range .Change.AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
 {{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div></details>{{end}}
+
+{{/* Accounts as Cloudscape cards: searched, 12 a page, ticked (several) or picked (one).
+     An account with an open grant shows it instead of a choice. */}}
+{{define "account-cards"}}<div class="cards" data-paginate="12">
+<div class="list-tools">{{if gt (len .Items) 1}}<input type="search" data-filter placeholder="Find an account" aria-label="Find an account">{{end}}{{if .Multiple}}<span class="muted" data-selected-count>Selected ({{len (checked .Items)}})</span>{{end}}<nav class="pager-nums" data-pager aria-label="Pages"></nav></div>
+<div class="card-grid">{{range .Items}}<label class="card{{if .Checked}} selected{{end}}{{if .Open}} covered{{end}}" data-item>
+<span class="card-head"><input type="{{if $.Multiple}}checkbox{{else}}radio{{end}}" name="account" value="{{.ID}}"{{if .Checked}} checked{{end}}{{if .Open}} disabled{{else if not $.Multiple}} required data-error="Choose an account."{{end}}><span class="card-name">{{.Name}}</span></span>
+<button type="button" class="copy card-id" data-copy="{{.ID}}" title="Copy">{{.ID}}</button>
+{{with .Open}}<span class="card-open">{{template "open-grant" .}}</span>{{end}}
+</label>{{end}}</div>
+<p class="muted no-match" data-no-match hidden>No account matches.</p></div>{{end}}
+
+{{define "open-grant"}}{{stateLabel .State}} · <a href="/requests?open={{.GrantID}}">{{.GrantID}}</a> <span class="muted">({{if eq .State "pending"}}waiting for approval{{else}}you already have this access{{end}})</span>{{end}}

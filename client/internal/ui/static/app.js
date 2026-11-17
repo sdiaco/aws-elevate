@@ -475,18 +475,19 @@ document.addEventListener("change", (e) => {
   });
 });
 
-// A table to choose from, searched and shown a page at a time: <div data-paginate="8">
-// with an [data-filter] input, a [data-pager] and the rows in its tbody. The page with the
-// chosen row shows first. Without the script every row shows.
+// A table or cards to choose from, searched and shown a page at a time:
+// <div data-paginate="8"> with an [data-filter] input, a [data-pager] and the rows in its
+// tbody, or cards marked [data-item]. The page with the chosen one shows first. Without
+// the script everything shows.
 function paginate(box) {
   const size = Number(box.dataset.paginate);
-  const rows = [...box.querySelectorAll("tbody tr")];
+  const rows = [...box.querySelectorAll("tbody tr, [data-item]")];
   const filter = box.querySelector("[data-filter]");
   const pager = box.querySelector("[data-pager]");
   const none = box.querySelector("[data-no-match]");
   let page = 0;
   const matching = () => {
-    const words = filter.value.toLowerCase().trim().split(/\s+/);
+    const words = (filter ? filter.value : "").toLowerCase().trim().split(/\s+/);
     return rows.filter((tr) => words.every((w) => tr.textContent.toLowerCase().includes(w)));
   };
   const show = () => {
@@ -517,7 +518,7 @@ function paginate(box) {
   };
   const chosen = rows.findIndex((tr) => tr.querySelector("input:checked"));
   if (chosen > 0) page = Math.floor(chosen / size);
-  filter.addEventListener("input", () => { page = 0; show(); });
+  filter?.addEventListener("input", () => { page = 0; show(); });
   show();
 }
 
@@ -915,3 +916,13 @@ function filterSelect(select) {
 }
 
 document.querySelectorAll("select[data-filter]").forEach(filterSelect);
+
+// A card shows whether it is chosen, and a list of several counts the chosen ones.
+document.addEventListener("change", (e) => {
+  const input = e.target;
+  const box = input.closest?.(".cards");
+  if (!box) return;
+  box.querySelectorAll(".card").forEach((c) => c.classList.toggle("selected", c.querySelector("input").checked));
+  const count = box.querySelector("[data-selected-count]");
+  if (count) count.textContent = `Selected (${box.querySelectorAll(".card input:checked").length})`;
+});

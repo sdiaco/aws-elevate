@@ -13,16 +13,31 @@ import (
 // launch pages: the rules to choose from and the details on the left, a summary with the
 // submit button on the right.
 type newRequestView struct {
-	Rules    []api.Rule
+	Rules    []ruleChoice
 	Rule     *api.Rule
-	Accounts []option
+	Accounts cards
 	Form     requestForm
 }
 
-type option struct {
-	Value    string
-	Label    string
-	Selected bool
+// ruleChoice is a rule in the list. Open is set when the caller already has an open
+// grant on every account of the rule: nothing is left to ask, so it goes last, greyed.
+type ruleChoice struct {
+	api.Rule
+	Open *api.OpenGrant
+}
+
+// cards are accounts shown as Cloudscape cards, to tick (rule form) or pick one
+// (new request). An account with an open grant (service's openGrants) is not offered.
+type cards struct {
+	Multiple bool
+	Items    []card
+}
+
+type card struct {
+	ID      string
+	Name    string
+	Checked bool
+	Open    *api.OpenGrant
 }
 
 type requestForm struct {
@@ -59,9 +74,19 @@ func (a *App) newRequestView(r *http.Request, ruleID string, form requestForm) (
 	if err != nil {
 		return newRequestView{}, err
 	}
-	v := newRequestView{Rules: rules.Rules, Form: form}
-	// A single rule leaves nothing to choose; with more, the user picks.
-	if ruleID == "" && len(rules.Rules) == 1 {
+	v := newRequestView{Form: form}
+	var covered []ruleChoice
+	for _, rule := range rules.Rules {
+		c := ruleChoice{Rule: rule, Open: coveredBy(rule, rules.OpenGrants)}
+		if c.Open != nil {
+			covered = append(covered, c)
+		} else {
+			v.Rules = append(v.Rules, c)
+		}
+	}
+	v.Rules = append(v.Rules, covered...)
+	// A single rule left to ask for leaves nothing to choose; with more, the user picks.
+	if ruleID == "" && len(rules.Rules) == 1 && len(covered) == 0 {
 		ruleID = rules.Rules[0].ID
 	}
 	for i := range rules.Rules {
@@ -71,13 +96,43 @@ func (a *App) newRequestView(r *http.Request, ruleID string, form requestForm) (
 	}
 	if v.Rule != nil {
 		for _, acc := range v.Rule.Accounts {
-			v.Accounts = append(v.Accounts, option{
-				Value: acc.ID, Label: acc.Name + " (" + acc.ID + ")",
-				Selected: acc.ID == form.Account || len(v.Rule.Accounts) == 1,
+			v.Accounts.Items = append(v.Accounts.Items, card{
+				ID: acc.ID, Name: acc.Name, Open: openOn(v.Rule.ID, acc.ID, rules.OpenGrants),
+				Checked: acc.ID == form.Account || len(v.Rule.Accounts) == 1,
 			})
+		}
+		for i := range v.Accounts.Items {
+			if v.Accounts.Items[i].Open != nil {
+				v.Accounts.Items[i].Checked = false
+			}
 		}
 	}
 	return v, nil
+}
+
+// openOn is the caller's open grant for the rule on the account, if any.
+func openOn(ruleID, account string, open []api.OpenGrant) *api.OpenGrant {
+	for i := range open {
+		if open[i].RuleID == ruleID && open[i].Account == account {
+			return &open[i]
+		}
+	}
+	return nil
+}
+
+// coveredBy is an open grant of the rule when every account of it has one, else nil.
+func coveredBy(rule api.Rule, open []api.OpenGrant) *api.OpenGrant {
+	var first *api.OpenGrant
+	for _, acc := range rule.Accounts {
+		g := openOn(rule.ID, acc.ID, open)
+		if g == nil {
+			return nil
+		}
+		if first == nil {
+			first = g
+		}
+	}
+	return first
 }
 
 func (a *App) newRequestSubmit(w http.ResponseWriter, r *http.Request) {

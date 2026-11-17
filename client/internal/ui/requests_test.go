@@ -354,7 +354,9 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 		`<button class="btn primary" form="request">Submit request</button>`,
 		`data-paginate="8"`, `data-filter`, `data-pager`,
 		`<input type="hidden" name="rule" value="ssm-prod">`,
-		`<option value="222222222222" selected>prod (222222222222)</option>`,
+		`class="cards" data-paginate="12"`,
+		`<input type="radio" name="account" value="222222222222" checked required data-error="Choose an account.">`,
+		`class="card-name">prod</span>`, `class="copy card-id" data-copy="222222222222"`,
 		`name="duration"`, `placeholder="1h"`, "Default 1h, at most 4h",
 		`<textarea name="reason"`,
 		`data-load="/requests/permissions?rule=ssm-prod"`,
@@ -557,4 +559,35 @@ func TestAnActionGoesBackToTheFilterItCameFrom(t *testing.T) {
 			t.Errorf("from %q: went to %q, want %s…", referer, got, want)
 		}
 	}
+}
+
+func TestAnAccountWithAnOpenGrantCannotBeChosenAgain(t *testing.T) {
+	h := newHarness("requester")
+	rule := h.svc.rules[0]
+	rule.Accounts = append(rule.Accounts, api.Ref{ID: "333333333333", Name: "stage"})
+	h.svc.rules[0] = rule
+	h.svc.openGrants = []api.OpenGrant{{RuleID: rule.ID, Account: "333333333333", GrantID: "abcde23456", State: "pending"}}
+	out := h.get(t, "/requests/new?rule="+rule.ID)
+	contains(t, out,
+		`<input type="radio" name="account" value="222222222222" required data-error="Choose an account.">`,
+		`<input type="radio" name="account" value="333333333333" disabled>`,
+		`Pending · <a href="/requests?open=abcde23456">abcde23456</a>`, "waiting for approval",
+	)
+}
+
+func TestARuleOpenOnEveryAccountGoesLastAndGreyed(t *testing.T) {
+	h := twoRules(newHarness("requester"))
+	h.svc.openGrants = []api.OpenGrant{{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}}
+	out := h.get(t, "/requests/new")
+	contains(t, out,
+		`<tr class="covered">`, `id="rule-ssm-prod" disabled`,
+		`Active · <a href="/requests?open=abcde23456">abcde23456</a>`, "you already have this access",
+	)
+	if strings.Index(out, `value="ssm-dev"`) > strings.Index(out, `value="ssm-prod"`) {
+		t.Error("the covered rule is not last")
+	}
+	// The only rule left to ask for is not chosen for the user when it is covered.
+	h = newHarness("requester")
+	h.svc.openGrants = []api.OpenGrant{{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}}
+	lacks(t, h.get(t, "/requests/new"), `id="request"`)
 }

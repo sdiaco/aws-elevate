@@ -176,12 +176,22 @@ var funcs = template.FuncMap{
 	"short":       short,
 	"can":         can,
 	"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
-	"indent":      indent,
-	"join":        strings.Join,
-	"tags":        tags,
-	"row":         func(r Row, check bool) rowCtx { return rowCtx{r, check} },
-	"policyName":  policyName,
-	"policyDoc":   policyDoc,
+	"ruleCards":   ruleCards,
+	"checked": func(items []card) []card {
+		var c []card
+		for _, i := range items {
+			if i.Checked {
+				c = append(c, i)
+			}
+		}
+		return c
+	},
+	"indent":     indent,
+	"join":       strings.Join,
+	"tags":       tags,
+	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
+	"policyName": policyName,
+	"policyDoc":  policyDoc,
 	"diff": func(v compareView, c ruleChange, kind string) ruleDiff {
 		return ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
 	},

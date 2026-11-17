@@ -17,6 +17,7 @@ import (
 // test: the views must show only those.
 type fakeService struct {
 	rules       []api.Rule
+	openGrants  []api.OpenGrant
 	rulesErr    error // GET /rules fails, as with no valid rules version
 	permsErr    error
 	lists       map[string][]api.Grant // by scope
@@ -48,7 +49,7 @@ func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
 	if f.rulesErr != nil {
 		return nil, f.rulesErr
 	}
-	return &api.RuleList{ConfigVersion: 3, Rules: f.rules}, nil
+	return &api.RuleList{ConfigVersion: 3, Rules: f.rules, OpenGrants: f.openGrants}, nil
 }
 
 func (f *fakeService) Permissions(_ context.Context, id string) (*api.Permissions, error) {

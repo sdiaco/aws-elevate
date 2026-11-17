@@ -264,6 +264,15 @@ type ruleView struct {
 	PSMissing bool
 }
 
+// ruleCards are the accounts of the rule form as cards, the chosen ones ticked.
+func ruleCards(accounts []awsx.Named, chosen []string) cards {
+	c := cards{Multiple: true}
+	for _, acc := range accounts {
+		c.Items = append(c.Items, card{ID: acc.ID, Name: acc.Name, Checked: slices.Contains(chosen, acc.ID)})
+	}
+	return c
+}
+
 func formOf(rule api.Rule) ruleForm {
 	f := ruleForm{
 		Orig: rule.ID, ID: rule.ID, Group: rule.Group.ID, PS: rule.PermissionSet.Name,
