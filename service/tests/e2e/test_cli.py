@@ -85,7 +85,7 @@ def test_auto_request_profile_status_and_revoke(org, set_up):
     status = ok(cli(set_up, "status")).stdout
     assert gid in status and "active" in status
 
-    ok(cli(set_up, "revoke", gid, "--reason", REASON))
+    ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=180)["closeReason"] == "revoked"
 
 
@@ -95,10 +95,10 @@ def test_manual_request_returns_and_cannot_be_self_approved(org, set_up):
     assert "waiting for approval" in waiting.stderr
     gid = grant_id(waiting.stderr)
     try:
-        refused = cli(set_up, "approve", gid)
+        refused = cli(set_up, "approve", gid, "--yes")
         assert refused.returncode != 0, refused.stdout
     finally:
-        ok(cli(set_up, "revoke", gid, "--reason", REASON))
+        ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=120)["closeReason"] == "cancelled"
 
 
@@ -112,9 +112,9 @@ def test_manual_request_approved_by_another_user(org, set_up):
     waiting = ok(cli(set_up, "request", MANUAL_RULE_ID, "--account", harness.env("TARGET_ACCOUNT"),
                      "--reason", REASON))  # fmt: skip
     gid = grant_id(waiting.stderr)
-    ok(cli(set_up, "approve", gid, profile=approver))
+    ok(cli(set_up, "approve", gid, "--yes", profile=approver))
     org.wait_state(gid, "active", timeout_s=180)
-    ok(cli(set_up, "revoke", gid, "--reason", REASON))
+    ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=180)["closeReason"] == "revoked"
 
 

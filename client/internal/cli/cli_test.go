@@ -552,11 +552,11 @@ func TestRevokeCancelsOrRevokesAsTheServiceOffers(t *testing.T) {
 	h.setUp(t)
 	h.svc.grant = grantFor("x")
 	h.svc.grant.Actions = []string{"view", "cancel"}
-	if got := h.run("revoke", "pend000001", "--profile", "work"); got != 0 {
+	if got := h.run("revoke", "pend000001", "--yes", "--profile", "work"); got != 0 {
 		t.Fatalf("exit %d: %s", got, h.errOut.String())
 	}
 	h.svc.grant.Actions = []string{"view", "revoke"}
-	if got := h.run("revoke", "actv000001", "actv000002", "--reason", "done", "--profile", "work"); got != 0 {
+	if got := h.run("revoke", "actv000001", "actv000002", "--reason", "done", "--yes", "--profile", "work"); got != 0 {
 		t.Fatalf("exit %d: %s", got, h.errOut.String())
 	}
 	want := "get pend000001,cancel pend000001,get actv000001,revoke actv000001,get actv000002,revoke actv000002"
@@ -592,7 +592,7 @@ func TestRevokeReportsEachGrantAndFailsIfOneFails(t *testing.T) {
 	h.env.Open = func(context.Context, string) (Backend, error) {
 		return &svcBackend{h.backend, failOn{h.svc, "gone000001"}}, nil
 	}
-	got := h.run("revoke", "gone000001", "actv000001", "--reason", "done", "--profile", "work")
+	got := h.run("revoke", "gone000001", "actv000001", "--reason", "done", "--yes", "--profile", "work")
 	if got != 1 {
 		t.Errorf("exit %d", got)
 	}
@@ -619,7 +619,7 @@ func TestRevokeWithoutIDPicksTheOnlyOpenGrant(t *testing.T) {
 	closedView.Actions = []string{"view"}
 	h.svc.lists = map[string][]api.Grant{"mine": {one, closedView}}
 	h.svc.grant = one
-	if got := h.run("revoke", "--reason", "done", "--profile", "work"); got != 0 {
+	if got := h.run("revoke", "--reason", "done", "--yes", "--profile", "work"); got != 0 {
 		t.Fatalf("exit %d: %s", got, h.errOut.String())
 	}
 	if h.svc.revokeBy["only000001"] != "done" {
@@ -643,7 +643,7 @@ func TestRevokeWithoutIDPicksTheOnlyOpenGrant(t *testing.T) {
 func TestApproveAndReject(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	if got := h.run("approve", "pend000001", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000001: activating") {
+	if got := h.run("approve", "pend000001", "--yes", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000001: activating") {
 		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
 	}
 	if got := h.run("approve", "--reject", "pend000002", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "--reason") {
@@ -652,10 +652,10 @@ func TestApproveAndReject(t *testing.T) {
 	if got := h.run("approve", "--reason", "not now", "pend000002", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "--reject") {
 		t.Fatalf("reason without --reject: exit %d, %q", got, h.errOut.String())
 	}
-	if got := h.run("approve", "--reject", "--reason", "use the read-only rule", "pend000002", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000002: closed, rejected") {
+	if got := h.run("approve", "--reject", "--reason", "use the read-only rule", "--yes", "pend000002", "--profile", "work"); got != 0 || !strings.Contains(h.out.String(), "pend000002: closed, rejected") {
 		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
 	}
-	if strings.Join(h.svc.calls, ",") != "approve pend000001,reason use the read-only rule,reject pend000002" {
+	if strings.Join(h.svc.calls, ",") != "get pend000001,approve pend000001,get pend000002,reason use the read-only rule,reject pend000002" {
 		t.Errorf("calls %v", h.svc.calls)
 	}
 	if got := h.run("approve", "--profile", "work"); got != 2 || !strings.Contains(h.errOut.String(), "usage: aws elevate approve") {
@@ -877,5 +877,165 @@ func TestSetupNextIncludesTheProfileWhenNotDefault(t *testing.T) {
 	}
 	if !strings.Contains(h.out.String(), "Next: aws elevate ui --profile work") {
 		t.Errorf("output %q", h.out.String())
+	}
+}
+
+func TestRequestWithoutArgumentsAsksRuleAccountDurationReason(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	two := rule
+	two.ID = "s3-read"
+	two.Accounts = []api.Ref{{ID: "222222222222", Name: "prod"}, {ID: "333333333333", Name: "dev"}}
+	h.svc.rules = []api.Rule{rule, two}
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActive}
+	// rule s3-read, account dev, empty duration (the rule's), an empty reason asked again
+	h.typing("2\ndev\n\n\nincident 42\n")
+	if got := h.run("request", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
+	}
+	want := api.CreateRequest{RuleID: "s3-read", Account: "333333333333", DurationSeconds: 0, Reason: "incident 42"}
+	if h.svc.created == nil || *h.svc.created != want {
+		t.Errorf("created %+v", h.svc.created)
+	}
+	if !strings.Contains(h.out.String(), "--profile jit-ssm-write-222222222222") {
+		t.Errorf("stdout %q", h.out.String())
+	}
+}
+
+func TestRequestAsksNoAccountWhenTheRuleHasOne(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.rules = []api.Rule{rule}
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActive}
+	h.typing("ssm-prod\n45m\nincident 42\n")
+	if got := h.run("request", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s %s", got, h.errOut.String(), h.out.String())
+	}
+	want := api.CreateRequest{RuleID: "ssm-prod", Account: "222222222222", DurationSeconds: 2700, Reason: "incident 42"}
+	if h.svc.created == nil || *h.svc.created != want {
+		t.Errorf("created %+v", *h.svc.created)
+	}
+}
+
+func TestRequestWithArgumentsAsksNothing(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.rules = []api.Rule{rule}
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActive}
+	h.typing("") // a terminal, but nothing to answer
+	if got := h.run("request", "ssm-prod", "--reason", "x", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	if strings.Contains(h.out.String(), "?") {
+		t.Errorf("asked something: %q", h.out.String())
+	}
+}
+
+func TestRequestCtrlCWhileWaitingKeepsTheRequest(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActivating}
+	h.env.Sleep = func(context.Context, time.Duration) error { return context.Canceled }
+	got := h.run("request", "ssm-prod", "--account", "prod", "--reason", "x", "--profile", "work")
+	if got != 1 || !strings.Contains(h.errOut.String(), "The request abcde12345 stays open: aws elevate status") {
+		t.Errorf("exit %d, %q", got, h.errOut.String())
+	}
+	for _, c := range h.svc.calls {
+		if strings.HasPrefix(c, "cancel") {
+			t.Errorf("cancelled: %v", h.svc.calls)
+		}
+	}
+}
+
+func TestStatusGroupsGrantsAndToApprove(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	own := grantFor("mine000001")
+	own.State = api.StateActive
+	toApprove := grantFor("other00001")
+	toApprove.State = api.StatePending
+	toApprove.Actions = []string{"approve"}
+	h.svc.lists = map[string][]api.Grant{"mine": {own}, "approvable": {toApprove}}
+	if got := h.run("status", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	out := h.out.String()
+	grants, approve, ok := strings.Cut(out, "To approve (1)")
+	if !ok || !strings.Contains(grants, "Grants") || !strings.HasSuffix(grants, "\n\n") {
+		t.Errorf("output %q", out)
+	}
+	if !strings.Contains(approve, "aws elevate approve other00001") {
+		t.Errorf("no approve command: %q", approve)
+	}
+}
+
+func TestStatusPlainWhenPiped(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.vars["TERM"] = "xterm-256color"
+	own := grantFor("mine000001")
+	h.svc.lists = map[string][]api.Grant{"mine": {own}}
+	if got := h.run("status", "--profile", "work"); got != 0 || strings.Contains(h.out.String(), "\x1b") {
+		t.Errorf("exit %d, %q", got, h.out.String())
+	}
+}
+
+func TestApproveAsksForConfirmation(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.grant = grantFor("x")
+	h.svc.grant.State = api.StatePending
+	h.svc.grant.Reason = "incident 42"
+	h.typing("n\n")
+	if got := h.run("approve", "pend000001", "--profile", "work"); got != 1 {
+		t.Errorf("exit %d: %s", got, h.errOut.String())
+	}
+	out := h.out.String()
+	for _, want := range []string{"ssm-write", "222222222222", "user@example.com", "incident 42"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary without %q: %q", want, out)
+		}
+	}
+	if strings.Join(h.svc.calls, ",") != "get pend000001" {
+		t.Errorf("calls %v", h.svc.calls)
+	}
+	h.typing("y\n")
+	if got := h.run("approve", "pend000001", "--profile", "work"); got != 0 || !strings.Contains(h.svc.calls[len(h.svc.calls)-1], "approve pend000001") {
+		t.Errorf("exit %d, calls %v", got, h.svc.calls)
+	}
+}
+
+func TestRevokeAsksForConfirmation(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.grant = grantFor("x")
+	h.svc.grant.Actions = []string{"revoke"}
+	h.typing("n\n")
+	if got := h.run("revoke", "actv000001", "--reason", "done", "--profile", "work"); got != 1 {
+		t.Errorf("exit %d", got)
+	}
+	if strings.Join(h.svc.calls, ",") != "get actv000001" {
+		t.Errorf("calls %v", h.svc.calls)
+	}
+}
+
+func TestApproveWithoutTerminalNeedsYes(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.grant = grantFor("x")
+	if got := h.run("approve", "pend000001", "--profile", "work"); got != 1 || !strings.Contains(h.errOut.String(), "--yes") {
+		t.Errorf("exit %d, %q", got, h.errOut.String())
+	}
+	if got := h.run("revoke", "actv000001", "--reason", "done", "--profile", "work"); got != 1 || !strings.Contains(h.errOut.String(), "--yes") {
+		t.Errorf("exit %d, %q", got, h.errOut.String())
+	}
+	for _, c := range h.svc.calls {
+		if !strings.HasPrefix(c, "get ") {
+			t.Errorf("acted without confirmation: %v", h.svc.calls)
+		}
 	}
 }
