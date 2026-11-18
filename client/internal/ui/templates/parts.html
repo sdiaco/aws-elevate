@@ -198,15 +198,16 @@
 <div><h3>{{.NewLabel}}</h3>{{if .Change.AfterLines}}<pre>{{range .Change.AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
 {{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div>{{end}}</details>{{end}}
 
-{{/* Accounts as Cloudscape cards: searched, 12 a page, ticked (several) or picked (one).
-     An account with an open grant shows it instead of a choice. */}}
-{{define "account-cards"}}<div class="cards" data-paginate="12">
-<div class="list-tools">{{if gt (len .Items) 1}}<input type="search" data-filter placeholder="Find an account" aria-label="Find an account">{{end}}{{if .Multiple}}<span class="muted" data-selected-count>Selected ({{len (checked .Items)}})</span>{{end}}<nav class="pager-nums" data-pager aria-label="Pages"></nav></div>
+{{/* Accounts as Cloudscape cards: at most 10 shown, the others found by search, ticked
+     (several) or picked (one). An account with an open grant shows it instead of a choice. */}}
+{{define "account-cards"}}<div class="cards" data-limit="10">
+<div class="list-tools">{{if gt (len .Items) 1}}<input type="search" data-filter placeholder="Find an account" aria-label="Find an account">{{end}}{{if .Multiple}}<span class="muted" data-selected-count>Selected ({{len (checked .Items)}})</span>{{end}}</div>
 <div class="card-grid">{{range .Items}}<label class="card{{if .Checked}} selected{{end}}{{if .Open}} covered{{end}}" data-item>
 <span class="card-head"><input type="{{if $.Multiple}}checkbox{{else}}radio{{end}}" name="account" value="{{.ID}}"{{if .Checked}} checked{{end}}{{if .Open}} disabled{{else if not $.Multiple}} required data-error="Choose an account."{{end}}><span class="card-name">{{.Name}}</span></span>
 <button type="button" class="copy card-id" data-copy="{{.ID}}" title="Copy">{{.ID}}</button>
 {{with .Open}}<span class="card-open">{{template "open-grant" .}}</span>{{end}}
 </label>{{end}}</div>
-<p class="muted no-match" data-no-match hidden>No account matches.</p></div>{{end}}
+<p class="muted no-match" data-no-match hidden>No account matches.</p>
+<p class="muted no-match" data-more hidden></p></div>{{end}}
 
 {{define "open-grant"}}{{stateLabel .State}} · <a href="/requests?open={{.GrantID}}">{{.GrantID}}</a> <span class="muted">({{if eq .State "pending"}}waiting for approval{{else}}you already have this access{{end}})</span>{{end}}

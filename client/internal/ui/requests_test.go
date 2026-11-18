@@ -357,7 +357,7 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 		`<button class="btn primary" form="request">Submit request</button>`,
 		`data-paginate="8"`, `data-filter`, `data-pager`,
 		`<input type="hidden" name="rule" value="ssm-prod">`,
-		`class="cards" data-paginate="12"`,
+		`class="cards" data-limit="10"`, `data-more`,
 		`<input type="radio" name="account" value="222222222222" checked required data-error="Choose an account.">`,
 		`class="card-name">prod</span>`, `class="copy card-id" data-copy="222222222222"`,
 		`name="duration"`, `placeholder="1h"`, "Default 1h, at most 4h",
