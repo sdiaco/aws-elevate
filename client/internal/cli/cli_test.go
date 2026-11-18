@@ -35,6 +35,8 @@ type fakeService struct {
 	checked      []string
 	versions     *api.ConfigVersions
 	docs         map[int]string
+	open         []api.Grant // when set, the answer to every query for open grants
+	openNext     []api.Grant // when set, replaces open after the first query for open grants
 }
 
 func (f *fakeService) Me(context.Context) (*api.Me, error) {
@@ -106,6 +108,13 @@ func (f *fakeService) Grant(_ context.Context, id string) (*api.GrantDetail, err
 func (f *fakeService) Grants(_ context.Context, q api.ListQuery) (*api.GrantList, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if q.Open && (f.open != nil || f.openNext != nil) {
+		items := f.open
+		if f.openNext != nil {
+			f.open, f.openNext = f.openNext, nil
+		}
+		return &api.GrantList{Items: items}, nil
 	}
 	return &api.GrantList{Items: f.lists[q.Scope]}, nil
 }

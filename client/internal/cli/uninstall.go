@@ -2,9 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/term"
 )
@@ -20,21 +25,45 @@ type Uninstaller interface {
 	DeleteOrphan(ctx context.Context, o awsx.OrphanPS) error
 }
 
-const uninstallUsage = "uninstall --check [--region <r>] [--stack-name <name>]"
+const uninstallUsage = "uninstall [--check] [--elevate-profile <p>] [--region <r>] [--stack-name <name>]\n" +
+	"                  [--history keep|export|delete] [--export-dir <dir>] [--yes]"
 
 // keptOnUninstall is what the uninstall never deletes: it belongs to the organization.
 const keptOnUninstall = "kept: Identity Center groups, delegated administrator"
+
+// notTouched is what the uninstall leaves on this computer.
+const notTouched = "not touched: the elevate alias of the AWS CLI and this executable"
+
+const (
+	historyKeep   = "keep"
+	historyExport = "export"
+	historyDelete = "delete"
+)
 
 func openUninstaller(ctx context.Context, profile, region, stack string) (Uninstaller, error) {
 	return awsx.OpenUninstaller(ctx, profile, region, stack)
 }
 
-// runUninstall reads what is left of an installation; with --check it only lists it.
+// uninstallRun is one uninstall: every step reads what is left and skips what is done.
+type uninstallRun struct {
+	e       *Env
+	u       *term.UI
+	un      Uninstaller
+	stack   string
+	account string
+	yes     bool
+}
+
+// runUninstall lists what is left of an installation and, without --check, removes it.
 func runUninstall(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "uninstall")
+	elevateProfile := f.String("elevate-profile", "", "profile set up with ElevateAdmin in the account of the stack (default: the only one)")
 	region := f.String("region", "", "region of the stack (default: sso_region of the profile, after confirmation)")
 	stackName := f.String("stack-name", "elevate", "stack name")
 	check := f.Bool("check", false, "list what is left and change nothing")
+	history := f.String("history", "", "keep, export or delete the grant history (default: ask; keep with --yes)")
+	exportDir := f.String("export-dir", "", "folder for the exported history (default: ask)")
+	yes := f.Bool("yes", false, "confirm every question without asking")
 	rest, err := f.parse(args)
 	if err != nil {
 		return err
@@ -42,8 +71,8 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 	if len(rest) > 0 {
 		return fmt.Errorf("unexpected argument %q: %w", rest[0], errUsage)
 	}
-	if !*check {
-		return fmt.Errorf("missing --check: %w", errUsage)
+	if !slices.Contains([]string{"", historyKeep, historyExport, historyDelete}, *history) {
+		return fmt.Errorf("--history %q: want keep, export or delete: %w", *history, errUsage)
 	}
 	profile := f.awsProfileName(e)
 	u := e.UI()
@@ -52,7 +81,7 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 	// --check changes nothing: the region of the profile needs no confirmation.
-	if *region, err = stackRegion(u, src, profile, *region, "Uninstall", *check); err != nil {
+	if *region, err = stackRegion(u, src, profile, *region, "Uninstall", *check || *yes); err != nil {
 		return err
 	}
 	un, err := e.Uninstaller(ctx, profile, *region, *stackName)
@@ -68,7 +97,326 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 	u.Header(fmt.Sprintf("aws-elevate uninstall · stack %s in %s · %s", *stackName, where.Account, *region))
-	printLeftovers(u, *stackName, where.Account, left)
+	if *check {
+		printLeftovers(u, *stackName, where.Account, left)
+		return nil
+	}
+	r := &uninstallRun{e: e, u: u, un: un, stack: *stackName, account: where.Account, yes: *yes}
+	return r.run(ctx, left, *elevateProfile, *history, *exportDir)
+}
+
+func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProfile, history, exportDir string) error {
+	live := left.Stack != nil && serviceRuns(left.Stack.Status)
+	var svc Service
+	if live {
+		var err error
+		if svc, err = r.openGrantsCheck(ctx, elevateProfile); err != nil {
+			return err
+		}
+	}
+	hasHistory := left.Table || left.RulesApp != ""
+	if hasHistory {
+		var err error
+		if history, err = r.chooseHistory(history, live); err != nil {
+			return err
+		}
+	}
+	deleteHistory := hasHistory && (history == historyExport || history == historyDelete)
+	if left.Stack != nil || deleteHistory {
+		if err := r.confirmDeletion(left.Stack != nil, deleteHistory); err != nil {
+			return err
+		}
+	}
+	if hasHistory && history == historyExport {
+		if exportDir == "" {
+			var err error
+			def := "./elevate-history-" + time.Now().Format("2006-01-02")
+			if exportDir, err = r.u.Ask("Export to", def); err != nil {
+				return err
+			}
+		}
+		if err := exportStep(ctx, r.e, svc, exportDir, time.Now()); err != nil {
+			return err
+		}
+	}
+	if left.Stack != nil {
+		if live {
+			if _, err := r.openGrantsCheck(ctx, elevateProfile); err != nil {
+				return err
+			}
+		}
+		if err := r.deleteStack(ctx, left.Stack); err != nil {
+			return err
+		}
+	}
+	if deleteHistory {
+		if err := r.deleteHistory(ctx, left); err != nil {
+			return err
+		}
+	}
+	r.u.Warn("If you installed the SCP stack, it lives in the management account: run there",
+		"aws cloudformation delete-stack --stack-name elevate-guardrails")
+	// A grant opened while the questions were answered leaves its permission set behind.
+	now, err := r.un.Leftovers(ctx)
+	if err != nil {
+		return err
+	}
+	if err := r.deleteOrphans(ctx, now.Orphans); err != nil {
+		return err
+	}
+	if left.Empty() {
+		ok, err := r.u.Confirm(fmt.Sprintf("Nothing of stack %s found in %s: remove the local grant profiles and settings anyway?", r.stack, r.account), r.yes)
+		if err != nil {
+			return err
+		}
+		answered(r.u, r.yes)
+		if !ok {
+			r.u.Warn("Local files kept: check --stack-name, --region and --profile")
+			return nil
+		}
+	}
+	if err := r.removeLocalFiles(); err != nil {
+		return err
+	}
+	final, err := r.un.Leftovers(ctx)
+	if err != nil {
+		return err
+	}
+	printLeftovers(r.u, r.stack, r.account, final)
+	fmt.Fprintf(r.u.Writer(), "  %s\n", r.u.Dim(notTouched))
+	return nil
+}
+
+// openGrantsCheck connects with the ElevateAdmin profile and stops while a grant is open:
+// deleting the stack would leave its access without an end.
+func (r *uninstallRun) openGrantsCheck(ctx context.Context, profile string) (Service, error) {
+	profile, err := r.elevateProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	_, svc, err := connect(ctx, r.e, profile)
+	if err != nil {
+		return nil, err
+	}
+	open, err := listAll(ctx, svc, api.ListQuery{Scope: "all", Open: true})
+	if err != nil {
+		return nil, fmt.Errorf("read the open grants: %w", err)
+	}
+	if len(open) == 0 {
+		r.u.OK("No open grants", "read with profile "+profile)
+		return svc, nil
+	}
+	w := r.u.Writer()
+	r.u.Fail(fmt.Sprintf("%d open grant(s): revoke them first", len(open)), "")
+	for _, g := range open {
+		fmt.Fprintf(w, "    %s  %s  %s  %s\n", g.ID, g.Requester.UserName, g.Account, g.State)
+		fmt.Fprintf(w, "      %s\n", r.u.Dim(fmt.Sprintf("aws elevate revoke %s --reason \"uninstall\" --profile %s", g.ID, profile)))
+	}
+	return nil, exitCode(1)
+}
+
+// elevateProfile is the flag, or the only profile set up with ElevateAdmin in the account.
+func (r *uninstallRun) elevateProfile(flag string) (string, error) {
+	if flag != "" {
+		return flag, nil
+	}
+	settings, err := awsx.LoadSettings(r.e.SettingsPath)
+	if err != nil {
+		return "", err
+	}
+	var found []string
+	for _, name := range slices.Sorted(maps.Keys(settings.Profiles)) {
+		t := settings.Profiles[name]
+		if t.Role == awsx.RoleAdmin && t.Account == r.account {
+			found = append(found, name)
+		}
+	}
+	switch len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return "", fmt.Errorf("no profile set up with %s in %s: run aws-elevate setup --profile <p> --account %s, then pass --elevate-profile <p>",
+			awsx.RoleAdmin, r.account, r.account)
+	}
+	return "", fmt.Errorf("profiles set up with %s in %s: %s; choose one with --elevate-profile",
+		awsx.RoleAdmin, r.account, strings.Join(found, ", "))
+}
+
+// chooseHistory is the flag, the choice, or keep when nobody can answer.
+func (r *uninstallRun) chooseHistory(flag string, live bool) (string, error) {
+	if !live {
+		r.u.Warn("The stack is gone: the history can no longer be exported")
+		if flag == historyExport {
+			return "", errors.New("--history export needs the stack: if an earlier run exported it, check the folder and rerun with --history delete; otherwise use --history keep")
+		}
+	}
+	if flag != "" {
+		return flag, nil
+	}
+	if r.yes || !r.u.Interactive() {
+		return historyKeep, nil
+	}
+	choices := []string{historyKeep}
+	items := []term.Item{{Title: "Keep", Detail: "the table and the rules stay in the account"}}
+	if live {
+		choices = append(choices, historyExport)
+		items = append(items, term.Item{Title: "Export then delete", Detail: "to a local folder, verified before deleting"})
+	}
+	choices = append(choices, historyDelete)
+	items = append(items, term.Item{Title: "Delete", Detail: "grants and rules versions are lost"})
+	i, err := r.u.Select("History", items, false)
+	if err != nil {
+		return "", err
+	}
+	answered(r.u, false)
+	return choices[i], nil
+}
+
+// confirmDeletion lists what goes and asks for the stack name typed back.
+func (r *uninstallRun) confirmDeletion(stack, history bool) error {
+	var what []string
+	if stack {
+		what = append(what, "stack "+r.stack)
+	}
+	if history {
+		what = append(what, "grant history and rules versions")
+	}
+	fmt.Fprintf(r.u.Writer(), "  To delete: %s\n", strings.Join(what, ", "))
+	if r.yes {
+		return nil
+	}
+	if !r.u.Interactive() {
+		return term.ErrNeedsYes
+	}
+	name, err := r.u.Ask("Type the stack name to delete it", "")
+	if err != nil {
+		return err
+	}
+	if name != r.stack {
+		return errors.New("uninstall stopped: the name does not match, nothing was deleted")
+	}
+	answered(r.u, false)
+	return nil
+}
+
+// deleteStack starts the deletion unless it is running, then follows it to the end.
+func (r *uninstallRun) deleteStack(ctx context.Context, info *awsx.StackInfo) error {
+	if info.Status != "DELETE_IN_PROGRESS" {
+		if err := r.un.DeleteStack(ctx); err != nil {
+			return err
+		}
+	}
+	p := r.u.Progress("Deleting stack")
+	for {
+		state, err := r.un.Stack(ctx, info.ID)
+		if err != nil {
+			return err
+		}
+		p.Update(stackDeleted(state.Events, r.stack), info.Resources)
+		switch state.Status {
+		case "DELETE_COMPLETE":
+			p.Done("Stack deleted", "in "+p.Elapsed().String())
+			return nil
+		case "DELETE_FAILED":
+			p.Fail("Stack not deleted", state.Status)
+			return fmt.Errorf("stack deletion failed: %s; fix it and run uninstall again", deleteFailure(state.Events))
+		}
+		if err := r.e.Sleep(ctx, stackPoll); err != nil {
+			return err
+		}
+	}
+}
+
+// serviceRuns says whether the stack serves requests: not while it is deleted, and not
+// after a failed install, which rolled the API back.
+func serviceRuns(status string) bool {
+	switch status {
+	case "CREATE_FAILED", "ROLLBACK_IN_PROGRESS", "ROLLBACK_COMPLETE", "ROLLBACK_FAILED":
+		return false
+	}
+	return !strings.HasPrefix(status, "DELETE_")
+}
+
+// stackDeleted counts the resources gone so far; retained ones are skipped, not deleted.
+func stackDeleted(events []awsx.StackEvent, stack string) int {
+	done := map[string]bool{}
+	for _, ev := range events {
+		if (ev.Status == "DELETE_COMPLETE" || ev.Status == "DELETE_SKIPPED") && ev.Resource != stack {
+			done[ev.Resource] = true
+		}
+	}
+	return len(done)
+}
+
+func deleteFailure(events []awsx.StackEvent) string {
+	for _, ev := range slices.Backward(events) { // oldest first: the last failure is this attempt's
+		if ev.Status == "DELETE_FAILED" && ev.Reason != "" {
+			return ev.Resource + ": " + ev.Reason
+		}
+	}
+	return "no reason in the stack events: see them in the CloudFormation console"
+}
+
+func (r *uninstallRun) deleteHistory(ctx context.Context, left awsx.Leftovers) error {
+	if left.Table {
+		if err := r.un.DeleteTable(ctx); err != nil {
+			return err
+		}
+		r.u.OK("Table deleted", r.stack+"-grants")
+	}
+	if left.RulesApp != "" {
+		if err := r.un.DeleteRules(ctx, left.RulesApp); err != nil {
+			return err
+		}
+		r.u.OK("Rules deleted", "AppConfig application "+r.stack)
+	}
+	return nil
+}
+
+// deleteOrphans removes the JIT- permission sets left by a failed engine step, after an
+// explicit confirmation: assignments first, then the permission set.
+func (r *uninstallRun) deleteOrphans(ctx context.Context, orphans []awsx.OrphanPS) error {
+	if len(orphans) == 0 {
+		return nil
+	}
+	w := r.u.Writer()
+	fmt.Fprintln(w, "  Leftover grant permission sets:")
+	for _, o := range orphans {
+		fmt.Fprintf(w, "    • %s   %s\n", o.Name, r.u.Dim(assignedTo(o)))
+	}
+	ok, err := r.u.Confirm(fmt.Sprintf("Delete these %d permission sets and their assignments?", len(orphans)), r.yes)
+	if err != nil {
+		return err
+	}
+	answered(r.u, r.yes)
+	if !ok {
+		return nil
+	}
+	for _, o := range orphans {
+		if err := r.un.DeleteOrphan(ctx, o); err != nil {
+			return err
+		}
+		r.u.OK("Deleted "+o.Name, "")
+	}
+	return nil
+}
+
+// removeLocalFiles takes the grant profiles out of the AWS CLI config and deletes the
+// settings of this client.
+func (r *uninstallRun) removeLocalFiles() error {
+	removed, err := awsx.RemoveManagedBlock(r.e.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if removed {
+		r.u.OK("Grant profiles removed", r.e.ConfigFile)
+	}
+	if removed, err = awsx.RemoveSettings(r.e.SettingsPath); err != nil {
+		return err
+	}
+	if removed {
+		r.u.OK("Settings removed", r.e.SettingsPath)
+	}
 	return nil
 }
 
@@ -95,15 +443,18 @@ func printLeftovers(u *term.UI, stack, account string, l awsx.Leftovers) {
 		item("Permission sets "+strings.Join(l.ServicePS, ", "), "created by the stack")
 	}
 	for _, o := range l.Orphans {
-		where := make([]string, len(o.Assignments))
-		for i, a := range o.Assignments {
-			where[i] = fmt.Sprintf("%s %s in %s", strings.ToLower(a.PrincipalType), a.PrincipalID, a.Account)
-		}
-		detail := "not assigned"
-		if len(where) > 0 {
-			detail = "assigned to " + strings.Join(where, ", ")
-		}
-		item(o.Name, detail)
+		item(o.Name, assignedTo(o))
 	}
 	fmt.Fprintf(w, "\n  %s\n", u.Dim(keptOnUninstall))
+}
+
+func assignedTo(o awsx.OrphanPS) string {
+	if len(o.Assignments) == 0 {
+		return "not assigned"
+	}
+	where := make([]string, len(o.Assignments))
+	for i, a := range o.Assignments {
+		where[i] = fmt.Sprintf("%s %s in %s", strings.ToLower(a.PrincipalType), a.PrincipalID, a.Account)
+	}
+	return "assigned to " + strings.Join(where, ", ")
 }
