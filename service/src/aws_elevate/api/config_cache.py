@@ -23,6 +23,11 @@ REFRESH_SECONDS = 30  # design §6.6, §7.1
 log = logging.getLogger(__name__)
 
 
+# Versions only grow (one per publish) and each one listed costs a table read: the list
+# keeps the newest ones. An older version is still readable by its number.
+VERSIONS_LISTED = 50
+
+
 class ConfigUnavailable(Exception):
     """No valid rules version exists: api answers 503 config_unavailable."""
 
@@ -48,10 +53,10 @@ class ConfigCache:
         return self._version.number, self._rules
 
     def versions(self) -> list[ConfigVersion]:
-        """Every version, newest first, as recorded. A version never seen is evaluated
-        and recorded now. No CloudTrail lookup here: LookupEvents allows 2 calls per
-        second, and the refresh fills the author of every new version anyway."""
-        return [self._record(n) for n in self._appconfig.list_versions()]
+        """The newest VERSIONS_LISTED versions, newest first, as recorded. A version never
+        seen is evaluated and recorded now. No CloudTrail lookup here: LookupEvents allows
+        2 calls per second, and the refresh fills the author of every new version anyway."""
+        return [self._record(n) for n in self._appconfig.list_versions()[:VERSIONS_LISTED]]
 
     def version(self, number: int) -> tuple[ConfigVersion, dict | None] | None:
         """Record and content of one version; content None if it is not JSON."""
