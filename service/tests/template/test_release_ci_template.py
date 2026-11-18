@@ -1,5 +1,6 @@
 """infra/release-ci.yaml: what the release workflow's role can and cannot do."""
 
+import re
 from pathlib import Path
 
 from cfnlint.decode import decode
@@ -35,6 +36,16 @@ def test_only_main_of_the_repository_assumes_the_role():
             },
         }
     }
+
+
+def test_the_repository_is_named_by_its_immutable_ids():
+    # GitHub puts owner and repository ids in the OIDC subject (owner@id/name@id): a
+    # repository deleted and created again under the same name gets another id.
+    param = TEMPLATE["Parameters"]["Repository"]
+    pattern = re.compile(param["AllowedPattern"])
+    assert pattern.match(param["Default"])
+    assert pattern.match("example@111/aws-elevate@222")
+    assert not pattern.match("example/aws-elevate")
 
 
 def test_the_provider_is_github_for_sts():

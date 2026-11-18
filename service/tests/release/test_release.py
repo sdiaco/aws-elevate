@@ -18,7 +18,11 @@ UPLOADED = ("elevate.yaml", "elevate-guardrails.yaml", "lambda.zip")
 FAKE = """#!/usr/bin/env bash
 { printf '%s' "$(basename "$0")"; printf ' %q' "$@"; echo; } >>"$CALLS"
 if [ "$(basename "$0")" = gh ] && [ "$1" = api ]; then
-	echo "$E2E_STATE"
+	case "$2" in
+	*/status) echo "$E2E_STATE" ;;
+	# GitHub knows every pushed commit, even one no local branch reaches.
+	*) echo "${TESTED_TREE:-$(git rev-parse "${2##*/}^{tree}")}" ;;
+	esac
 	exit 0
 fi
 if [ "$(basename "$0")" = aws ] && [ "$2" = head-object ]; then
@@ -68,7 +72,7 @@ def repo(tmp_path) -> Path:
 
 
 def run(
-    repo: Path, *args: str, existing: str = "none", e2e: str = "success"
+    repo: Path, *args: str, existing: str = "none", e2e: str = "success", tested_tree: str = ""
 ) -> tuple[subprocess.CompletedProcess, list]:
     calls = repo.parent / "calls"
     calls.touch()
@@ -78,14 +82,15 @@ def run(
         "CALLS": str(calls),
         "EXISTING": existing,
         "E2E_STATE": e2e,
+        "TESTED_TREE": tested_tree,
         "GITHUB_REPOSITORY": "owner/repo",
     }
     result = subprocess.run(
         [str(repo / "dev/release.sh"), *args], capture_output=True, text=True, env=env, check=False
     )
     lines = calls.read_text().splitlines()
-    status = f"gh api repos/owner/repo/commits/{head(repo)}/status"
-    return result, [c for c in lines if not c.startswith(status)]
+    reads = "gh api repos/owner/repo/commits/"
+    return result, [c for c in lines if not c.startswith(reads)]
 
 
 def head(repo: Path) -> str:
@@ -177,6 +182,14 @@ def test_a_tested_commit_with_another_tree_does_not_publish(repo):
     result, calls = run(repo, "upload", VERSION, tested, "pub")
     assert result.returncode != 0 and "did not test this code" in result.stderr
     assert calls == []
+
+
+def test_a_tested_commit_missing_from_the_clone_publishes_when_github_has_its_tree(repo):
+    # The release pull request branch is deleted on merge: a fresh clone does not have it.
+    missing = "0123456789abcdef0123456789abcdef01234567"
+    tree = git(repo, "rev-parse", "HEAD^{tree}")
+    result, _ = run(repo, "upload", VERSION, missing, "pub", tested_tree=tree)
+    assert result.returncode == 0, result.stderr
 
 
 def test_a_detached_checkout_of_main_in_github_actions_publishes(repo, monkeypatch):
