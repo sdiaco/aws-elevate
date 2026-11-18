@@ -9,6 +9,9 @@ keys and JSON types, and the client decodes every response with unknown fields r
 A `null` value marks a field that can be empty; the other examples show it filled.
 `error.json` is the format of every error; the codes are in `../vocabulary.json`.
 
+`GET /v1/me` has `organizationName`, the stack parameter `OrganizationName`, only when it is
+set: the interface shows it.
+
 `GET /v1/grants` filters: `scope` (`mine`, `approvable`, `all`), `user`, `from`, `to`,
 `cursor`, and at most one of `open=true` (grants not yet closed) or `closed=true` (closed
 grants only, the History view).

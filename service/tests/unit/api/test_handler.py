@@ -73,7 +73,15 @@ def event(method, proxy, body=None, query=None, version=INFRA_VERSION, headers=N
 
 @pytest.fixture
 def api(fx):
-    def build(identity=None, grants=None, config=None, resolver=None, rules=None, versions=None):
+    def build(
+        identity=None,
+        grants=None,
+        config=None,
+        resolver=None,
+        rules=None,
+        versions=None,
+        organization_name="",
+    ):
         return Api(
             resolver or FakeResolver(identity or fx.REQUESTER),
             grants or RecordingGrants(),
@@ -81,6 +89,7 @@ def api(fx):
             rules or RecordingGrants(),
             versions or RecordingGrants(),
             INSTALLATION,
+            organization_name=organization_name,
         )
 
     return build
@@ -280,6 +289,16 @@ def test_me_lists_user_roles_and_versions(api, fx):
     }
 
 
+def test_me_returns_the_organization_name_when_set(api, fx):
+    for identity in (fx.REQUESTER, fx.ADMIN):
+        resp = api(identity=identity, organization_name="Example Corp").handle(event("GET", "me"))
+        assert body_of(resp)["organizationName"] == "Example Corp"
+
+
+def test_me_omits_the_organization_name_when_empty(api, fx):
+    assert "organizationName" not in body_of(api(identity=fx.REQUESTER).handle(event("GET", "me")))
+
+
 def test_me_gives_the_installation_only_to_an_admin(api, fx):
     # The admin client publishes rules and runs doctor with its own credentials and
     # cannot list these resources; nobody else needs them.
@@ -330,6 +349,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "STACK_ID": INSTALLATION["stackId"],
         "ALERTS_TOPIC_ARN": INSTALLATION["alertsTopicArn"],
         "APPROVALS_TOPIC_ARN": INSTALLATION["approvalsTopicArn"],
+        "ORGANIZATION_NAME": "Example Corp",
     }
     for name, value in env.items():
         monkeypatch.setenv(name, value)
@@ -337,6 +357,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
     first = module._get_api()
     assert isinstance(first, Api)
     assert first._installation == INSTALLATION
+    assert first._organization_name == "Example Corp"
     assert first._targets["rules"]._reserved_accounts == {"999999999999", "888888888888"}
     assert module._get_api() is first
 
