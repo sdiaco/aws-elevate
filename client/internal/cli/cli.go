@@ -9,15 +9,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/release"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -42,6 +45,21 @@ type Env struct {
 	ConfigFile   string
 	CacheDir     string // per-profile caches, ~/.cache/aws-elevate
 	AliasFile    string
+	LookPath     func(file string) (string, error)
+
+	ui *term.UI // one per run: it buffers the input
+}
+
+// UI is the terminal of this run.
+func (e *Env) UI() *term.UI {
+	if e.ui == nil {
+		in := e.Stdin
+		if in == nil {
+			in = strings.NewReader("")
+		}
+		e.ui = term.New(in, e.Stdout, e.Getenv)
+	}
+	return e.ui
 }
 
 // DefaultEnv wires the real process, AWS and files.
@@ -74,6 +92,7 @@ func DefaultEnv() (*Env, error) {
 		ConfigFile:   awsx.ConfigFile(),
 		AliasFile:    alias,
 		CacheDir:     cacheDir(),
+		LookPath:     exec.LookPath,
 	}, nil
 }
 
@@ -203,8 +222,21 @@ func (f *flags) parse(args []string) ([]string, error) {
 	}
 }
 
-// profileName follows the AWS CLI: --profile, else $AWS_PROFILE, else default.
+// profileName is --profile, else $AWS_PROFILE, else the profile of the last setup, else
+// default. A settings file that cannot be read is reported by the command that loads it.
 func (f *flags) profileName(e *Env) string {
+	if f.profile == "" && e.Getenv("AWS_PROFILE") == "" {
+		if s, err := awsx.LoadSettings(e.SettingsPath); err == nil && s.Default != "" {
+			return s.Default
+		}
+	}
+	return f.awsProfileName(e)
+}
+
+// awsProfileName follows the AWS CLI only: --profile, else $AWS_PROFILE, else default.
+// Commands that act as an account administrator use it, never the profile set up for
+// Elevate.
+func (f *flags) awsProfileName(e *Env) string {
 	if f.profile != "" {
 		return f.profile
 	}
@@ -222,7 +254,11 @@ func setUpTarget(e *Env, profile string) (awsx.Target, error) {
 	}
 	target, ok := settings.Profiles[profile]
 	if !ok {
-		return awsx.Target{}, fmt.Errorf("profile %q is not set up: run aws-elevate setup --profile %s", profile, profile)
+		hint := ""
+		if names := slices.Sorted(maps.Keys(settings.Profiles)); len(names) > 0 {
+			hint = " (set up: " + strings.Join(names, ", ") + ")"
+		}
+		return awsx.Target{}, fmt.Errorf("profile %q is not set up%s: run aws-elevate setup --profile %s", profile, hint, profile)
 	}
 	return target, nil
 }

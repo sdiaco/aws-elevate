@@ -358,7 +358,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil || len(empty.Profiles) != 0 {
 		t.Fatalf("missing file: %+v, %v", empty, err)
 	}
-	s := Settings{Profiles: map[string]Target{"work": {Account: "111111111111", Role: RoleRequester, APIURL: "https://api.example.com/v1"}}}
+	s := Settings{Profiles: map[string]Target{"work": {Account: "111111111111", Role: RoleRequester, APIURL: "https://api.example.com/v1"}}, Default: "work"}
 	if err := SaveSettings(path, s); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Errorf("mode %v", info.Mode().Perm())
 	}
 	got, err := LoadSettings(path)
-	if err != nil || got.Profiles["work"] != s.Profiles["work"] {
+	if err != nil || got.Profiles["work"] != s.Profiles["work"] || got.Default != "work" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
