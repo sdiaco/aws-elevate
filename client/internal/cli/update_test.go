@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/release"
+	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
 // withExecutable gives the harness an installed executable and a download of any
@@ -50,7 +53,7 @@ func TestUpdateInstallsTheNewestClientThatWorksWithTheInfrastructure(t *testing.
 	h.withReleases(releases) // 0.2.0 needs infrastructure 0.2.0; the harness has 0.0.1
 	exe, downloaded := h.withExecutable(t, nil)
 
-	if code := h.run("update", "--profile", "work"); code != 0 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
 	want := "0.1.0 " + runtime.GOOS + "/" + runtime.GOARCH
@@ -72,7 +75,7 @@ func TestUpdateWorksWhenTheServiceRefusesThisClient(t *testing.T) {
 	h.svc.err = &api.Error{Status: 426, Code: api.CodeClientTooOld, Message: "client too old", InfraVersion: "0.2.0"}
 	exe, _ := h.withExecutable(t, nil)
 
-	if code := h.run("update", "--profile", "work"); code != 0 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
 	if got := content(t, exe); got != "client 0.2.0" {
@@ -86,7 +89,7 @@ func TestUpdateWithNothingNewer(t *testing.T) {
 	h.withReleases(releases[2:])
 	exe, downloaded := h.withExecutable(t, nil)
 
-	if code := h.run("update", "--profile", "work"); code != 0 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
 	if len(*downloaded) != 0 || content(t, exe) != "old" || !strings.Contains(h.out.String(), "newest") {
@@ -100,7 +103,7 @@ func TestUpdateWithAWrongChecksumReplacesNothing(t *testing.T) {
 	h.withReleases(releases)
 	exe, _ := h.withExecutable(t, fmt.Errorf("%w: aws-elevate_linux_amd64 of release 0.1.0 is not the published file", release.ErrChecksum))
 
-	if code := h.run("update", "--profile", "work"); code != 1 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 1 {
 		t.Fatalf("exit %d", code)
 	}
 	if content(t, exe) != "old" || !strings.Contains(h.errOut.String(), "checksum") {
@@ -122,7 +125,7 @@ func TestUpdateInAReadOnlyFolderSavesTheFileAndSaysWhatToRun(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 
-	if code := h.run("update", "--profile", "work"); code != 1 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 1 {
 		t.Fatalf("exit %d", code)
 	}
 	saved := filepath.Join(h.env.TempDir, "aws-elevate-0.1.0")
@@ -144,10 +147,57 @@ func TestUpdateCheckTurnedOff(t *testing.T) {
 	if err := awsx.SaveSettings(h.env.SettingsPath, settings); err != nil {
 		t.Fatal(err)
 	}
-	if code := h.run("update", "--profile", "work"); code != 1 {
+	if code := h.run("update", "--yes", "--profile", "work"); code != 1 {
 		t.Fatalf("exit %d", code)
 	}
 	if *calls != 0 || len(*downloaded) != 0 || !strings.Contains(h.errOut.String(), "checkUpdates") {
 		t.Errorf("calls %d, stderr %s", *calls, h.errOut)
+	}
+}
+
+func TestUpdateAsksBeforeReplacing(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.withReleases(releases)
+	exe, downloaded := h.withExecutable(t, nil)
+	h.typing("n\n")
+	if code := h.run("update", "--profile", "work"); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if len(*downloaded) != 0 || content(t, exe) != "old" {
+		t.Errorf("replaced without confirmation: %v", *downloaded)
+	}
+	h = newHarness(t)
+	h.setUp(t)
+	h.withReleases(releases)
+	exe, _ = h.withExecutable(t, nil)
+	if code := h.run("update", "--profile", "work"); code != 1 || !strings.Contains(h.errOut.String(), "--yes") || content(t, exe) != "old" {
+		t.Errorf("without a terminal: exit %d, %q", code, h.errOut)
+	}
+}
+
+func TestUpdateWithYes(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.withReleases(releases)
+	exe, _ := h.withExecutable(t, nil)
+	if code := h.run("update", "--yes", "--profile", "work"); code != 0 || content(t, exe) != "client 0.1.0" {
+		t.Errorf("exit %d: %s", code, h.errOut)
+	}
+}
+
+func TestUpdatePrintsVersionsAndChecksum(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.withReleases(releases)
+	h.withExecutable(t, nil)
+	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	sum := sha256.Sum256([]byte("client 0.1.0"))
+	for _, want := range []string{version.Client + " → 0.1.0", "SHA-256 " + hex.EncodeToString(sum[:])} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("misses %q: %q", want, h.out)
+		}
 	}
 }

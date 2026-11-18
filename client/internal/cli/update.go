@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +20,7 @@ import (
 // connected infrastructure, after checking its SHA-256.
 func runUpdate(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "update")
+	yes := f.Bool("yes", false, "do not ask for confirmation")
 	rest, err := f.parse(args)
 	if err != nil {
 		return err
@@ -45,12 +48,25 @@ func runUpdate(ctx context.Context, e *Env, args []string) error {
 		fmt.Fprintf(e.Stdout, "aws-elevate %s is the newest version that works with infrastructure %s.\n", version.Client, infra)
 		return nil
 	}
-	fmt.Fprintf(e.Stdout, "Downloading aws-elevate %s...\n", candidates[0].Version)
-	msg, err := installClient(ctx, e, candidates[0].Version)
+	v := candidates[0].Version
+	u := e.UI()
+	exe, err := e.Executable()
+	if err != nil {
+		return fmt.Errorf("find this executable: %w", err)
+	}
+	fmt.Fprintf(e.Stdout, "  aws-elevate %s → %s   %s\n\n", version.Client, v, u.Dim(exe))
+	ok, err := u.Confirm("Replace it?", *yes)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(e.Stdout, msg)
+	if !ok {
+		return errors.New("nothing done")
+	}
+	msg, err := installClient(ctx, e, v)
+	if err != nil {
+		return err
+	}
+	u.OK(msg, "")
 	return nil
 }
 
@@ -65,6 +81,7 @@ func installClient(ctx context.Context, e *Env, v string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	sum := sha256.Sum256(data) // the download already matched the release checksums
 	err = release.Replace(exe, data)
 	if errors.Is(err, release.ErrNotWritable) {
 		return "", savedForManualInstall(e, v, exe, data, err)
@@ -72,7 +89,7 @@ func installClient(ctx context.Context, e *Env, v string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Updated %s from %s to %s.", exe, version.Client, v), nil
+	return fmt.Sprintf("Updated %s from %s to %s, SHA-256 %s", exe, version.Client, v, hex.EncodeToString(sum[:])), nil
 }
 
 // infraVersion asks the service, which tells its version even when it refuses this client.

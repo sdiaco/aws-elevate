@@ -132,7 +132,7 @@ def test_admin_rules_save_export_and_refusal(org, set_up, tmp_path):
 
     # The same file again: AppConfig creates no version.
     same = ok(cli(set_up, "admin", "rules", "save", str(exported))).stdout
-    assert f"No change: version {version}" in same, same
+    assert f"version {version} already has this content" in same, same
 
     broken = tmp_path / "broken.json"
     broken.write_text(json.dumps({"schemaVersion": 1, "rules": [{"id": "e2e-broken"}]}))
@@ -148,13 +148,14 @@ def test_admin_rules_save_export_and_refusal(org, set_up, tmp_path):
 
 def test_admin_doctor(set_up):
     result = cli(set_up, "admin", "doctor")
+    # One step per check: "  ✓ name   detail", with ✗ for a failure and ! for a warning.
     rows = {}
     for line in result.stdout.splitlines():
-        status, name, *_ = re.split(r"\s{2,}", line.strip()) + [""]
-        rows.setdefault(name, status)
+        if step := re.match(r"\s*([✓✗!]) (\S.*?)(?:\s{3,}|$)", line):
+            rows.setdefault(step.group(2), step.group(1))
     for name in ("versions", "stack"):
-        assert rows.get(name) == "ok", result.stdout
-    assert "FAIL" not in {s for n, s in rows.items() if n != "alerts"}, result.stdout
+        assert rows.get(name) == "✓", result.stdout
+    assert "✗" not in {s for n, s in rows.items() if n != "alerts"}, result.stdout
     # The e2e stack subscribes user@example.com to alerts, never confirmed: the only
     # failure doctor may report here.
-    assert result.returncode == (1 if rows.get("alerts") == "FAIL" else 0), result.stdout
+    assert result.returncode == (1 if rows.get("alerts") == "✗" else 0), result.stdout

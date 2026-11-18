@@ -186,10 +186,10 @@ func runPublish(ctx context.Context, e *Env, args []string) error {
 		return fmt.Errorf("publish the rules on AppConfig: %w", err)
 	}
 	if latest != nil && n <= *latest {
-		fmt.Fprintf(e.Stdout, "No change: version %d already has this content.\n", n)
+		e.UI().OK("No change", fmt.Sprintf("version %d already has this content", n))
 		return nil
 	}
-	fmt.Fprintf(e.Stdout, "Published rules version %d. It applies to new requests within about 30 seconds.\n", n)
+	e.UI().OK(fmt.Sprintf("Published rules version %d", n), "it applies to new requests within about 30 seconds")
 	return nil
 }
 
@@ -240,7 +240,7 @@ func runExport(ctx context.Context, e *Env, args []string) error {
 	if err := os.WriteFile(rest[0], out.Bytes(), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(e.Stderr, "Wrote rules version %d to %s.\n", n, rest[0])
+	e.UI().OK(fmt.Sprintf("Wrote rules version %d", n), rest[0])
 	return nil
 }
 
@@ -267,7 +267,8 @@ const (
 	checkFail = "FAIL"
 )
 
-type finding struct{ status, name, text string }
+// finding is the result of one check; fix, on a failure, is what to do about it.
+type finding struct{ status, name, text, fix string }
 
 // runDoctor checks the installation and says what is missing. Every
 // check runs even when another fails; the exit status is 1 if one failed.
@@ -283,21 +284,30 @@ func runDoctor(ctx context.Context, e *Env, args []string) error {
 	// Reaching here means the service accepted this client and the client accepted the
 	// infrastructure.
 	found := []finding{{checkOK, "versions", fmt.Sprintf("client %s, infrastructure %s (oldest client accepted %s)",
-		version.Client, s.me.InfraVersion, s.me.MinClient)}}
+		version.Client, s.me.InfraVersion, s.me.MinClient), ""}}
 	found = append(found, checkStack(ctx, s), checkServicePermissionSets(ctx, s))
 	found = append(found, checkRules(ctx, s)...)
 	found = append(found, checkTrail(ctx, s), checkAlerts(ctx, s), checkApprovals(ctx, s))
 
-	w := tabwriter.NewWriter(e.Stdout, 0, 0, 2, ' ', 0)
+	u := e.UI()
 	failed := false
+	next := ""
 	for _, f := range found {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", f.status, f.name, f.text)
-		failed = failed || f.status == checkFail
-	}
-	if err := w.Flush(); err != nil {
-		return err
+		switch f.status {
+		case checkOK:
+			u.OK(f.name, f.text)
+		case checkWarn:
+			u.Warn(f.name + "   " + f.text)
+		default:
+			u.Fail(f.name, f.text)
+			if !failed && f.fix != "" {
+				next = f.fix
+			}
+			failed = true
+		}
 	}
 	if failed {
+		u.Next(next)
 		return exitCode(1)
 	}
 	return nil
@@ -307,15 +317,15 @@ func checkStack(ctx context.Context, s *adminSession) finding {
 	status, err := s.aws.StackStatus(ctx, s.inst.StackID)
 	switch {
 	case err != nil:
-		return finding{checkFail, "stack", err.Error()}
+		return finding{checkFail, "stack", err.Error(), ""}
 	case status == "CREATE_COMPLETE" || status == "UPDATE_COMPLETE":
-		return finding{checkOK, "stack", status}
+		return finding{checkOK, "stack", status, ""}
 	case strings.HasSuffix(status, "_IN_PROGRESS"):
-		return finding{checkWarn, "stack", status + ": an operation is running, run doctor again when it ends"}
+		return finding{checkWarn, "stack", status + ": an operation is running, run doctor again when it ends", ""}
 	case status == "UPDATE_ROLLBACK_COMPLETE":
-		return finding{checkWarn, "stack", status + ": the last update failed and was rolled back; see the stack events"}
+		return finding{checkWarn, "stack", status + ": the last update failed and was rolled back; see the stack events", ""}
 	}
-	return finding{checkFail, "stack", status + ": see the stack events in CloudFormation"}
+	return finding{checkFail, "stack", status, "see the stack events in CloudFormation"}
 }
 
 func checkServicePermissionSets(ctx context.Context, s *adminSession) finding {
@@ -326,10 +336,10 @@ func checkServicePermissionSets(ctx context.Context, s *adminSession) finding {
 			account = parts[4]
 		}
 		return finding{checkFail, "identity center", "account " + account + " is no longer the Identity Center delegated administrator: " +
-			"nothing can be granted or revoked. " + awsx.RegisterHint(account)}
+			"nothing can be granted or revoked", awsx.RegisterHint(account)}
 	}
 	if err != nil {
-		return finding{checkFail, "permission sets", err.Error()}
+		return finding{checkFail, "permission sets", err.Error(), ""}
 	}
 	var missing []string
 	for _, want := range []string{awsx.RoleRequester, awsx.RoleAdmin} {
@@ -338,9 +348,9 @@ func checkServicePermissionSets(ctx context.Context, s *adminSession) finding {
 		}
 	}
 	if len(missing) > 0 {
-		return finding{checkFail, "permission sets", strings.Join(missing, ", ") + " missing in Identity Center: update the stack to create them again"}
+		return finding{checkFail, "permission sets", strings.Join(missing, ", ") + " missing in Identity Center", "update the stack to create them again"}
 	}
-	return finding{checkOK, "permission sets", awsx.RoleRequester + " and " + awsx.RoleAdmin + " present"}
+	return finding{checkOK, "permission sets", awsx.RoleRequester + " and " + awsx.RoleAdmin + " present", ""}
 }
 
 // checkRules asks the service to check the rules in use (a permission set deleted in
@@ -348,31 +358,31 @@ func checkServicePermissionSets(ctx context.Context, s *adminSession) finding {
 func checkRules(ctx context.Context, s *adminSession) []finding {
 	versions, err := s.svc.ConfigVersions(ctx)
 	if err != nil {
-		return []finding{{checkFail, "rules", err.Error()}}
+		return []finding{{checkFail, "rules", err.Error(), ""}}
 	}
 	var out []finding
 	for _, v := range versions.Versions {
 		if !v.Valid && (versions.Current == nil || v.Number > *versions.Current) {
-			out = append(out, finding{checkWarn, "rules", fmt.Sprintf("version %d is not valid and is ignored: %s", v.Number, strings.Join(v.Errors, "; "))})
+			out = append(out, finding{checkWarn, "rules", fmt.Sprintf("version %d is not valid and is ignored: %s", v.Number, strings.Join(v.Errors, "; ")), ""})
 		}
 	}
 	doc, n, err := currentDoc(ctx, s.svc)
 	if err != nil {
-		return append(out, finding{checkFail, "rules", err.Error()})
+		return append(out, finding{checkFail, "rules", err.Error(), ""})
 	}
 	check, err := s.svc.CheckRules(ctx, doc)
 	if err != nil {
-		return append(out, finding{checkFail, "rules", err.Error()})
+		return append(out, finding{checkFail, "rules", err.Error(), ""})
 	}
 	for _, ce := range check.Errors {
 		where := ""
 		if ce.RuleID != nil {
 			where = "rule " + *ce.RuleID + ": "
 		}
-		out = append(out, finding{checkFail, "rules", where + ce.Message})
+		out = append(out, finding{checkFail, "rules", where + ce.Message, "fix the rules and publish them: aws elevate admin rules save <file>"})
 	}
 	if check.Valid {
-		out = append(out, finding{checkOK, "rules", fmt.Sprintf("version %d in use, no problem found", n)})
+		out = append(out, finding{checkOK, "rules", fmt.Sprintf("version %d in use, no problem found", n), ""})
 	}
 	return out
 }
@@ -381,30 +391,30 @@ func checkTrail(ctx context.Context, s *adminSession) finding {
 	has, err := s.aws.HasTrail(ctx)
 	switch {
 	case err != nil:
-		return finding{checkFail, "trail", err.Error()}
+		return finding{checkFail, "trail", err.Error(), ""}
 	case has:
-		return finding{checkOK, "trail", "a CloudTrail trail covers this account"}
+		return finding{checkOK, "trail", "a CloudTrail trail covers this account", ""}
 	}
 	// Optional: elevate does not create one, a second trail costs money.
-	return finding{checkWarn, "trail", "no CloudTrail trail: the free event history keeps who published rules for 90 days only"}
+	return finding{checkWarn, "trail", "no CloudTrail trail: the free event history keeps who published rules for 90 days only", ""}
 }
 
 func checkAlerts(ctx context.Context, s *adminSession) finding {
 	n, err := s.aws.ConfirmedSubscribers(ctx, s.inst.AlertsTopicARN)
 	switch {
 	case err != nil:
-		return finding{checkFail, "alerts", err.Error()}
+		return finding{checkFail, "alerts", err.Error(), ""}
 	case n == 0:
-		return finding{checkFail, "alerts", "nobody receives critical alerts: confirm the e-mail sent by SNS, or subscribe to " + s.inst.AlertsTopicARN}
+		return finding{checkFail, "alerts", "nobody receives critical alerts", "confirm the e-mail sent by SNS, or subscribe to " + s.inst.AlertsTopicARN}
 	}
-	return finding{checkOK, "alerts", fmt.Sprintf("%d confirmed subscriber(s)", n)}
+	return finding{checkOK, "alerts", fmt.Sprintf("%d confirmed subscriber(s)", n), ""}
 }
 
 func checkApprovals(ctx context.Context, s *adminSession) finding {
 	n, err := s.aws.ConfirmedSubscribers(ctx, s.inst.ApprovalsTopicARN)
 	if err != nil {
-		return finding{checkFail, "approvals", err.Error()}
+		return finding{checkFail, "approvals", err.Error(), ""}
 	}
 	// Optional: without subscribers, requests show in status and the UI.
-	return finding{checkOK, "approvals", fmt.Sprintf("%d confirmed subscriber(s) to requests waiting for approval", n)}
+	return finding{checkOK, "approvals", fmt.Sprintf("%d confirmed subscriber(s) to requests waiting for approval", n), ""}
 }
