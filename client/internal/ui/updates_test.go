@@ -25,7 +25,12 @@ func (f *fakeAdmin) PreviewUpdate(_ context.Context, v string) (*UpdatePreview, 
 
 // updatesHarness: client 0.0.1 on infrastructure 0.0.1, with a compatible client release,
 // an infrastructure release that needs a newer client, and a client update to install.
-func updatesHarness(checked bool) (*harness, *fakeAdmin, *[]string) {
+// updatesHarness pins the running client to 0.0.1, so the fake releases 0.0.2 and 0.1.0
+// stay newer whatever the version of the code under test.
+func updatesHarness(t *testing.T, checked bool) (*harness, *fakeAdmin, *[]string) {
+	old := version.Client
+	version.Client = "0.0.1"
+	t.Cleanup(func() { version.Client = old })
 	h, admin := rulesHarness()
 	h.app.Me.InfraVersion = "0.0.1"
 	installed := &[]string{}
@@ -48,21 +53,18 @@ func updatesHarness(checked bool) (*harness, *fakeAdmin, *[]string) {
 
 func TestUpdatesIsForAdminsOnly(t *testing.T) {
 	for _, role := range []string{"requester", "approver", "auditor"} {
-		h, _, _ := updatesHarness(true)
+		h, _, _ := updatesHarness(t, true)
 		h.app.Me.Roles = []string{role}
 		if w := h.do(t, "GET", "/updates", nil); w.Code != 404 {
 			t.Errorf("/updates as %s: %d, want 404", role, w.Code)
 		}
 	}
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	contains(t, h.get(t, "/requests"), `href="/updates"`)
 }
 
 func TestUpdatesListClientAndInfrastructureReleases(t *testing.T) {
-	if version.Client != "0.0.1" {
-		t.Skip("the test expects the development version 0.0.1")
-	}
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	out := h.get(t, "/updates")
 	contains(t, out,
 		"Client 0.0.1", "infrastructure 0.0.1",
@@ -74,14 +76,14 @@ func TestUpdatesListClientAndInfrastructureReleases(t *testing.T) {
 }
 
 func TestUpdatesSaysWhenTheCheckIsOff(t *testing.T) {
-	h, _, _ := updatesHarness(false)
+	h, _, _ := updatesHarness(t, false)
 	out := h.get(t, "/updates")
 	contains(t, out, "turned off", "checkUpdates: false", "/home/me/.config/aws-elevate/config.json")
 	lacks(t, out, "Update client to")
 }
 
 func TestUpdateClientInstallsTheNewestCompatibleRelease(t *testing.T) {
-	h, _, installed := updatesHarness(true)
+	h, _, installed := updatesHarness(t, true)
 	w := h.do(t, "POST", "/updates/client", url.Values{})
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
@@ -93,7 +95,7 @@ func TestUpdateClientInstallsTheNewestCompatibleRelease(t *testing.T) {
 }
 
 func TestUpdateClientShowsTheFailure(t *testing.T) {
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	h.app.Updates.InstallClient = func(context.Context, string) (string, error) {
 		return "", errors.New("cannot replace /usr/local/bin/aws-elevate: install it with sudo")
 	}
@@ -102,7 +104,7 @@ func TestUpdateClientShowsTheFailure(t *testing.T) {
 }
 
 func TestPreviewShowsChangesAndTheCommandsWithoutApplying(t *testing.T) {
-	h, admin, _ := updatesHarness(true)
+	h, admin, _ := updatesHarness(t, true)
 	w := h.do(t, "POST", "/updates/preview", url.Values{"version": {"0.1.0"}})
 	if w.Code != 200 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
@@ -120,12 +122,12 @@ func TestPreviewShowsChangesAndTheCommandsWithoutApplying(t *testing.T) {
 }
 
 func TestPreviewWithoutChanges(t *testing.T) {
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	contains(t, h.do(t, "POST", "/updates/preview", url.Values{"version": {"9.9.9"}}).Body.String(), "No changes")
 }
 
 func TestPreviewRefusesAMalformedVersion(t *testing.T) {
-	h, admin, _ := updatesHarness(true)
+	h, admin, _ := updatesHarness(t, true)
 	w := h.do(t, "POST", "/updates/preview", url.Values{"version": {"1.0.0/../../x"}})
 	if w.Code != 400 || len(admin.previewed) != 0 {
 		t.Fatalf("status %d, previewed %v", w.Code, admin.previewed)
@@ -133,7 +135,7 @@ func TestPreviewRefusesAMalformedVersion(t *testing.T) {
 }
 
 func TestUpdatesWithoutAnyReleaseSaysSoCalmly(t *testing.T) {
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	h.app.Updates.Releases = func(context.Context) ([]release.Release, error) { return nil, nil }
 	out, _, _ := strings.Cut(h.get(t, "/updates"), `<template id="closed-alert">`)
 	contains(t, out, `class="alert info"`, "No release published yet.", "Client ")
@@ -141,7 +143,7 @@ func TestUpdatesWithoutAnyReleaseSaysSoCalmly(t *testing.T) {
 }
 
 func TestUpdatesKeepsTheInstalledVersionsWhenTheReleasesCannotBeRead(t *testing.T) {
-	h, _, _ := updatesHarness(true)
+	h, _, _ := updatesHarness(t, true)
 	h.app.Updates.Releases = func(context.Context) ([]release.Release, error) {
 		return nil, errors.New("read the releases: 404: the repository is not reachable")
 	}
