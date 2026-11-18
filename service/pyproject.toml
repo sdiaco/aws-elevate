@@ -2,7 +2,7 @@
 # the Lambdas ship src/aws_elevate as a zip and use the boto3 bundled in the runtime.
 [project]
 name = "aws-elevate-service"
-version = "0.0.1"
+version = "0.0.2"
 requires-python = ">=3.12,<3.13"
 dependencies = []
 
