@@ -94,7 +94,9 @@ func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", `<span class="st st-ps_missing">PS not found</span>`,
 		`<span class="st st-active">Active</span>`, "<th>Status</th>", "privileged",
 		"prod (222222222222)", "1h (max 4h)", "manual by leads", "auto",
-		`href="/rules/edit"`, "New rule", `href="/rules/import"`, `formaction="/rules/delete"`)
+		`href="/rules/edit"`, "New rule", `href="/rules/import"`,
+		// The list is a GET form; deleting changes the rules and is only accepted as POST.
+		`formaction="/rules/delete" formmethod="post"`)
 	if strings.Count(out, "PS not found") != 1 {
 		t.Errorf("only ssm-prod lost its permission set:\n%s", out)
 	}
@@ -125,13 +127,17 @@ func TestRuleFormIsFilledFromTheRuleAndAWS(t *testing.T) {
 		`<input type="hidden" name="orig" value="ssm-dev">`,
 		`name="id" value="ssm-dev"`,
 		`<option value="g-dev" selected>devs</option>`,
-		`name="ps" value="ssm-write" list="ps-names"`, `<option value="db-admin">`,
-		`name="account" value="111111111111" checked`, `name="account" value="222222222222"`,
+		`<select id="ps" name="ps" required data-filter data-error="Choose a permission set.">`,
+		`<option value="ssm-write" selected>ssm-write</option>`, `<option value="db-admin">db-admin</option>`,
+		`<select id="group" name="group" required data-filter`, `<select id="approver" name="approver" required data-filter`,
+		`class="cards" data-paginate="12"`, `placeholder="Find an account"`, `data-selected-count`,
+		`<input type="checkbox" name="account" value="111111111111" checked>`, `<input type="checkbox" name="account" value="222222222222">`,
+		`class="copy card-id" data-copy="111111111111"`,
 		`name="default" value="1h"`, `name="max" value="2h"`,
 		`name="approval" value="auto" checked`,
 		`data-load="/rules/ps-permissions?ps=" data-load-from="ps"`,
 	)
-	lacks(t, out, `name="privileged" checked`)
+	lacks(t, out, `name="privileged" checked`, "<datalist")
 	h.get(t, "/rules/edit?refresh=1")
 	if !adm.refreshed {
 		t.Error("refresh did not read AWS again")
@@ -146,7 +152,8 @@ func TestRuleFormSaysWhichAccountsAreNeverListed(t *testing.T) {
 
 func TestNewRuleFormShowsWhatThePermissionSetContains(t *testing.T) {
 	h, _ := rulesHarness()
-	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`)
+	contains(t, h.get(t, "/rules/edit"), `data-load="/rules/ps-permissions?ps=" data-load-from="ps"`,
+		`<dd data-mirror="privileged">No</dd>`) // the summary says no, not "-"
 	lacks(t, h.get(t, "/rules/edit"), "shows once the rule is saved")
 }
 
@@ -192,7 +199,8 @@ func TestSavingARuleShowsTheChangesThenPublishesFromTheNewestVersion(t *testing.
 	h, adm := rulesHarness()
 	w := h.do(t, "POST", "/rules/edit", postedRule("db-prod"))
 	out := w.Body.String()
-	contains(t, out, "Review changes", "Added", "db-prod", `formaction="/rules/publish"`, "Publish")
+	contains(t, out, "Review changes", "Added", "db-prod", `formaction="/rules/publish"`, "Publish",
+		"1 added · 0 changed · 0 removed · 2 unchanged")
 	if len(adm.published) != 0 || h.svc.calls[len(h.svc.calls)-1] != "check" {
 		t.Fatalf("published before confirmation, calls %v", h.svc.calls)
 	}
@@ -360,7 +368,10 @@ func TestConflictBeforeTheServiceReadsTheNewVersionComparesWithIt(t *testing.T) 
 func TestDeletingRules(t *testing.T) {
 	h, adm := rulesHarness()
 	out := h.do(t, "POST", "/rules/delete", url.Values{"id": {"ssm-prod"}}).Body.String()
-	contains(t, out, "Review changes", "Removed", "ssm-prod")
+	contains(t, out, "Review changes", "Removed", "ssm-prod",
+		// Deleting cannot be undone from here: one more confirmation in a dialog (design §11.1).
+		`data-dialog="delete">Delete and publish…`, "Delete 1 rule?", `<li><code>ssm-prod</code></li>`)
+	lacks(t, out, `>Publish</button>`)
 	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
 	if len(adm.published) != 1 || strings.Contains(adm.published[0], "ssm-prod") || !strings.Contains(adm.published[0], "ssm-dev") {
 		t.Errorf("published %v", adm.published)
@@ -413,4 +424,44 @@ func TestTheRuleFormDoesNotOfferReservedPermissionSets(t *testing.T) {
 	out := h.get(t, "/rules/edit")
 	contains(t, out, `<option value="ssm-write">`)
 	lacks(t, out, `<option value="JIT-abcde23456">`, `<option value="ElevateAdmin">`)
+}
+
+func TestManualApprovalNeedsAGroupThatApproves(t *testing.T) {
+	h, adm := rulesHarness()
+	out := h.get(t, "/rules/edit")
+	contains(t, out, `<option value="">Choose a group</option>`, `name="approver" required data-filter data-error="Choose who approves."`,
+		"Automatic: the access starts at once.")
+	lacks(t, out, "No group")
+	form := postedRule("x")
+	form.Set("approver", "")
+	out = h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out, "Choose who approves.")
+	if len(adm.published) != 0 {
+		t.Error("published")
+	}
+}
+
+func TestEditingKeepsTheNamesOfUnchangedAccountsAndGroups(t *testing.T) {
+	// Organizations and Identity Center may rename an account or a group meanwhile: the
+	// review shows only what the admin changed, so the names in use stay.
+	base := json.RawMessage(`{"schemaVersion":1,"rules":[{"id":"r1","group":{"id":"g1","name":"old-devs"},` +
+		`"permissionSet":{"arn":"arn:ps","name":"ps"},"accounts":[{"id":"111111111111","name":"old-dev"}],` +
+		`"duration":{"defaultSeconds":3600,"maxSeconds":7200},"approval":"manual","approverGroup":{"id":"g2","name":"old-leads"},"privileged":false}]}`)
+	edited := api.Rule{
+		ID: "r1", Group: api.Ref{ID: "g1", Name: "devs"}, PermissionSet: api.PermissionSet{Arn: "arn:ps", Name: "ps"},
+		Accounts: []api.Ref{{ID: "111111111111", Name: "dev"}, {ID: "222222222222", Name: "prod"}},
+		Duration: api.Duration{DefaultSeconds: 3600, MaxSeconds: 3600}, Approval: "manual",
+		ApproverGroup: &api.Ref{ID: "g2", Name: "leads"},
+	}
+	raw, _ := json.Marshal(edited)
+	out, err := change{Kind: "put", Orig: "r1", Rule: raw}.apply(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{`"name":"old-devs"`, `"name":"old-dev"`, `"name":"old-leads"`, `"name":"prod"`, `"maxSeconds":3600`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s in %s", want, s)
+		}
+	}
 }

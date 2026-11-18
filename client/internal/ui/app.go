@@ -48,6 +48,8 @@ type App struct {
 	Admin Admin
 	// Updates lists releases and updates the client; nil turns the Updates view off.
 	Updates *Updates
+	// Reopen is the command that opens the interface again once it has closed.
+	Reopen string
 
 	skippedWelcome atomic.Bool // the admin skipped the first run in this session
 	notices        notices     // outcomes waiting for the page after a redirect
@@ -99,6 +101,9 @@ func (a *App) rolesAlert() []Alert {
 	if a.rolesErr == nil {
 		return nil
 	}
+	if alert := errorAlert(a.rolesErr); alert.Command != "" {
+		return []Alert{alert}
+	}
 	return []Alert{{Kind: "warning", Text: "Could not refresh your roles, the menu may be out of date: " + a.rolesErr.Error()}}
 }
 
@@ -115,6 +120,7 @@ func Pages(a *App) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", staticFiles())
 	mux.HandleFunc("GET /{$}", a.home)
+	mux.HandleFunc("/", a.notFound) // any other address, or a method its address does not take
 	mux.HandleFunc("GET /requests", a.requestsPage)
 	mux.HandleFunc("GET /requests/new", a.only(a.canRequest, a.newRequestPage))
 	mux.HandleFunc("POST /requests/new", a.only(a.canRequest, a.newRequestSubmit))
@@ -162,11 +168,16 @@ func Pages(a *App) http.Handler {
 func (a *App) only(allowed func() bool, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !allowed() {
-			http.NotFound(w, r)
+			a.notFound(w, r)
 			return
 		}
 		h(w, r)
 	}
+}
+
+// notFound is the interface's own page for an address it does not serve.
+func (a *App) notFound(w http.ResponseWriter, _ *http.Request) {
+	a.show(w, http.StatusNotFound, "notfound", "Page not found", "", nil)
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
@@ -203,11 +214,17 @@ func (a *App) nav() []NavGroup {
 	return groups
 }
 
+// closedAlert is what the page shows when the interface no longer answers.
+func (a *App) closedAlert() Alert {
+	return Alert{Kind: "error", Text: "This interface has stopped (after 30 minutes without use, or from the terminal). Run this command to open it again:", Command: a.Reopen}
+}
+
 // show renders a view inside the base layout.
 func (a *App) show(w http.ResponseWriter, status int, view, title, path string, content any, alerts ...Alert) {
 	p := Page{
 		Title: title, Path: path, Nav: a.nav(), User: a.me().User.UserName,
 		Roles: strings.Join(a.me().Roles, ", "), Alerts: append(a.rolesAlert(), alerts...), Content: content,
+		Closed: a.closedAlert(),
 	}
 	if err := renderPage(w, status, view, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -216,7 +233,7 @@ func (a *App) show(w http.ResponseWriter, status int, view, title, path string, 
 
 // fail shows an answer of the service that stopped the view.
 func (a *App) fail(w http.ResponseWriter, title, path string, err error) {
-	a.show(w, http.StatusBadGateway, "message", title, path, title, Alert{Kind: "error", Text: err.Error()})
+	a.show(w, http.StatusBadGateway, "message", title, path, title, errorAlert(err))
 }
 
 // part writes HTML a page fetches into itself.
@@ -228,7 +245,7 @@ func part(w http.ResponseWriter, name string, data any) {
 
 // partError is a failure inside a fetched piece: the page around it stays usable.
 func partError(w http.ResponseWriter, err error) {
-	part(w, "alert", Alert{Kind: "error", Text: err.Error()})
+	part(w, "alert", errorAlert(err))
 }
 
 // listAll reads every page of a grants query.

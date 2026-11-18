@@ -65,7 +65,7 @@ func failedRevoke(id string, actions ...string) api.Grant {
 }
 
 func versionsFixture(h *harness) {
-	author := "admin@example.com"
+	author := "arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_0123456789abcdef/user@example.com"
 	at := time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
 	three := 3
 	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{
@@ -84,7 +84,9 @@ func TestVersionsListAuthorsValidityAndTheVersionInUse(t *testing.T) {
 	versionsFixture(h)
 	out := h.get(t, "/versions")
 	contains(t, out,
-		"admin@example.com", "author being verified", "in use",
+		// The user name only; the full identity on hover and in the panel.
+		`<span title="arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_0123456789abcdef/user@example.com">user@example.com</span>`,
+		"author being verified", "in use",
 		"schema: approval must be auto or manual", "not valid, ignored",
 		`href="/versions?open=3" data-panel="/versions/3/panel"`,
 		`formaction="/versions/compare"`, `data-count="2"`, "Compare",
@@ -123,9 +125,10 @@ func TestCompareTwoVersionsRuleByRule(t *testing.T) {
 		"Removed", "old-rule",
 		"Changed", "ssm-dev", `<span class="del">  &#34;privileged&#34;: false</span>`, `<span class="add">  &#34;privileged&#34;: true</span>`,
 		`<span>  &#34;id&#34;: &#34;ssm-dev&#34;,</span>`,
-		// An added rule reads as a diff too: nothing on the left, every line added.
-		"Not in this version.", `<span class="add">  &#34;id&#34;: &#34;ssm-prod&#34;</span>`,
+		// An added or removed rule reads as its details, the JSON one click away.
+		`<dt>Who can request</dt>`, "<summary>Show JSON</summary>",
 	)
+	lacks(t, out, "Not in this version.", `<span class="add">  &#34;id&#34;: &#34;ssm-prod&#34;</span>`)
 	out = h.get(t, "/versions/compare?id=3")
 	contains(t, out, `class="alert error"`, "Select two versions")
 }

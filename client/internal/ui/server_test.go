@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -173,8 +174,8 @@ func TestServeStopsAfterInactivity(t *testing.T) {
 	do(s, "GET", "/", nil, c) // activity: the 200 ms start again
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Errorf("serve: %v", err)
+		if !errors.Is(err, ErrIdle) {
+			t.Errorf("serve: %v, want ErrIdle", err)
 		}
 		if d := time.Since(start); d < 300*time.Millisecond {
 			t.Errorf("stopped after %v, activity ignored", d)
@@ -228,5 +229,22 @@ func TestTwoInterfacesKeepTheirOwnSession(t *testing.T) {
 	}
 	if w := do(a, "GET", "/", nil, ca); w.Code != http.StatusOK {
 		t.Fatalf("first interface after the second login: %d", w.Code)
+	}
+}
+
+func TestAlivePingKeepsTheServerOpenWithoutReachingThePages(t *testing.T) {
+	s := newTestServer(t, time.Minute)
+	if w := do(s, "GET", "/alive", nil, nil); w.Code != http.StatusForbidden {
+		t.Errorf("without cookie: %d", w.Code)
+	}
+	c := login(t, s)
+	w := do(s, "GET", "/alive", nil, c)
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Errorf("alive: %d %q", w.Code, w.Body.String())
+	}
+	select {
+	case <-s.active:
+	default:
+		t.Error("the ping did not count as activity")
 	}
 }

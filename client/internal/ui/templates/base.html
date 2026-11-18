@@ -14,13 +14,14 @@
 {{range .Nav}}{{if .Label}}<div class="nav-group">{{.Label}}</div>{{end}}
 {{range .Items}}<a href="{{.Path}}"{{if eq .Path $.Path}} aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="count{{if .Warn}} warn{{end}}">{{.Count}}</span>{{end}}</a>
 {{end}}{{end}}
-<div class="nav-user">{{.User}}{{if .Roles}} · {{.Roles}}{{end}}</div>
+<div class="nav-user"><span class="nav-user-name">{{.User}}</span>{{if .Roles}}<span class="nav-user-roles">{{.Roles}}</span>{{end}}</div>
 </nav>{{end}}
 <main class="main">
-{{range .Alerts}}<div class="alert {{.Kind}}" role="status">{{.Text}}</div>
+{{range .Alerts}}{{template "alert" .}}
 {{end}}{{template "content" .Content}}
 </main>
 </div>
+<template id="closed-alert">{{template "alert" .Closed}}</template>
 <template id="refresh-button">{{template "refresh-button" ""}}</template>
 <template id="flash-icon-success">{{template "flash-icon" "success"}}</template>
 <template id="flash-icon-warning">{{template "flash-icon" "warning"}}</template>

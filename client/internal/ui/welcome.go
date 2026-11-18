@@ -2,7 +2,9 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
@@ -30,8 +32,8 @@ func (a *App) rulesInUse(ctx context.Context) ([]api.Rule, error) {
 	return rulesOf(b.Doc)
 }
 
-// welcome is the first run: the rule form in four steps (what, where, who, how), full
-// screen. It saves through the same review and publication as the Rules view.
+// welcome is the first run: the rule form in steps (what, where, who, how, review), full
+// screen. It publishes through the same check and publication as the Rules view.
 func (a *App) welcome(w http.ResponseWriter, r *http.Request) {
 	rules, err := a.rulesInUse(r.Context())
 	if err != nil {
@@ -42,12 +44,59 @@ func (a *App) welcome(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/rules", http.StatusSeeOther)
 		return
 	}
-	v := ruleView{Form: ruleForm{Default: "1h", Max: "4h", Approval: "manual"}}
+	a.showWelcome(w, r, ruleForm{Default: "1h", Max: "4h", Approval: "manual"}, nil)
+}
+
+// firstReview is the last step of the first run: the rule as the service accepted it.
+type firstReview struct {
+	Rule   api.Rule
+	JSON   string
+	Change string // what /rules/publish applies
+	Latest string // the version the change was made on; empty before the first one
+}
+
+// reviewFirstRule checks the rule like any change, then shows it as the wizard's last
+// step instead of the Review page: there is nothing to compare it with yet.
+func (a *App) reviewFirstRule(w http.ResponseWriter, r *http.Request, form ruleForm, rule api.Rule) {
+	raw, err := json.Marshal(rule)
+	if err != nil {
+		a.fail(w, "Your first rule", "/rules", err)
+		return
+	}
+	b, err := a.base(r.Context())
+	if err != nil {
+		a.fail(w, "Your first rule", "/rules", err)
+		return
+	}
+	c := change{Kind: "put", Rule: raw}
+	if _, refused := a.checked(r.Context(), b, c); refused != nil {
+		a.showWelcome(w, r, form, nil, refused...)
+		return
+	}
+	pretty, err := json.MarshalIndent(rule, "", "  ")
+	if err != nil {
+		a.fail(w, "Your first rule", "/rules", err)
+		return
+	}
+	cj, err := json.Marshal(c)
+	if err != nil {
+		a.fail(w, "Your first rule", "/rules", err)
+		return
+	}
+	review := &firstReview{Rule: rule, JSON: string(pretty), Change: string(cj)}
+	if b.Latest != nil {
+		review.Latest = strconv.Itoa(*b.Latest)
+	}
+	a.showWelcome(w, r, form, review)
+}
+
+func (a *App) showWelcome(w http.ResponseWriter, r *http.Request, form ruleForm, review *firstReview, alerts ...Alert) {
+	v := ruleView{Form: form, Review: review}
 	if err := a.readChoices(r.Context(), &v, r.URL.Query().Get("refresh") == "1"); err != nil {
 		a.fail(w, "Your first rule", "/rules", err)
 		return
 	}
-	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Content: v, Bare: true}
+	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Content: v, Alerts: alerts, Bare: true, Closed: a.closedAlert()}
 	if err := renderPage(w, http.StatusOK, "welcome", p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

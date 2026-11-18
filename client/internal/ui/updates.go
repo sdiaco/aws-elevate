@@ -39,6 +39,7 @@ type releaseRow struct {
 
 type updatesView struct {
 	Off          bool
+	None         bool // no release is published yet, or they could not be read
 	SettingsPath string
 	Client       string
 	Infra        string
@@ -67,7 +68,15 @@ func (a *App) updatesPage(w http.ResponseWriter, r *http.Request) {
 	}
 	rels, err := a.Updates.Releases(r.Context())
 	if err != nil {
-		a.fail(w, "Updates", "/updates", err)
+		// The installed versions stay worth showing: only the list of releases is missing.
+		v.None = true
+		a.show(w, http.StatusOK, "updates", "Updates", "/updates", v, errorAlert(err))
+		return
+	}
+	if len(rels) == 0 {
+		v.None = true
+		a.show(w, http.StatusOK, "updates", "Updates", "/updates", v, Alert{Kind: "info",
+			Text: "No release published yet. This page lists them once the first one is out."})
 		return
 	}
 	v.Clients = rows(release.ClientUpdates(rels, version.Client, a.me().InfraVersion), false)

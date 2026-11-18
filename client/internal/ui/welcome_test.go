@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
@@ -25,7 +26,9 @@ func TestFirstRunOpensWhileNoRuleExists(t *testing.T) {
 	}
 	out := h.get(t, "/welcome")
 	contains(t, out,
-		"Your first rule", "1. What", "2. Where", "3. Who", "4. How",
+		"Your first rule", "First activation", "Step 1", "Step 5", "Review",
+		"1. What", "2. Where", "3. Who", "4. How",
+		`<input type="hidden" name="welcome" value="1">`,
 		`action="/rules/edit"`, `name="ps"`, `name="account"`, `name="group"`, `name="approval"`, `name="default"`,
 		`data-step`, `action="/welcome/skip"`, "Skip",
 	)
@@ -70,5 +73,44 @@ func TestFirstRunOpensWhenTheVersionInUseHasNoRule(t *testing.T) {
 	h.svc.docs = map[int]string{3: `{"schemaVersion":1,"rules":[]}`}
 	if w := h.do(t, "GET", "/", nil); w.Header().Get("Location") != "/welcome" {
 		t.Fatalf("home: %q, want /welcome", w.Header().Get("Location"))
+	}
+}
+
+var firstRule = url.Values{
+	"welcome": {"1"}, "id": {"ssm-dev"}, "group": {"g-dev"}, "ps": {"ssm-write"}, "account": {"111111111111"},
+	"default": {"1h"}, "max": {"3h"}, "approval": {"manual"}, "approver": {"g-lead"},
+}
+
+func TestFirstRunReviewIsItsLastStepInReadableForm(t *testing.T) {
+	h := freshInstall()
+	out := h.do(t, "POST", "/rules/edit", firstRule).Body.String()
+	contains(t, out,
+		"Your first rule", "First activation", "5. Review", `data-step-review`,
+		// what, where, who and how, each with its way back to the step
+		"ssm-write", "dev", "111111111111", "devs", "Manual · leads", "1h", "3h",
+		`data-step-goto="0"`, `data-step-goto="1"`, `data-step-goto="2"`, `data-step-goto="3"`,
+		"Show JSON", `&#34;id&#34;: &#34;ssm-dev&#34;`,
+		`formaction="/rules/publish"`, ">Publish</button>",
+	)
+	if hidden(out, "change") == "" {
+		t.Error("no change to publish")
+	}
+	// the steps keep what was chosen, for Edit
+	contains(t, out, `value="ssm-dev"`, `value="3h"`)
+	lacks(t, out, `class="nav"`, "<h1>Review changes</h1>", "In use", "After publishing")
+}
+
+func TestFirstRunRefusedByTheServiceStaysInTheWizard(t *testing.T) {
+	h := freshInstall()
+	form := url.Values{}
+	for k, v := range firstRule {
+		form[k] = v
+	}
+	form.Set("id", "broken")
+	out := h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out, "Your first rule", "Rule broken: ssm-write: inline policy too long", `value="broken"`)
+	lacks(t, out, `class="nav"`, "data-step-review")
+	if strings.Contains(out, ">Publish</button>") {
+		t.Error("offers to publish a refused rule")
 	}
 }

@@ -51,7 +51,11 @@ func (c change) apply(doc json.RawMessage) (json.RawMessage, error) {
 		if i < 0 {
 			rules = append(rules, c.Rule)
 		} else {
-			rules[i] = c.Rule
+			kept, err := keepNames(rules[i], c.Rule)
+			if err != nil {
+				return nil, err
+			}
+			rules[i] = kept
 		}
 	case "delete":
 		rules = slices.DeleteFunc(rules, func(raw json.RawMessage) bool { return slices.Contains(c.IDs, idOf(raw)) })
@@ -67,6 +71,31 @@ func (c change) apply(doc json.RawMessage) (json.RawMessage, error) {
 	}
 	top["rules"] = out
 	return json.Marshal(top)
+}
+
+// keepNames gives the edited rule the names in use of the accounts and groups it keeps:
+// Organizations or Identity Center may have renamed them meanwhile, and the review shows
+// only what the admin changed.
+func keepNames(old, edited json.RawMessage) (json.RawMessage, error) {
+	var was, now api.Rule
+	if err := json.Unmarshal(old, &was); err != nil {
+		return edited, nil // a rule in use that cannot be read keeps nothing
+	}
+	if err := json.Unmarshal(edited, &now); err != nil {
+		return nil, fmt.Errorf("the edited rule cannot be read: %w", err)
+	}
+	if now.Group.ID == was.Group.ID {
+		now.Group.Name = was.Group.Name
+	}
+	if now.ApproverGroup != nil && was.ApproverGroup != nil && now.ApproverGroup.ID == was.ApproverGroup.ID {
+		now.ApproverGroup.Name = was.ApproverGroup.Name
+	}
+	for i, acc := range now.Accounts {
+		if j := slices.IndexFunc(was.Accounts, func(a api.Ref) bool { return a.ID == acc.ID }); j >= 0 {
+			now.Accounts[i].Name = was.Accounts[j].Name
+		}
+	}
+	return json.Marshal(now)
 }
 
 // touches are the rule ids the change rewrites; nil means every rule.
@@ -91,6 +120,10 @@ type reviewView struct {
 	// Replaces are rules another admin changed meanwhile that this publish overwrites:
 	// publishing them needs one more confirmation (design §7.2).
 	Replaces []string
+	// Deletes are the rules this publish removes; deleting asks once more in a dialog
+	// (design §11.1).
+	Deletes     []string
+	DeleteTitle string
 }
 
 // review asks the service to check the changed document, then shows what changes and
@@ -105,24 +138,32 @@ func (a *App) review(w http.ResponseWriter, r *http.Request, c change, back func
 	a.reviewOn(w, r, b, c, back, nil, alerts...)
 }
 
-func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
+// checked applies c on the document of b and has the service check the result. A refusal
+// comes back as the alerts that say why.
+func (a *App) checked(ctx context.Context, b base, c change) ([]byte, []Alert) {
 	doc, err := c.apply(b.Doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
-		return
+		return nil, []Alert{errorAlert(err)}
 	}
-	check, err := a.Service.CheckRules(r.Context(), doc)
+	check, err := a.Service.CheckRules(ctx, doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
-		return
+		return nil, []Alert{errorAlert(err)}
 	}
 	if !check.Valid {
-		back(checkAlerts(check.Errors)...)
+		return nil, checkAlerts(check.Errors)
+	}
+	return doc, nil
+}
+
+func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
+	doc, refused := a.checked(r.Context(), b, c)
+	if refused != nil {
+		back(refused...)
 		return
 	}
 	diff, err := diffRules(b.Doc, doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	raw, err := json.Marshal(c)
@@ -132,6 +173,10 @@ func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change,
 	}
 	diff.OldLabel, diff.NewLabel = "In use", "After publishing"
 	v := reviewView{Changes: diff, Change: string(raw), Replaces: replaces}
+	for _, rc := range diff.Removed {
+		v.Deletes = append(v.Deletes, rc.ID)
+	}
+	v.DeleteTitle = "Delete " + count(len(v.Deletes), "rule", "rules") + "?"
 	if b.Latest != nil {
 		v.Latest = strconv.Itoa(*b.Latest)
 	}
@@ -183,7 +228,7 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := c.apply(b.Doc)
 	if err != nil {
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	}
 	n, err := a.Admin.PublishRules(r.Context(), b.Latest, doc)

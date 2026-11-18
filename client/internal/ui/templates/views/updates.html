@@ -1,6 +1,6 @@
 {{define "content"}}<div class="page-head"><div><h1>Updates</h1>
 <p class="desc">Client {{.Client}}, infrastructure {{.Infra}}.</p></div></div>
-{{if .Off}}<div class="alert info" role="status">The update check is turned off (checkUpdates: false in {{.SettingsPath}}).</div>{{else}}
+{{if .Off}}<div class="alert info" role="status">The update check is turned off (checkUpdates: false in {{.SettingsPath}}).</div>{{else if not .None}}
 <section class="section"><div class="section-head"><h2>Client</h2>
 {{with .Clients}}<form method="post" action="/updates/client"><button class="btn primary">Update client to {{(index . 0).Version}}</button></form>{{end}}</div>
 {{if .Clients}}<p class="desc">Releases that work with infrastructure {{.Infra}}. The update checks the download's checksum and replaces this executable.</p>

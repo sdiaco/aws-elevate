@@ -30,7 +30,7 @@ func TestEveryUserViewAnswers(t *testing.T) {
 
 func TestNavigationHasRequestsAndHistory(t *testing.T) {
 	out := newHarness("requester").get(t, "/requests")
-	contains(t, out, `href="/requests" aria-current="page"`, `href="/history"`, `user@example.com · requester`,
+	contains(t, out, `href="/requests" aria-current="page"`, `href="/history"`, `<span class="nav-user-name">user@example.com</span><span class="nav-user-roles">requester</span>`,
 		`href="/requests/new"`)
 
 	auditor := newHarness("auditor")
@@ -81,8 +81,8 @@ func scopes(h *harness) string {
 func TestARequesterSeesOnlyTheirRequestsWithoutFilters(t *testing.T) {
 	h := requestsHarness("requester")
 	out := h.get(t, "/requests")
-	contains(t, out, `<span class="counter">(2)</span>`, "mine234567", "own2345678", `href="/requests/new"`)
-	lacks(t, out, `class="segmented"`, "ask2345678", "their23456")
+	contains(t, out, `<span class="counter">(2)</span>`, "mine234567", "own2345678", `href="/requests/new"`, ">Time left<")
+	lacks(t, out, `class="segmented"`, "ask2345678", "their23456", ">Ends in<")
 	if scopes(h) != "mine" || !h.svc.queries[0].Open {
 		t.Errorf("queries %+v", h.svc.queries)
 	}
@@ -133,14 +133,17 @@ func TestAnAuditorSeesEveryOpenGrantWithoutActions(t *testing.T) {
 func TestRowsCarryOnlyTheActionsTheServiceGives(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
-	// Only what is done on several rows sits in the header; every row can be selected to
-	// open its panel.
+	// What is done on several rows sits in the header's Actions menu, as EC2's Instance
+	// state; the decisions on one request stay in its panel.
 	contains(t, out,
 		`value="mine234567" data-select data-actions="revoke"`,
+		`value="own2345678" data-select data-actions="cancel"`,
 		`value="ask2345678" data-select aria-label`,
-		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`,
+		`<button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>`,
+		`role="menuitem" formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`,
+		`role="menuitem" formaction="/requests/cancel" disabled data-action="cancel" data-confirm>Cancel request…`,
 	)
-	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/cancel"`, `formaction="/requests/retry"`)
+	lacks(t, out, `formaction="/requests/approve"`, `formaction="/requests/reject"`, `formaction="/requests/retry"`)
 }
 
 func TestPendingRowsRefreshOnRequestAndMovingRowsPoll(t *testing.T) {
@@ -215,9 +218,17 @@ func TestThePanelShowsWhenTheRequestWasApproved(t *testing.T) {
 	g := grant("mine234567", api.StateActive, me, "revoke")
 	g.Approver = &other
 	h.svc.grants["mine234567"] = g
-	at := time.Date(2026, 11, 15, 9, 3, 0, 0, time.Local)
+	rome, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		t.Skip("no time zone data")
+	}
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = rome
+	at := time.Date(2026, 11, 15, 9, 3, 0, 0, time.UTC)
 	h.svc.timeline = []api.TimelineEntry{{At: at.Add(-3 * time.Minute), State: "pending"}, {At: at, State: "activating"}}
-	contains(t, h.get(t, "/panel/mine234567"), "Approved by", "other@example.com · 2026-11-15 09:03:00")
+	// Local time with its zone, short; the full date on hover.
+	contains(t, h.get(t, "/panel/mine234567"), "Approved by",
+		`other@example.com · <time datetime="2026-11-15T09:03:00Z" title="2026-11-15 10:03:00 CET (UTC+01:00)">Nov 15, 10:03 CET</time>`)
 }
 
 func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {
@@ -229,7 +240,14 @@ func TestThePanelOfAFailedRevocationHasTheErrorTimeLeftAndRetry(t *testing.T) {
 func TestThePanelOfOwnActiveGrantOpensTheConsole(t *testing.T) {
 	out := requestsHarness("requester").get(t, "/requests?open=mine234567")
 	contains(t, out, `class="box access"`, `data-copy="aws elevate shell mine234567"`,
-		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗`)
+		`href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗`,
+		// The portal opens as whoever is signed in to this browser: say so, and offer the
+		// link for another browser profile.
+		"Opens the AWS access portal as", "You will see No access", `aria-label="Copy link"`)
+	// Once, in Access: not again in the panel header.
+	if n := strings.Count(out, "Open in console"); n != 1 {
+		t.Fatalf("Open in console %d times", n)
+	}
 	out = requestsHarness("admin").get(t, "/requests?open=their23456")
 	lacks(t, out, "Open in console", "aws elevate shell")
 }
@@ -262,7 +280,10 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	contains(t, out, "Request ask2345678: rejected.")
 	lacks(t, out, "data-follow") // a rejection is final: nothing to follow
 
-	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request")
+	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request",
+		// The page is the fallback of a dialog (design §11.1): "Go back" leaves the view as it was.
+		`data-close autofocus>Go back</a>`)
+	contains(t, h.get(t, "/requests?open=own2345678"), `href="/requests/cancel?id=own2345678" data-confirm>Cancel request…`)
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
 	if got := strings.Join(h.svc.calls, ","); !strings.Contains(got, "approve ask2345678") ||
 		!strings.Contains(got, "reject use the read-only rule ask2345678") || !strings.Contains(got, "cancel own2345678") {
@@ -310,8 +331,16 @@ func TestRetryRunsTheFailedRevocationAgain(t *testing.T) {
 
 // --- New request ---
 
+// twoRules gives the harness a second requestable rule, so none is chosen for the user.
+func twoRules(h *harness) *harness {
+	other := ruleSSM()
+	other.ID = "ssm-dev"
+	h.svc.rules = append(h.svc.rules, other)
+	return h
+}
+
 func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
-	h := newHarness("requester")
+	h := twoRules(newHarness("requester"))
 	out := h.get(t, "/requests/new")
 	contains(t, out, `<form method="get" action="/requests/new"`, `type="radio" name="rule" value="ssm-prod"`,
 		"ssm-write", "Manual · leads", "4h")
@@ -328,8 +357,13 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 		`<button class="btn primary" form="request">Submit request</button>`,
 		`data-paginate="8"`, `data-filter`, `data-pager`,
 		`<input type="hidden" name="rule" value="ssm-prod">`,
-		`<option value="222222222222" selected>prod (222222222222)</option>`,
+		`class="cards" data-paginate="12"`,
+		`<input type="radio" name="account" value="222222222222" checked required data-error="Choose an account.">`,
+		`class="card-name">prod</span>`, `class="copy card-id" data-copy="222222222222"`,
 		`name="duration"`, `placeholder="1h"`, "Default 1h, at most 4h",
+		`<dd data-mirror="account" data-of="request">prod 222222222222</dd>`,
+		`<dd data-mirror="duration" data-of="request" data-empty="1h (default)">1h (default)</dd>`,
+		`<dd data-mirror="reason" data-of="request" class="clamp">-</dd>`,
 		`<textarea name="reason"`,
 		`data-load="/requests/permissions?rule=ssm-prod"`,
 		`href="/requests"`,
@@ -348,7 +382,7 @@ func TestChoosingARuleFetchesOnlyItsForm(t *testing.T) {
 	if !strings.HasPrefix(out, `<form method="post" action="/requests/new"`) {
 		t.Fatalf("not the form: %s", out)
 	}
-	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`)
+	contains(t, out, `<input type="hidden" name="rule" value="ssm-prod">`, `<textarea name="reason" id="reason" rows="3" required data-keep>`)
 	lacks(t, out, `class="nav"`)
 	out = h.get(t, "/requests/new/form?rule=nope")
 	contains(t, out, "Choose a rule to see its details", `<button class="btn primary" disabled>`)
@@ -371,7 +405,10 @@ func TestWhatYouWillGetIsAFragment(t *testing.T) {
 
 func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 	h := newHarness("requester")
-	h.svc.grants["new4567890"] = grant("new4567890", api.StatePending, me, "cancel")
+	sent := grant("new4567890", api.StatePending, me, "cancel")
+	exp := time.Now().Add(30 * time.Minute)
+	sent.ApprovalExpiresAt = &exp
+	h.svc.grants["new4567890"] = sent
 	w := h.do(t, "POST", "/requests/new", url.Values{"rule": {"ssm-prod"}, "account": {"222222222222"}, "duration": {"45m"}, "reason": {"incident 42"}})
 	if w.Code != 303 || w.Header().Get("Location") != "/requests?sent=new4567890" {
 		t.Fatalf("%d %s %s", w.Code, w.Header().Get("Location"), w.Body)
@@ -382,8 +419,9 @@ func TestSubmittingGoesBackToTheTableWithTheRequestFollowedOnTop(t *testing.T) {
 	}
 
 	out := h.get(t, "/requests?sent=new4567890")
-	contains(t, out, `class="flash info"`, `data-refresh="/requests/flash/new4567890"`, "Waiting for approval by leads")
-	lacks(t, out, `data-poll="/requests/flash/`, `class="spinner"`, "data-dismiss")
+	// Sent, and nothing more to follow here: the row in the table tracks it.
+	contains(t, out, `class="flash success"`, "<strong>Request new4567890</strong> submitted. An approver in leads must approve it within", "data-dismiss")
+	lacks(t, out, `data-poll="/requests/flash/`, `data-refresh="/requests/flash/`, `class="spinner"`)
 	lacks(t, out, "console?account_id")
 }
 
@@ -415,10 +453,10 @@ func TestTheFlashWaitsForTheRoleBeforeTheConsole(t *testing.T) {
 		t.Fatalf("ready calls %v", h.ready)
 	}
 	contains(t, out, `class="flash success"`,
-		"aws elevate shell new4567890", "export AWS_PROFILE=jit-ssm-write-222222222222",
+		"aws elevate shell new4567890", `data-copy="--profile jit-ssm-write-222222222222"`,
 		`<a class="btn primary" href="https://example.awsapps.com/start/#/console?account_id=222222222222" target="_blank" rel="noopener noreferrer">Open in console ↗</a>`,
 	)
-	lacks(t, out, "data-poll", `class="nav"`)
+	lacks(t, out, "data-poll", `class="nav"`, "AWS_PROFILE")
 }
 
 func TestTheFlashOfAClosedOrUnreadyRequest(t *testing.T) {
@@ -442,7 +480,7 @@ func TestTheSelectionColumnIsThereEvenWithNothingToRevoke(t *testing.T) {
 	h.svc.lists["mine"] = []api.Grant{grant("own2345678", api.StatePending, me, "cancel")}
 	out := h.get(t, "/requests")
 	contains(t, out, `data-select-all`, `value="own2345678" data-select`,
-		`formaction="/requests/revoke" disabled data-action="revoke">Revoke…`)
+		`formaction="/requests/revoke" disabled data-action="revoke" data-confirm>Revoke…`)
 }
 
 func TestARequestNobodyApprovedInTimeSaysSo(t *testing.T) {
@@ -481,4 +519,81 @@ func TestAnActiveRowReadsItselfOnceItEndsAndAClosedOneStaysGrey(t *testing.T) {
 	out = h.get(t, "/requests/row/mine234567")
 	contains(t, out, `data-state="closed"`, `<span class="st st-closed">Closed</span>`)
 	lacks(t, out, "data-expire", "data-poll", "<time data-until", `data-actions="revoke"`)
+}
+
+func TestEachRequestsFilterSaysWhatIsEmpty(t *testing.T) {
+	h := newHarness("admin", "approver")
+	contains(t, h.get(t, "/requests?f=failed"), "No failed grants.")
+	contains(t, h.get(t, "/requests?f=approve"), "Nothing to approve.")
+	// Who cannot request has no "Mine": it would always count 0.
+	lacks(t, h.get(t, "/requests"), ">Mine (")
+	contains(t, newHarness("requester", "approver").get(t, "/requests?f=mine"), ">Mine (", "You have no open request.")
+	contains(t, newHarness("requester").get(t, "/requests"), "You have no open request.")
+	contains(t, newHarness("auditor").get(t, "/requests"), "No open request.")
+}
+
+func TestAPendingRowSaysWithinWhenToApprove(t *testing.T) {
+	h := requestsHarness("requester")
+	out := h.get(t, "/requests")
+	contains(t, out, `<span class="muted">Approve within </span><time`)
+}
+
+func TestTheOnlyRequestableRuleIsAlreadyChosen(t *testing.T) {
+	out := newHarness("requester").get(t, "/requests/new")
+	contains(t, out, `value="ssm-prod" id="rule-ssm-prod" checked`, `<textarea name="reason"`)
+	// With two or more, the user chooses: nothing is picked for them.
+	lacks(t, twoRules(newHarness("requester")).get(t, "/requests/new"), `<textarea name="reason"`)
+}
+
+// An action from the panel goes back to the filter it was taken from, read from the
+// page that sent it; anything but a known filter goes back to all requests.
+func TestAnActionGoesBackToTheFilterItCameFrom(t *testing.T) {
+	h := requestsHarness("requester", "approver")
+	h.svc.afterAction = api.StateActivating
+	for referer, want := range map[string]string{
+		"http://127.0.0.1:1/requests?f=approve&open=ask2345678": "/requests?f=approve&notice=",
+		"http://127.0.0.1:1/requests?f=evil":                    "/requests?notice=",
+		"http://127.0.0.1:1/history?f=approve":                  "/requests?notice=",
+		"":                                                      "/requests?notice=",
+	} {
+		r := httptest.NewRequest("POST", "/requests/approve", strings.NewReader("id=ask2345678"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Referer", referer)
+		w := httptest.NewRecorder()
+		Pages(h.app).ServeHTTP(w, r)
+		if got := w.Header().Get("Location"); !strings.HasPrefix(got, want) {
+			t.Errorf("from %q: went to %q, want %s…", referer, got, want)
+		}
+	}
+}
+
+func TestAnAccountWithAnOpenGrantCannotBeChosenAgain(t *testing.T) {
+	h := newHarness("requester")
+	rule := h.svc.rules[0]
+	rule.Accounts = append(rule.Accounts, api.Ref{ID: "333333333333", Name: "stage"})
+	h.svc.rules[0] = rule
+	h.svc.openGrants = []api.OpenGrant{{RuleID: rule.ID, Account: "333333333333", GrantID: "abcde23456", State: "pending"}}
+	out := h.get(t, "/requests/new?rule="+rule.ID)
+	contains(t, out,
+		`<input type="radio" name="account" value="222222222222" required data-error="Choose an account.">`,
+		`<input type="radio" name="account" value="333333333333" disabled>`,
+		`Pending · <a href="/requests?open=abcde23456">abcde23456</a>`, "waiting for approval",
+	)
+}
+
+func TestARuleOpenOnEveryAccountGoesLastAndGreyed(t *testing.T) {
+	h := twoRules(newHarness("requester"))
+	h.svc.openGrants = []api.OpenGrant{{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}}
+	out := h.get(t, "/requests/new")
+	contains(t, out,
+		`<tr class="covered">`, `id="rule-ssm-prod" disabled`,
+		`Active · <a href="/requests?open=abcde23456">abcde23456</a>`, "you already have this access",
+	)
+	if strings.Index(out, `value="ssm-dev"`) > strings.Index(out, `value="ssm-prod"`) {
+		t.Error("the covered rule is not last")
+	}
+	// The only rule left to ask for is not chosen for the user when it is covered.
+	h = newHarness("requester")
+	h.svc.openGrants = []api.OpenGrant{{RuleID: "ssm-prod", Account: "222222222222", GrantID: "abcde23456", State: "active"}}
+	lacks(t, h.get(t, "/requests/new"), `id="request"`)
 }

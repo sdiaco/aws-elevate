@@ -29,7 +29,7 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 		n := strconv.Itoa(info.Number)
 		author := Cell{Text: "author being verified", Muted: true}
 		if info.Author != nil {
-			author = Cell{Text: *info.Author}
+			author = Cell{Text: userName(*info.Author), Title: *info.Author}
 		}
 		published := Cell{}
 		if info.CreatedAt != nil {
@@ -61,7 +61,7 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 			view.Panel.Version, err = a.versionPanel(r.Context(), n, v.Current)
 		}
 		if err != nil {
-			view.Alert = &Alert{Kind: "error", Text: err.Error()}
+			view.Alert = new(errorAlert(err))
 		} else {
 			markOpen(view.List.Rows, open)
 		}
@@ -190,6 +190,7 @@ type compareView struct {
 	Old, New                int
 	OldLabel, NewLabel      string
 	Added, Removed, Changed []ruleChange
+	Unchanged               int  // rules read and left as they are
 	Other                   bool // a field outside the rules changed
 }
 
@@ -219,7 +220,7 @@ func (a *App) compare(w http.ResponseWriter, r *http.Request) {
 	view, err := diffRules(docs[0], docs[1])
 	if err != nil {
 		a.show(w, http.StatusOK, "message", "Compare versions", "/versions", "Compare versions",
-			Alert{Kind: "error", Text: err.Error()})
+			errorAlert(err))
 		return
 	}
 	view.Old, view.New = ns[0], ns[1]
@@ -250,6 +251,8 @@ func diffRules(old, new json.RawMessage) (compareView, error) {
 			rc := ruleChange{ID: id, Before: indent(b), After: indent(after.rules[id])}
 			rc.BeforeLines, rc.AfterLines = markLines(rc.Before, rc.After)
 			view.Changed = append(view.Changed, rc)
+		default:
+			view.Unchanged++
 		}
 	}
 	for _, id := range before.order {
@@ -307,4 +310,10 @@ func jsonEqual(x, y json.RawMessage) bool {
 	ja, _ := json.Marshal(a)
 	jb, _ := json.Marshal(b)
 	return bytes.Equal(ja, jb)
+}
+
+// userName is the last part of an identity ARN: the SSO user of an assumed role, or an IAM
+// user. The column stays narrow; the full ARN shows on hover and in the panel.
+func userName(arn string) string {
+	return arn[strings.LastIndex(arn, "/")+1:]
 }

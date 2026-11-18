@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -391,7 +392,7 @@ func TestRequestWithNoRules(t *testing.T) {
 	}
 }
 
-func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
+func TestRequestWaitsWritesTheProfileAndPrintsIt(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
 	h.svc.rules = []api.Rule{rule}
@@ -412,7 +413,8 @@ func TestRequestWaitsWritesTheProfileAndPrintsTheExport(t *testing.T) {
 	if h.backend.readyRole != "222222222222/JIT-abcde12345" {
 		t.Errorf("waited for %q", h.backend.readyRole)
 	}
-	if h.out.String() != "export AWS_PROFILE=jit-ssm-write-222222222222\n" {
+	// The same --profile the interface shows, so one form is learned everywhere.
+	if h.out.String() != "--profile jit-ssm-write-222222222222\n" {
 		t.Errorf("stdout %q", h.out.String())
 	}
 	cfg, _ := os.ReadFile(h.env.ConfigFile)
@@ -740,4 +742,52 @@ func lineWith(text, part string) string {
 		}
 	}
 	return ""
+}
+
+func TestRequestWithoutAccountUsesTheOnlyOneOfTheRule(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.svc.rules = []api.Rule{rule}
+	h.svc.grant = grantFor("abcde12345")
+	h.svc.states = []string{api.StateActive}
+	if got := h.run("request", "ssm-prod", "--reason", "x", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	if h.svc.created.Account != "222222222222" {
+		t.Errorf("created %+v", *h.svc.created)
+	}
+}
+
+func TestRequestWithoutAccountOnSeveralSaysWhichToAdd(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	several := rule
+	several.Accounts = []api.Ref{{ID: "222222222222", Name: "prod"}, {ID: "333333333333", Name: "stage"}}
+	h.svc.rules = []api.Rule{several}
+	if got := h.run("request", "ssm-prod", "--reason", "x", "--profile", "work"); got == 0 {
+		t.Fatal("exit 0")
+	}
+	if h.svc.created != nil {
+		t.Error("sent to the service")
+	}
+	want := "ssm-prod has several accounts: add --account with one of prod (222222222222), stage (333333333333)"
+	if !strings.Contains(h.errOut.String(), want) {
+		t.Errorf("stderr %q", h.errOut.String())
+	}
+}
+
+func TestAnExpiredSessionSaysOnlyWhatToRun(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.env.Open = func(context.Context, string) (Backend, error) {
+		return nil, fmt.Errorf("get ElevateAdmin credentials: %w",
+			&awsx.SessionExpiredError{Profile: "work", Err: errors.New("operation error SSO OIDC: CreateToken, StatusCode: 400")})
+	}
+	if got := h.run("status", "--profile", "work"); got != 1 {
+		t.Fatalf("exit %d", got)
+	}
+	want := "aws-elevate: your AWS session for profile work has expired. Run:\n  aws sso login --profile work\n"
+	if h.errOut.String() != want {
+		t.Errorf("stderr %q", h.errOut.String())
+	}
 }

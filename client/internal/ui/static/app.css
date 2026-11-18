@@ -36,6 +36,7 @@
   --warning: #855900;
   --info: #295eff;
   --inactive: #6f6b63;
+  --row-closed: #6f6b63;
   --bg-success: #effff1;
   --bg-error: #fff5f5;
   --bg-warning: #fffde5;
@@ -84,6 +85,7 @@
     --warning: #fced69;
     --info: #94afff;
     --inactive: #aca9a2;
+    --row-closed: #8a867e; /* dimmer than the text, still 5:1 on the page */
     --bg-success: #2bb53433;
     --bg-error: #ff3d3d33;
     --bg-warning: #fbd33233;
@@ -157,6 +159,8 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-revoking { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-revoke_failed { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-closed { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
+.st-outcome { color: var(--inactive); background: var(--bg-inactive); --glyph: "–"; }
+.st-outcome-red { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-publishing { color: var(--info); background: var(--bg-info); --glyph: ""; }
 .st-deleting { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
 .st-ps_missing { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
@@ -297,13 +301,15 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .access .desc { margin: -8px 0 12px; color: var(--text-2); }
 .access-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .access-commands { display: contents; }
+.access-open { display: inline-flex; align-items: center; gap: 4px; }
+.access .hint { margin: 8px 0 0; color: var(--text-2); font-size: 12px; }
 .command.pending { padding: 0 12px; }
 .command { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--divider); border-radius: 4px; padding: 3px 4px 3px 12px; background: var(--surface-soft); max-width: 100%; }
 .command code { font-size: 13px; overflow-wrap: anywhere; color: var(--text-strong); }
 .btn.copied::after { content: " ✓"; color: var(--success); }
 .btn.icon { padding: 4px 8px; }
 tr.open > td { background: var(--surface-soft); }
-tr[data-state="closed"] > td { color: var(--inactive); } /* closed while the page is open: gone from Requests on reload */
+tr[data-state="closed"] > td { color: var(--row-closed); } /* closed while the page is open: gone from Requests on reload */
 #request-form:not(:empty) { margin-top: 16px; }
 .main:has(.split-panel:not([hidden])) { padding-bottom: calc(var(--panel-h) + 40px); }
 @media (max-width: 800px) { .split-panel { left: 0; } }
@@ -315,7 +321,7 @@ p.desc { margin: 4px 0 12px; color: var(--text-2); }
 .section-head h2 { margin: 0; }
 
 /* First run: full screen, no navigation, the form in steps. */
-.app.bare .main { max-width: 760px; margin: 0 auto; padding-top: 40px; }
+.app.bare .main { max-width: 1040px; margin: 0 auto; padding-top: 40px; }
 [data-step] h2 { margin: 0 0 4px; }
 [data-step] > .desc { margin: 0 0 16px; }
 form:not(:has([data-step][hidden])) [data-step] + [data-step] { margin-top: 32px; }
@@ -401,10 +407,6 @@ details.diff-rule { margin-top: 16px; }
 .diff p.muted { margin: 0; padding: 12px; border: 1px dashed var(--divider); border-radius: 2px; }
 
 /* A file chosen from disk, with the console's dashed drop area. */
-.file-drop { display: block; border: 1px dashed var(--input-border); border-radius: 4px; padding: 20px; text-align: center; background: var(--surface-soft); }
-.file-drop input[type=file] { font: inherit; color: var(--text-2); }
-.file-drop input[type=file]::file-selector-button { font: inherit; font-weight: 500; margin-right: 12px; border-radius: 4px; padding: 4px 12px; min-height: 30px; cursor: pointer; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--btn-text); }
-.file-drop input[type=file]::file-selector-button:hover { background: var(--btn-hover); }
 .perms h3:first-child { margin-top: 0; }
 .perms .table-wrap + h3 { margin-top: 20px; }
 .launch .box > h2 + p.muted { margin: 8px 0 0; }
@@ -418,3 +420,82 @@ tbody tr.selected.last-shown td { border-bottom-color: var(--selected-border); }
 .modal { max-width: 600px; width: calc(100% - 32px); background: var(--surface); color: var(--text); border: 1px solid var(--divider); border-radius: 2px; padding: 16px 20px 20px; }
 .modal::backdrop { background: rgb(0 0 0 / 50%); }
 .modal h2 { margin: 0 0 12px; font-size: 18px; color: var(--text-strong); }
+.modal form > p { margin: 0 0 12px; }
+.modal table.compact { width: 100%; margin: 0 0 16px; }
+.modal table.compact th, .modal table.compact td { padding: 6px 12px; }
+.field-error { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--error); }
+.field-error .flash-icon { flex: none; width: 14px; height: 14px; margin-top: 1px; stroke: var(--error); }
+[aria-invalid="true"] { border-color: var(--error) !important; }
+.nav-user-name { display: block; color: var(--text); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.nav-user-roles { display: block; }
+/* The browser's file control speaks its own language: a console button and the name instead.
+   The input stays focusable, for the keyboard and for its error. */
+.file-pick { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.file-pick input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-pick input[type=file]:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Select with filtering (Cloudscape): a button that opens a list with a search field. */
+.select-trigger { display: block; position: relative; width: min(320px, 100%); min-height: 30px; margin-top: 4px; padding: 4px 32px 4px 12px; text-align: left; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.select-trigger::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; margin-top: -5px; border: solid var(--text-2); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.select-trigger.placeholder { color: var(--text-2); font-style: italic; }
+.select-trigger:focus-visible, .select-trigger[aria-expanded="true"] { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+select[aria-invalid="true"] + .select-trigger { border-color: var(--error); }
+.select-popover { position: absolute; z-index: 20; width: min(320px, calc(100vw - 32px)); margin-top: 2px; padding: 8px 0 4px; background: var(--surface); border: 1px solid var(--divider); border-radius: 8px; box-shadow: 0 4px 20px 1px rgba(0, 7, 22, 0.18); }
+.select-popover input[type=search] { display: block; width: calc(100% - 16px); margin: 0 8px 6px; }
+.select-popover ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.select-popover li { padding: 4px 16px; cursor: pointer; border: 1px solid transparent; }
+.select-popover li:hover, .select-popover li.active { background: var(--surface-soft); }
+.select-popover li[aria-selected="true"] { background: var(--selected-bg); border-color: var(--selected-border); }
+.select-none { margin: 4px 16px 6px; color: var(--text-2); }
+
+/* Accounts as Cloudscape cards: a grid, the chosen ones outlined. */
+.cards { margin-top: 8px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+label.card { display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; font-weight: 400; background: var(--surface); border: 1px solid var(--divider); border-radius: 12px; cursor: pointer; }
+label.card:hover { border-color: var(--input-border); }
+label.card.selected { background: var(--selected-bg); border-color: var(--selected-border); box-shadow: inset 0 0 0 1px var(--selected-border); }
+label.card[hidden] { display: none; }
+.card-head { display: flex; align-items: center; gap: 8px; }
+.card-name { font-weight: 700; color: var(--text-strong); overflow-wrap: anywhere; }
+.card-id { align-self: flex-start; }
+label.card.covered { cursor: default; color: var(--text-disabled); }
+label.card.covered .card-name { color: var(--text-2); }
+.card-open { font-size: 12px; }
+tr.covered td { color: var(--text-2); }
+.covered-state { font-size: 12px; margin-left: 8px; }
+.change-count { margin: 0 0 12px; color: var(--text-2); }
+.diff-one > h3 { margin: 8px 0; font-size: 14px; }
+.kv dd.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+
+/* Actions menu (EC2's Instance state). */
+.menu-wrap { position: relative; }
+.btn[data-menu]::after { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 0 3px 10px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.menu { position: absolute; right: 0; z-index: 20; min-width: 200px; margin-top: 4px; padding: 4px 0; background: var(--surface); border: 1px solid var(--divider); border-radius: 8px; box-shadow: 0 4px 20px 1px rgba(0, 7, 22, 0.18); }
+.menu-item { display: block; width: 100%; padding: 6px 16px; font: inherit; text-align: left; color: var(--text); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--surface-soft); outline: none; }
+.menu-item:disabled { color: var(--text-disabled); cursor: default; }
+
+/* First run: a wizard with its steps on the left, like the console's create flows. */
+.eyebrow { display: block; font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.wizard { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
+.wizard-steps { list-style: none; margin: 0; padding: 0; }
+.wizard-steps li { display: flex; flex-direction: column; padding: 8px 0 16px 16px; border-left: 2px solid var(--divider); }
+.wizard-step-n { font-size: 12px; color: var(--text-2); }
+.wizard-step-name { color: var(--text-2); }
+.wizard-steps li.done .wizard-step-name { color: var(--text); }
+.wizard-steps li.current { border-left-color: var(--accent); }
+.wizard-steps li.current .wizard-step-name { color: var(--text-strong); font-weight: 700; }
+.wizard-body.form-box { max-width: none; }
+.wizard-body .field input[type="text"], .wizard-body .field textarea, .wizard-body .select-trigger { width: 100%; max-width: none; }
+.welcome .page-head > div:first-child { flex: 1 1 400px; }
+.review-part { border: 1px solid var(--divider); border-radius: 12px; padding: 12px 20px 16px; margin: 0 0 16px; }
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.review-head h3 { margin: 0; }
+.kv.cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px; }
+@media (max-width: 688px) {
+  .wizard { grid-template-columns: minmax(0, 1fr); }
+  .wizard-steps { display: flex; overflow-x: auto; gap: 0; }
+  .wizard-steps li { border-left: 0; border-bottom: 2px solid var(--divider); padding: 4px 12px 8px; white-space: nowrap; }
+  .wizard-steps li.current { border-bottom-color: var(--accent); }
+  .kv.cols3 { grid-template-columns: minmax(0, 1fr); }
+}

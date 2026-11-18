@@ -33,14 +33,14 @@
 
 {{define "flash"}}<div class="flash {{.Kind}}" role="status" data-grant="{{.Grant.ID}}" data-state="{{.Grant.State}}"{{if .Poll}} data-poll="{{.Poll}}"{{end}}>
 <div class="flash-head">{{if .Poll}}<span class="spinner" aria-hidden="true"></span>{{else}}{{template "flash-icon" .Kind}}{{end}}
-<span class="flash-text"><strong>Request {{.Grant.ID}}</strong> · {{.Text}}{{if not .Until.IsZero}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}</span>
+<span class="flash-text"><strong>Request {{.Grant.ID}}</strong>{{if .Within}} {{else}} · {{end}}{{.Text}}{{if not .Until.IsZero}}{{if .Within}} within <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>.{{else}} · <time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time> left{{end}}{{end}}</span>
 {{- with .Refresh}}{{template "refresh-button" .}}{{end}}
 {{- if or (eq .Kind "success") (eq .Kind "error")}}{{template "dismiss-button"}}{{end}}</div>
 {{with .Error}}<p class="flash-body">{{.}}</p>{{end}}
 {{if eq .Grant.State "active"}}<div class="flash-body">
 {{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 {{template "command" (print "aws elevate shell " .Grant.ID)}}
-{{if .Ready}}{{template "command" (print "export AWS_PROFILE=" .Profile)}}{{end}}
+{{if .Ready}}{{template "profile-command" .Profile}}{{end}}
 </div>{{end}}
 </div>{{end}}
 
@@ -61,12 +61,11 @@
 
 {{define "grant-panel"}}{{$g := .Grant}}<div class="split-panel-head"><h2>{{$g.ID}}</h2>{{template "state" $g.State}}{{range tags $g}} <span class="tag">{{.}}</span>{{end}}
 <form method="post" class="panel-actions"><input type="hidden" name="id" value="{{$g.ID}}">
-{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}">Cancel request…</a>{{end}}
-{{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}">Revoke…</a>{{end}}
-{{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}">Reject…</a>{{end}}
+{{if can $g "cancel"}}<a class="btn" href="/requests/cancel?id={{$g.ID}}" data-confirm>Cancel request…</a>{{end}}
+{{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}" data-confirm>Revoke…</a>{{end}}
+{{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}" data-confirm>Reject…</a>{{end}}
 {{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
 {{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
-{{with .Console}}<a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 </form>
 {{template "panel-close" .Close}}</div>
 <div class="tabs" data-tabs>
@@ -76,9 +75,11 @@
 {{if eq $g.State "revoke_failed"}}<div class="alert error" role="status">The revocation failed: {{with $g.Error}}{{.}}{{end}}. Still usable for {{with $g.ExpiresAt}}<time data-until datetime="{{iso .}}" title="{{exact .}}">{{left .}}</time>{{end}}.</div>{{end}}
 {{with .Console}}<div class="box access"><h3>Access</h3>
 <p class="desc">Open the AWS console with this access, or use it from a terminal.</p>
-<div class="access-row"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>
+<div class="access-row"><div class="access-open"><a class="btn primary" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>
+<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy link" title="Copy link"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l1-1"/></svg></button></div>
 <div class="access-commands">{{template "command" (print "aws elevate shell " $g.ID)}}
-<div data-fill="/requests/profile/{{$g.ID}}"><div class="command pending"><code class="muted">Preparing the CLI profile…</code></div></div></div></div></div>{{end}}
+<div data-fill="/requests/profile/{{$g.ID}}"><div class="command pending"><code class="muted">Preparing the CLI profile…</code></div></div></div></div>
+<p class="hint">Opens the AWS access portal as {{$g.Requester.UserName}}; you may need to sign in there. Signed in as someone else? You will see No access: copy the link into the right browser profile.</p></div>{{end}}
 <div class="box"><h3>Details</h3>
 <dl class="kv cols4">
 <div><dt>Requester</dt><dd>{{$g.Requester.UserName}}</dd></div>
@@ -88,12 +89,12 @@
 <div><dt>Reason</dt><dd>{{$g.Reason}}</dd></div>
 <div><dt>Duration</dt><dd>{{short $g.DurationSeconds}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq $g.Approval "manual"}}{{with $g.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
-<div><dt>Requested</dt><dd>{{exact $g.CreatedAt}}</dd></div>
-{{with $g.Approver}}{{if $g.RejectReason}}<div><dt>Rejected by</dt><dd>{{.UserName}}: {{$g.RejectReason}}</dd></div>{{else}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{exact $.ApprovedAt}}{{end}}</dd></div>{{end}}{{end}}
-{{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{exact .}}</dd></div>{{end}}{{end}}
-{{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{exact .}}</dd></div>{{end}}
-{{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{exact .}}</dd></div>{{end}}
-{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{exact .}}{{with $g.CloseReason}} · {{reasonLabel .}}{{end}}</dd></div>{{end}}
+<div><dt>Requested</dt><dd>{{at $g.CreatedAt}}</dd></div>
+{{with $g.Approver}}{{if $g.RejectReason}}<div><dt>Rejected by</dt><dd>{{.UserName}}: {{$g.RejectReason}}</dd></div>{{else}}<div><dt>Approved by</dt><dd>{{.UserName}}{{if not $.ApprovedAt.IsZero}} · {{at $.ApprovedAt}}{{end}}</dd></div>{{end}}{{end}}
+{{if eq $g.State "pending"}}{{with $g.ApprovalExpiresAt}}<div><dt>Waits for an answer until</dt><dd>{{at .}}</dd></div>{{end}}{{end}}
+{{with $g.ActivatedAt}}<div><dt>Activated</dt><dd>{{at .}}</dd></div>{{end}}
+{{with $g.ExpiresAt}}<div><dt>Expires</dt><dd>{{at .}}</dd></div>{{end}}
+{{with $g.ClosedAt}}<div><dt>Closed</dt><dd>{{at .}}{{with $g.CloseReason}} · {{reasonLabel .}}{{end}}</dd></div>{{end}}
 {{with $g.RevokedBy}}<div><dt>Revoked by</dt><dd>{{.UserName}}{{with $g.RevokeReason}}: {{.}}{{end}}</dd></div>{{end}}
 {{if ne $g.State "revoke_failed"}}{{with $g.Error}}<div><dt>Error</dt><dd>{{.}}</dd></div>{{end}}{{end}}
 <div><dt>Id</dt><dd><button type="button" class="copy" data-copy="{{$g.ID}}" title="Copy">{{$g.ID}}</button></dd></div>
@@ -113,16 +114,7 @@
 <div class="split-panel-body">
 <div role="tabpanel" data-tabpanel="details">
 {{if .PSMissing}}<div class="alert error" role="status">The permission set {{$r.PermissionSet.Name}} is no longer in Identity Center: edit the rule and choose another one.</div>{{end}}
-<div class="box"><h3>Details</h3>
-<dl class="kv cols4">
-<div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div>
-<div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div>
-<div><dt>Accounts</dt><dd>{{.Accounts}}</dd></div>
-<div><dt>Approval</dt><dd>{{.Approval}}</dd></div>
-<div><dt>Default duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div>
-<div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div>
-<div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div>
-</dl></div>
+<div class="box"><h3>Details</h3>{{template "rule-kv" .}}</div>
 </div>
 {{if not .PSMissing}}<div role="tabpanel" data-tabpanel="permissions" data-load="/rules/ps-permissions?ps={{$r.PermissionSet.Name}}" hidden><div class="box" data-load-target><p class="muted">Loading…</p></div></div>{{end}}
 </div></div>{{end}}
@@ -140,7 +132,7 @@
 <div class="box"><h3>Details</h3>
 <dl class="kv cols4">
 <div><dt>Author</dt><dd>{{with $v.Author}}{{.}}{{else}}<span class="muted">author being verified</span>{{end}}</dd></div>
-<div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{exact .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
+<div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{at .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
 <div><dt>Validity</dt><dd>{{if $v.Valid}}Valid{{else}}Not valid, ignored{{end}}</dd></div>
 {{with $v.Errors}}<div><dt>Errors</dt><dd>{{range .}}<span class="tag">{{.}}</span> {{end}}</dd></div>{{end}}
 </dl></div>
@@ -153,14 +145,13 @@
 {{define "requestform"}}{{with .Rule}}<form method="post" action="/requests/new" class="box launch-details" id="request">
 <h2>Details</h2>
 <input type="hidden" name="rule" value="{{.ID}}">
-<div class="field"><label for="account">Account</label>
-<select id="account" name="account" required>{{if gt (len $.Accounts) 1}}<option value="">Choose an account</option>{{end}}{{range $.Accounts}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<fieldset class="field"><legend>Account</legend>{{template "account-cards" $.Accounts}}</fieldset>
 <div class="field"><label for="duration">Duration <span class="optional">- optional</span></label>
 <input type="text" id="duration" name="duration" value="{{$.Form.Duration}}" placeholder="{{short .Duration.DefaultSeconds}}">
 <span class="constraint">Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}. For example 45m or 2h.</span></div>
 <div class="field"><label for="reason">Reason</label>
 <span class="desc">Who reads the request and the history sees it.</span>
-<textarea name="reason" id="reason" rows="3" required>{{$.Form.Reason}}</textarea></div>
+<textarea name="reason" id="reason" rows="3" required data-keep>{{$.Form.Reason}}</textarea></div>
 <details class="expand" data-load="/requests/permissions?rule={{.ID}}"><summary>What you will get</summary><div data-load-target><p class="muted">Loading…</p></div></details>
 </form>
 <aside class="box launch-summary"><h2>Summary</h2>
@@ -168,7 +159,9 @@
 <div><dt>Permission set</dt><dd>{{.PermissionSet.Name}}{{if .Privileged}} <span class="tag">privileged</span>{{end}}</dd></div>
 <div><dt>Rule</dt><dd>{{.ID}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq .Approval "manual"}}Manual · {{with .ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
-<div><dt>Duration</dt><dd>Default {{short .Duration.DefaultSeconds}}, at most {{short .Duration.MaxSeconds}}</dd></div>
+<div><dt>Account</dt><dd data-mirror="account" data-of="request">{{with checked $.Accounts.Items}}{{(index . 0).Name}} {{(index . 0).ID}}{{else}}-{{end}}</dd></div>
+<div><dt>Duration</dt><dd data-mirror="duration" data-of="request" data-empty="{{short .Duration.DefaultSeconds}} (default)">{{with $.Form.Duration}}{{.}}{{else}}{{short $.Rule.Duration.DefaultSeconds}} (default){{end}}</dd></div>
+<div><dt>Reason</dt><dd data-mirror="reason" data-of="request" class="clamp">{{or $.Form.Reason "-"}}</dd></div>
 </dl>
 <div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" form="request">Submit request</button></div>
 </aside>{{else}}<aside class="box launch-summary"><h2>Summary</h2>
@@ -178,15 +171,42 @@
 
 {{/* What changes between two rules documents, rule by rule, always side by side. */}}
 {{define "changes"}}<div class="compare">
-{{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{end}}
+{{if not (or .Added .Removed .Changed .Other)}}<div class="alert info" role="status">No rule changes.</div>{{else}}<p class="change-count">{{len .Added}} added · {{len .Changed}} changed · {{len .Removed}} removed · {{.Unchanged}} unchanged</p>{{end}}
 {{if .Other}}<div class="alert info" role="status">Fields outside the rules differ too.</div>{{end}}
 {{range .Added}}{{template "rule-diff" (diff $ . "Added")}}{{end}}
 {{range .Removed}}{{template "rule-diff" (diff $ . "Removed")}}{{end}}
 {{range .Changed}}{{template "rule-diff" (diff $ . "Changed")}}{{end}}
 </div>{{end}}
 
+{{/* The details of a rule, in its panel and in a review. */}}
+{{define "rule-kv"}}{{$r := .Rule}}<dl class="kv cols4">
+<div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div>
+<div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div>
+<div><dt>Accounts</dt><dd>{{.Accounts}}</dd></div>
+<div><dt>Approval</dt><dd>{{.Approval}}</dd></div>
+<div><dt>Default duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div>
+<div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div>
+<div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div>
+</dl>{{end}}
+
+{{/* A changed rule shows both sides; an added or removed one, the side it is on, as details. */}}
 {{define "rule-diff"}}<details class="expand diff-rule" open><summary>{{.Change.ID}} <span class="tag diff-{{.Kind}}">{{.Kind}}</span></summary>
-<div class="diff"><div><h3>{{.OldLabel}}</h3>{{if .Change.BeforeLines}}<pre>{{range .Change.BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
+{{if .Rule}}<div class="diff-one"><h3>{{if eq .Kind "Added"}}{{.NewLabel}}{{else}}{{.OldLabel}}{{end}}</h3>{{template "rule-kv" .Rule}}
+<details class="expand"><summary>Show JSON</summary><pre>{{if eq .Kind "Added"}}{{.Change.After}}{{else}}{{.Change.Before}}{{end}}</pre></details></div>
+{{else}}<div class="diff"><div><h3>{{.OldLabel}}</h3>{{if .Change.BeforeLines}}<pre>{{range .Change.BeforeLines}}<span{{if .Changed}} class="del"{{end}}>{{.Text}}</span>
 {{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div>
 <div><h3>{{.NewLabel}}</h3>{{if .Change.AfterLines}}<pre>{{range .Change.AfterLines}}<span{{if .Changed}} class="add"{{end}}>{{.Text}}</span>
-{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div></details>{{end}}
+{{end}}</pre>{{else}}<p class="muted">Not in this version.</p>{{end}}</div></div>{{end}}</details>{{end}}
+
+{{/* Accounts as Cloudscape cards: searched, 12 a page, ticked (several) or picked (one).
+     An account with an open grant shows it instead of a choice. */}}
+{{define "account-cards"}}<div class="cards" data-paginate="12">
+<div class="list-tools">{{if gt (len .Items) 1}}<input type="search" data-filter placeholder="Find an account" aria-label="Find an account">{{end}}{{if .Multiple}}<span class="muted" data-selected-count>Selected ({{len (checked .Items)}})</span>{{end}}<nav class="pager-nums" data-pager aria-label="Pages"></nav></div>
+<div class="card-grid">{{range .Items}}<label class="card{{if .Checked}} selected{{end}}{{if .Open}} covered{{end}}" data-item>
+<span class="card-head"><input type="{{if $.Multiple}}checkbox{{else}}radio{{end}}" name="account" value="{{.ID}}"{{if .Checked}} checked{{end}}{{if .Open}} disabled{{else if not $.Multiple}} required data-error="Choose an account."{{end}}><span class="card-name">{{.Name}}</span></span>
+<button type="button" class="copy card-id" data-copy="{{.ID}}" title="Copy">{{.ID}}</button>
+{{with .Open}}<span class="card-open">{{template "open-grant" .}}</span>{{end}}
+</label>{{end}}</div>
+<p class="muted no-match" data-no-match hidden>No account matches.</p></div>{{end}}
+
+{{define "open-grant"}}{{stateLabel .State}} · <a href="/requests?open={{.GrantID}}">{{.GrantID}}</a> <span class="muted">({{if eq .State "pending"}}waiting for approval{{else}}you already have this access{{end}})</span>{{end}}

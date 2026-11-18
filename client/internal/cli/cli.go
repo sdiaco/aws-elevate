@@ -132,6 +132,7 @@ func Run(ctx context.Context, e *Env, args []string) int {
 	}
 	err := cmd.run(ctx, e, args[1:])
 	var code exitCode
+	var expired *awsx.SessionExpiredError
 	switch {
 	case err == nil:
 		return 0
@@ -139,6 +140,9 @@ func Run(ctx context.Context, e *Env, args []string) int {
 		return int(code)
 	case errors.Is(err, flag.ErrHelp):
 		return 0
+	case errors.As(err, &expired):
+		fmt.Fprintf(e.Stderr, "aws-elevate: your AWS session for profile %s has expired. Run:\n  %s\n", expired.Profile, expired.Command())
+		return 1
 	case errors.Is(err, errUsage):
 		fmt.Fprintf(e.Stderr, "aws-elevate: %v\nusage: aws elevate %s\n", strings.TrimSuffix(err.Error(), ": usage"), cmd.usage)
 		return 2

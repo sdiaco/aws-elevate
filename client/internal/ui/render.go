@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -12,6 +13,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/sdiaco/aws-elevate/client/internal/api"
+	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
 // files are the pages, styles and script, inside the executable (design §11.1).
@@ -27,14 +31,26 @@ type Page struct {
 	User    string
 	Roles   string
 	Alerts  []Alert
-	Content any  // the data of the view's "content" template
-	Bare    bool // full screen, without the navigation
+	Content any   // the data of the view's "content" template
+	Bare    bool  // full screen, without the navigation
+	Closed  Alert // shown by the page when the interface has closed
 }
 
 // Alert is a message above the view. Kind is error, success, warning or info.
 type Alert struct {
-	Kind string
-	Text string
+	Kind    string
+	Text    string
+	Command string // a command to run, shown copyable after Text
+}
+
+// errorAlert is the alert for a failed call. An expired SSO session says what to run
+// instead of the raw error, wherever it comes from.
+func errorAlert(err error) Alert {
+	var s *awsx.SessionExpiredError
+	if errors.As(err, &s) {
+		return Alert{Kind: "error", Text: "Your AWS session for " + s.Profile + " has expired. Run this command, then reload this page:", Command: s.Command()}
+	}
+	return Alert{Kind: "error", Text: err.Error()}
 }
 
 type NavGroup struct {
@@ -58,6 +74,7 @@ type List struct {
 	Columns []string
 	Rows    []Row
 	Actions []Action // with actions the rows can be selected; disabled until some are
+	Menu    bool     // the actions sit in an "Actions" menu, as EC2's Instance state
 	Tools   []Action // header links that need no selection
 	Empty   string
 	First   string // address of the first page, when this is not it
@@ -108,6 +125,8 @@ type Cell struct {
 	Until    time.Time
 	At       time.Time
 	Refresh  string // a button next to the state reads the row again from this address
+	Title    string // the full value on hover, when Text shortens it
+	Outcome  string // a close reason, shown as one label: red when the access was refused or broke
 }
 
 // Action is a header button. Destructive actions are normal buttons, as in the console;
@@ -118,6 +137,8 @@ type Action struct {
 	Path    string
 	Name    string
 	Danger  bool
+	Confirm bool // the address is a confirmation page, opened as a dialog over the list
+	Post    bool // the action changes something: sent as POST, while the list itself is a GET form
 	Primary bool
 	Count   int // the action needs exactly this many rows, when not 0
 }
@@ -138,23 +159,51 @@ var stateLabels = map[string]string{
 }
 
 var funcs = template.FuncMap{
-	"stateLabel":  func(s string) string { return stateLabels[s] },
+	"stateLabel": func(s string) string { return stateLabels[s] },
+	"outcomeLabel": func(reason string) string {
+		label := reasonLabel(reason)
+		return strings.ToUpper(label[:1]) + label[1:]
+	},
+	"outcomeClass": func(reason string) string {
+		if reason == "rejected" || reason == "failed" {
+			return "st-outcome-red"
+		}
+		return "st-outcome"
+	},
 	"reasonLabel": reasonLabel,
 	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"exact":       func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
+	"exact":       exact,
+	"at":          at,
 	"left":        left,
 	"ago":         ago,
 	"short":       short,
 	"can":         can,
 	"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
-	"indent":      indent,
-	"join":        strings.Join,
-	"tags":        tags,
-	"row":         func(r Row, check bool) rowCtx { return rowCtx{r, check} },
-	"policyName":  policyName,
-	"policyDoc":   policyDoc,
+	"ruleCards":   ruleCards,
+	"checked": func(items []card) []card {
+		var c []card
+		for _, i := range items {
+			if i.Checked {
+				c = append(c, i)
+			}
+		}
+		return c
+	},
+	"indent":     indent,
+	"join":       strings.Join,
+	"tags":       tags,
+	"row":        func(r Row, check bool) rowCtx { return rowCtx{r, check} },
+	"policyName": policyName,
+	"policyDoc":  policyDoc,
 	"diff": func(v compareView, c ruleChange, kind string) ruleDiff {
-		return ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
+		d := ruleDiff{Change: c, Kind: kind, OldLabel: v.OldLabel, NewLabel: v.NewLabel}
+		side := map[string]string{"Added": c.After, "Removed": c.Before}[kind]
+		var rule api.Rule
+		// A side that is not a readable rule keeps the line diff.
+		if side != "" && json.Unmarshal([]byte(side), &rule) == nil {
+			d.Rule = &rulePanel{Rule: rule, Accounts: accountNames(rule), Approval: approvalText(rule)}
+		}
+		return d
 	},
 	"columns": func(l List) int {
 		if len(l.Actions) > 0 {
@@ -178,6 +227,7 @@ type ruleDiff struct {
 	Change             ruleChange
 	Kind               string
 	OldLabel, NewLabel string
+	Rule               *rulePanel // the details of an added or removed rule
 }
 
 // parts are the shared templates; templates holds one set per view: the base layout, the
@@ -252,6 +302,16 @@ func short(seconds int) string {
 }
 
 // left is the countdown text, the same app.js updates every second.
+// exact is the full local time with its zone, for a tooltip: the interface runs on the
+// user's own computer, so its zone is the browser's.
+func exact(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05 MST (UTC-07:00)") }
+
+// at is a moment shown in a page: short and local, the full date on hover.
+func at(t time.Time) template.HTML {
+	return template.HTML(`<time datetime="` + t.UTC().Format(time.RFC3339) + `" title="` +
+		template.HTMLEscapeString(exact(t)) + `">` + t.Local().Format("Jan 2, 15:04 MST") + `</time>`)
+}
+
 func left(until time.Time) string {
 	s := int(time.Until(until).Round(time.Second).Seconds())
 	switch {

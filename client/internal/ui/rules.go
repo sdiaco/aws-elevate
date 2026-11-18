@@ -118,7 +118,7 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(l.Rows) > 0 {
-		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true}}
+		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true}}
 	}
 	view := listView{List: l, Notice: a.noticeOf(r)}
 	if open := r.URL.Query().Get("open"); open != "" {
@@ -254,6 +254,7 @@ type ruleForm struct {
 	Approval   string
 	Approver   string
 	Privileged bool
+	Welcome    bool // sent from the first run: its review is the wizard's last step
 }
 
 type ruleView struct {
@@ -262,6 +263,16 @@ type ruleView struct {
 	Accounts  []awsx.Named
 	Groups    []awsx.Named
 	PSMissing bool
+	Review    *firstReview // the first run's last step, once the service accepted the rule
+}
+
+// ruleCards are the accounts of the rule form as cards, the chosen ones ticked.
+func ruleCards(accounts []awsx.Named, chosen []string) cards {
+	c := cards{Multiple: true}
+	for _, acc := range accounts {
+		c.Items = append(c.Items, card{ID: acc.ID, Name: acc.Name, Checked: slices.Contains(chosen, acc.ID)})
+	}
+	return c
 }
 
 func formOf(rule api.Rule) ruleForm {
@@ -374,6 +385,7 @@ func readForm(r *http.Request) ruleForm {
 		Accounts: r.PostForm["account"], Default: strings.TrimSpace(r.PostFormValue("default")),
 		Max: strings.TrimSpace(r.PostFormValue("max")), Approval: r.PostFormValue("approval"),
 		Approver: r.PostFormValue("approver"), Privileged: r.PostFormValue("privileged") == "on",
+		Welcome: r.PostFormValue("welcome") == "1",
 	}
 }
 
@@ -431,6 +443,9 @@ func (a *App) ruleOf(ctx context.Context, f ruleForm) (api.Rule, []string, error
 		problems = append(problems, "Durations look like 45m, 1h or 1h30m.")
 	}
 	rule.Duration = api.Duration{DefaultSeconds: def, MaxSeconds: max}
+	if f.Approval == "manual" && f.Approver == "" {
+		problems = append(problems, "Choose who approves.")
+	}
 	if f.Approver != "" {
 		if g, ok := find(groups, func(n awsx.Named) bool { return n.ID == f.Approver }); ok {
 			rule.ApproverGroup = &api.Ref{ID: g.ID, Name: g.Name}
@@ -451,7 +466,16 @@ func (a *App) ruleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(problems) > 0 {
-		a.showRule(w, r, form, false, Alert{Kind: "error", Text: strings.Join(problems, " ")})
+		alert := Alert{Kind: "error", Text: strings.Join(problems, " ")}
+		if form.Welcome {
+			a.showWelcome(w, r, form, nil, alert)
+			return
+		}
+		a.showRule(w, r, form, false, alert)
+		return
+	}
+	if form.Welcome {
+		a.reviewFirstRule(w, r, form, rule)
 		return
 	}
 	raw, err := json.Marshal(rule)
@@ -495,7 +519,7 @@ func (a *App) importSubmit(w http.ResponseWriter, r *http.Request) {
 	doc, err := io.ReadAll(io.LimitReader(file, maxImport+1))
 	switch {
 	case err != nil:
-		back(Alert{Kind: "error", Text: err.Error()})
+		back(errorAlert(err))
 		return
 	case len(doc) > maxImport:
 		back(Alert{Kind: "error", Text: "The file is larger than 1 MB: it is not a rules document."})

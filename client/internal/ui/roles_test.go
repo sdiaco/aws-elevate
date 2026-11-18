@@ -2,12 +2,15 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
+	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
 func countCalls(calls []string, name string) int {
@@ -58,4 +61,24 @@ func TestRolesRefreshFailureKeepsTheRolesAndSaysSo(t *testing.T) {
 	if got := h.app.me().Roles; !slices.Equal(got, []string{"admin"}) {
 		t.Fatalf("roles changed: %v", got)
 	}
+}
+
+// An expired SSO session is not a roles problem: the page says what to run, wherever the
+// error comes from.
+func TestExpiredSessionSaysWhatToRun(t *testing.T) {
+	expired := fmt.Errorf("aws credentials: %w", &awsx.SessionExpiredError{Profile: "work", Err: errors.New("token expired")})
+	want := []string{`class="alert error"`, "Your AWS session for work has expired.", `data-copy="aws sso login --profile work"`}
+
+	h := newHarness("admin")
+	h.svc.meErr = expired
+	h.app.rolesRead = time.Now().Add(-rolesTTL - time.Second)
+	out := h.get(t, "/requests")
+	contains(t, out, want...)
+	if strings.Contains(out, "Could not refresh your roles") {
+		t.Fatal("expired session shown as a roles problem")
+	}
+
+	h = newHarness("requester")
+	h.svc.rulesErr = expired
+	contains(t, h.do(t, "GET", "/requests/new", nil).Body.String(), want...)
 }

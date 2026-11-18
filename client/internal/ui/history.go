@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "History", Search: true, Empty: "No grant in this period.",
-		Columns: []string{"Id", "Requested", "Requester", "Permission set", "Account", "Outcome"},
+		Columns: []string{"Id", "Outcome", "Requested", "Permission set", "Account"},
 		Tools:   []Action{{Label: "Export CSV", Path: "/history/export.csv?" + base}},
 	}
 	if a.seesAll() {
@@ -74,15 +75,22 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 		group.Items = append(group.Items, Filter{Label: p.label, Path: "/history?period=" + p.key + "&scope=" + scope, On: p.key == period})
 	}
 	l.Filters = append(l.Filters, group)
+	// Someone else's rows name their requester; the user's own would only repeat it.
+	if scope == "all" {
+		l.Columns = slices.Insert(l.Columns, 3, "Requester")
+	}
 	for _, g := range page.Items {
-		l.Rows = append(l.Rows, Row{Key: g.ID, Cells: []Cell{
+		cells := []Cell{
 			{Text: g.ID, Href: "/history?" + here + "&open=" + g.ID, Panel: "/panel/" + g.ID + "?from=history"},
+			{Outcome: closeReasonOf(g)},
 			{At: g.CreatedAt},
-			{Text: g.Requester.UserName},
 			{Text: g.SourcePs.Name, Tags: tags(g)},
 			{Text: g.Account},
-			{State: g.State, Text: closeReason(g), Muted: true},
-		}})
+		}
+		if scope == "all" {
+			cells = slices.Insert(cells, 3, Cell{Text: g.Requester.UserName})
+		}
+		l.Rows = append(l.Rows, Row{Key: g.ID, Cells: cells})
 	}
 	if page.Cursor != nil {
 		l.Next = "/history?" + base + "&cursor=" + *page.Cursor
@@ -95,7 +103,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, "/history?"+here)
 		if err != nil {
-			v.Alert = &Alert{Kind: "error", Text: err.Error()}
+			v.Alert = new(errorAlert(err))
 		} else {
 			v.Panel.Panel = p
 			markOpen(v.List.Rows, id)
@@ -176,4 +184,12 @@ func inert(v string) string {
 		return "'" + v
 	}
 	return v
+}
+
+// closeReasonOf is the close reason of a closed grant, or "".
+func closeReasonOf(g api.Grant) string {
+	if g.CloseReason == nil {
+		return ""
+	}
+	return *g.CloseReason
 }

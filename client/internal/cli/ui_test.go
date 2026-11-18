@@ -123,3 +123,18 @@ func TestUIAdminPublishesOnTheInstallationAndCachesPermissionSetsPerProfile(t *t
 		t.Errorf("without a cache directory AWS is read every time: %d", adm.psReads)
 	}
 }
+
+func TestUISaysWhyItClosedAndHowToReopen(t *testing.T) {
+	h := newHarness(t)
+	h.setUp(t)
+	h.env.OpenBrowser = func(string) error { return nil }
+	defer func(d time.Duration) { uiIdle = d }(uiIdle)
+	uiIdle = 50 * time.Millisecond
+	if code := Run(context.Background(), h.env, []string{"ui", "--profile", "work"}); code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	want := "Closed after 30 minutes without use. Open it again with:\n  aws elevate ui --profile work\n"
+	if !strings.HasSuffix(h.out.String(), want) {
+		t.Errorf("stdout %q", h.out.String())
+	}
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -13,7 +14,7 @@ import (
 )
 
 // uiIdle closes the interface left unused (design §8.6).
-const uiIdle = 30 * time.Minute
+var uiIdle = 30 * time.Minute
 
 func runUI(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "ui")
@@ -64,6 +65,7 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		},
 		Admin:   admin,
 		Updates: updates,
+		Reopen:  "aws elevate ui --profile " + profile,
 	}
 	ln, err := ui.Listen()
 	if err != nil {
@@ -81,7 +83,12 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		fmt.Fprintf(e.Stdout, "Opened %s in your browser.\n", url)
 	}
 	fmt.Fprintln(e.Stdout, "The interface stops with Ctrl+C or after 30 minutes without use.")
-	return s.Serve(ctx)
+	err = s.Serve(ctx)
+	if errors.Is(err, ui.ErrIdle) {
+		fmt.Fprintf(e.Stdout, "Closed after 30 minutes without use. Open it again with:\n  %s\n", app.Reopen)
+		return nil
+	}
+	return err
 }
 
 // uiUpdates gives the Updates view the same releases and client update as the commands.

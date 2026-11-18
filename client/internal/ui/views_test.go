@@ -17,6 +17,7 @@ import (
 // test: the views must show only those.
 type fakeService struct {
 	rules       []api.Rule
+	openGrants  []api.OpenGrant
 	rulesErr    error // GET /rules fails, as with no valid rules version
 	permsErr    error
 	lists       map[string][]api.Grant // by scope
@@ -45,7 +46,10 @@ func (f *fakeService) Me(context.Context) (*api.Me, error) {
 
 func (f *fakeService) RequestableRules(context.Context) (*api.RuleList, error) {
 	f.calls = append(f.calls, "requestable rules")
-	return &api.RuleList{ConfigVersion: 3, Rules: f.rules}, nil
+	if f.rulesErr != nil {
+		return nil, f.rulesErr
+	}
+	return &api.RuleList{ConfigVersion: 3, Rules: f.rules, OpenGrants: f.openGrants}, nil
 }
 
 func (f *fakeService) Permissions(_ context.Context, id string) (*api.Permissions, error) {
@@ -295,4 +299,47 @@ func TestExportReadsEveryPageAndNeutralisesFormulas(t *testing.T) {
 	if len(h.svc.queries) != 3 {
 		t.Errorf("pages read %d", len(h.svc.queries))
 	}
+}
+
+func TestHistoryShowsTheOutcomeSecondAndTheRequesterOnlyForOthersRows(t *testing.T) {
+	h := newHarness("requester")
+	rejected, expired := grant("rej2345678", "closed", me), grant("exp2345678", "closed", me)
+	r, e := "rejected", "timed_out"
+	rejected.CloseReason, expired.CloseReason = &r, &e
+	h.svc.lists["mine"] = []api.Grant{rejected, expired}
+	out := h.get(t, "/history")
+	// One coloured label per outcome, right after the id, so it shows on a phone too.
+	contains(t, out, `<th>Id</th><th>Outcome</th>`, `class="st st-outcome-red">Rejected</span>`,
+		`class="st st-outcome">Not approved in time</span>`)
+	// Only the user's own rows: the requester column would repeat their name.
+	lacks(t, out, `<th>Requester</th>`, ">Closed<")
+
+	auditor := newHarness("auditor")
+	auditor.svc.lists["all"] = []api.Grant{rejected}
+	contains(t, auditor.get(t, "/history"), `<th>Requester</th>`)
+}
+
+func TestRequestsShowTheRequesterOnlyToWhoSeesOthersRequests(t *testing.T) {
+	lacks(t, requestsHarness("requester").get(t, "/requests"), `<th>Requester</th>`)
+	contains(t, requestsHarness("requester", "approver").get(t, "/requests"), `<th>Requester</th>`)
+}
+
+func TestAnUnknownAddressShowsAPageInTheInterface(t *testing.T) {
+	h := newHarness("auditor")
+	for _, path := range []string{"/rules/new", "/requests/new", "/rules/delete"} {
+		w := h.do(t, "GET", path, nil)
+		if w.Code != 404 {
+			t.Errorf("%s: %d", path, w.Code)
+		}
+		contains(t, w.Body.String(), `class="nav"`, "Page not found", `href="/requests"`)
+	}
+}
+
+func TestEveryPageCarriesTheNoticeForAClosedInterface(t *testing.T) {
+	h := newHarness("requester")
+	h.app.Reopen = "aws elevate ui --profile work"
+	out := h.get(t, "/requests")
+	contains(t, out, `<template id="closed-alert">`,
+		"This interface has stopped (after 30 minutes without use, or from the terminal). Run this command to open it again:",
+		"aws elevate ui --profile work")
 }

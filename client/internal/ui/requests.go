@@ -17,26 +17,33 @@ import (
 
 // requestFilter is one quick filter of the table; who sees which follows the role.
 type requestFilter struct {
-	key, label string
-	keep       func(a *App, g api.Grant) bool
+	key, label, empty string
+	keep              func(a *App, g api.Grant) bool
 }
+
+const noOwnRequest = "You have no open request."
 
 func (a *App) requestFilters() []requestFilter {
 	if !a.has("approver") && !a.has("admin") {
 		return nil // a requester sees only their own requests, without filters
 	}
-	f := []requestFilter{
-		{"", "All", func(*App, api.Grant) bool { return true }},
-		{"mine", "Mine", func(a *App, g api.Grant) bool { return a.mine(g) }},
-		{"approve", "To approve", func(_ *App, g api.Grant) bool {
-			return g.State == api.StatePending && (can(g, "approve") || can(g, "reject"))
-		}},
+	f := []requestFilter{{"", "All", "No open request.", func(*App, api.Grant) bool { return true }}}
+	// "Mine" only for who can request: for anyone else it always counts 0.
+	if a.has("requester") {
+		f = append(f, requestFilter{"mine", "Mine", noOwnRequest, func(a *App, g api.Grant) bool { return a.mine(g) }})
 	}
+	f = append(f, requestFilter{"approve", "To approve", "Nothing to approve.", func(_ *App, g api.Grant) bool {
+		return g.State == api.StatePending && (can(g, "approve") || can(g, "reject"))
+	}})
 	if a.has("admin") {
-		f = append(f, requestFilter{"failed", "Failed", func(_ *App, g api.Grant) bool { return g.State == api.StateRevokeFailed }})
+		f = append(f, requestFilter{"failed", "Failed", "No failed grants.", func(_ *App, g api.Grant) bool { return g.State == api.StateRevokeFailed }})
 	}
 	return f
 }
+
+// seesOthers says whether Requests can show someone else's grants: a requester alone sees
+// only their own, and a Requester column would repeat their name on every row.
+func (a *App) seesOthers() bool { return a.has("approver") || a.has("admin") || a.has("auditor") }
 
 func (a *App) mine(g api.Grant) bool { return g.Requester.UserID == a.me().User.UserID }
 
@@ -79,11 +86,12 @@ func ends(g api.Grant) time.Time {
 	return time.Time{}
 }
 
-// requestActions are the header buttons: only what is done on several rows at once. The
-// decisions on one request (approve, reject, cancel, retry) are in the panel, next to its
+// requestActions are the header's Actions menu: what is done on several rows at once.
+// The decisions on one request (approve, reject, retry) are in the panel, next to its
 // detail (design §11.2). Each is enabled only when every selected row allows it.
 var requestActions = []Action{
-	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true},
+	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true, Confirm: true},
+	{Label: "Cancel request…", Path: "/requests/cancel", Name: "cancel", Danger: true, Confirm: true},
 }
 
 // listView is a page of one list and its bottom panel: Requests, History, Rules and
@@ -120,8 +128,14 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 		here += "?f=" + key
 	}
 	l := List{
-		Title: "Requests", Search: true, Empty: "No open request.",
-		Columns: []string{"Id", "State", "Requester", "Permission set", "Account", "Ends in"},
+		Title: "Requests", Search: true, Empty: noOwnRequest,
+		Columns: []string{"Id", "State", "Permission set", "Account", "Time left"},
+	}
+	if a.seesOthers() {
+		l.Empty = "No open request."
+	}
+	if a.seesOthers() {
+		l.Columns = slices.Insert(l.Columns, 2, "Requester")
 	}
 	if a.has("requester") {
 		l.Tools = []Action{{Label: "New request", Path: "/requests/new", Primary: true}}
@@ -142,7 +156,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			}
 			group.Items = append(group.Items, Filter{Label: fmt.Sprintf("%s (%d)", f.label, len(in)), Path: path, On: f.key == key})
 			if f.key == key {
-				kept = in
+				kept, l.Empty = in, f.empty
 			}
 		}
 		l.Filters = []FilterGroup{group}
@@ -154,7 +168,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	// disabled until the selected rows are all ones the service lets this user revoke. An
 	// auditor only reads, and gets no action at all (design §3.3).
 	if a.has("requester") || a.has("approver") || a.has("admin") {
-		l.Actions = requestActions
+		l.Actions, l.Menu = requestActions, true
 	}
 	for i := range l.Rows {
 		if l.Rows[i].Poll != "" {
@@ -167,7 +181,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	v := listView{List: l, Notice: a.noticeOf(r)}
 	if id := r.URL.Query().Get("sent"); id != "" {
 		if d, err := a.Service.Grant(r.Context(), id); err != nil {
-			v.Alert = &Alert{Kind: "error", Text: err.Error()}
+			v.Alert = new(errorAlert(err))
 		} else {
 			f := a.flashOf(d.Grant)
 			v.Flash = &f
@@ -192,11 +206,17 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	row := Row{Key: g.ID, State: state, Cells: []Cell{
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
 		{State: state, Refresh: refreshOf(state, g.ID)},
-		{Text: g.Requester.UserName},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
 		{Text: g.Account},
 		{Until: countdown(g)},
 	}}
+	if state == api.StatePending || state == "starting" {
+		// The time left is for an approver to decide, not for the access.
+		row.Cells[len(row.Cells)-1].Text, row.Cells[len(row.Cells)-1].Muted = "Approve within ", true
+	}
+	if a.seesOthers() {
+		row.Cells = slices.Insert(row.Cells, 2, Cell{Text: g.Requester.UserName})
+	}
 	for _, act := range requestActions {
 		if can(g, act.Name) {
 			row.Actions = append(row.Actions, act.Name)
@@ -455,6 +475,20 @@ func (a *App) retry(w http.ResponseWriter, r *http.Request) {
 	a.results(w, r, "revocation retried", true, a.Service.Redrive)
 }
 
+// backToFilter is Requests with the filter of the page the action came from, so an
+// approver stays on To approve. Only a known filter is kept: the Referer is input.
+func (a *App) backToFilter(r *http.Request) string {
+	from, err := url.Parse(r.Referer())
+	if err != nil || from.Path != "/requests" {
+		return "/requests"
+	}
+	key := from.Query().Get("f")
+	if key == "" || !slices.ContainsFunc(a.requestFilters(), func(f requestFilter) bool { return f.key == key }) {
+		return "/requests"
+	}
+	return "/requests?f=" + url.QueryEscape(key)
+}
+
 // results runs one action on each selected grant and goes back to Requests, which shows
 // the outcome at its top: one line, plus one line per grant the service refused. The rows
 // show each grant's new state. With follow, the action only starts a change the rows poll
@@ -478,7 +512,7 @@ func (a *App) results(w http.ResponseWriter, r *http.Request, done string, follo
 	if follow {
 		n.Follow, n.Refused = ok, len(failed)
 	}
-	a.redirectWithNotice(w, r, "/requests", n)
+	a.redirectWithNotice(w, r, a.backToFilter(r), n)
 }
 
 // outcomeNotice sums up an action on some grants.
@@ -498,14 +532,6 @@ func outcomeNotice(ok, failed []string, done string) notice {
 		Text:  fmt.Sprintf("%s: %s. %d failed.", count(len(ok), "request", "requests"), done, len(failed)),
 		Items: failed,
 	}
-}
-
-// closeReason is the reason next to a closed state, " expired" or "".
-func closeReason(g api.Grant) string {
-	if g.CloseReason == nil {
-		return ""
-	}
-	return " " + reasonLabel(*g.CloseReason)
 }
 
 // reasonLabel is a close reason in words. A request nobody approved in time says so: the
