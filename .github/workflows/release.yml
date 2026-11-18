@@ -64,6 +64,7 @@ jobs:
 
       - if: steps.plan.outputs.version != ''
         env:
+          GH_TOKEN: ${{ github.token }} # reads the tested commit and its e2e status
           VERSION: ${{ steps.plan.outputs.version }}
           TESTED: ${{ steps.plan.outputs.tested }}
         run: make release-upload VERSION="$VERSION" TESTED="$TESTED"

@@ -28,7 +28,9 @@ check "the CodeKey default in infra/elevate.yaml" \
 check "Client in client/internal/version/version.go" \
 	"$(sed -n 's/^var Client = "\(.*\)"$/\1/p' "$root/client/internal/version/version.go")"
 
-dir="$out/v$version"
+# Absolute: the steps below run from service/ and client/.
+mkdir -p "$out"
+dir="$(cd "$out" && pwd)/v$version"
 rm -rf "$dir"
 mkdir -p "$dir"
 
