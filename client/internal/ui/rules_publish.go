@@ -138,19 +138,27 @@ func (a *App) review(w http.ResponseWriter, r *http.Request, c change, back func
 	a.reviewOn(w, r, b, c, back, nil, alerts...)
 }
 
-func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
+// checked applies c on the document of b and has the service check the result. A refusal
+// comes back as the alerts that say why.
+func (a *App) checked(ctx context.Context, b base, c change) ([]byte, []Alert) {
 	doc, err := c.apply(b.Doc)
 	if err != nil {
-		back(errorAlert(err))
-		return
+		return nil, []Alert{errorAlert(err)}
 	}
-	check, err := a.Service.CheckRules(r.Context(), doc)
+	check, err := a.Service.CheckRules(ctx, doc)
 	if err != nil {
-		back(errorAlert(err))
-		return
+		return nil, []Alert{errorAlert(err)}
 	}
 	if !check.Valid {
-		back(checkAlerts(check.Errors)...)
+		return nil, checkAlerts(check.Errors)
+	}
+	return doc, nil
+}
+
+func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change, back func(...Alert), replaces []string, alerts ...Alert) {
+	doc, refused := a.checked(r.Context(), b, c)
+	if refused != nil {
+		back(refused...)
 		return
 	}
 	diff, err := diffRules(b.Doc, doc)

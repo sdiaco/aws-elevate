@@ -254,6 +254,7 @@ type ruleForm struct {
 	Approval   string
 	Approver   string
 	Privileged bool
+	Welcome    bool // sent from the first run: its review is the wizard's last step
 }
 
 type ruleView struct {
@@ -262,6 +263,7 @@ type ruleView struct {
 	Accounts  []awsx.Named
 	Groups    []awsx.Named
 	PSMissing bool
+	Review    *firstReview // the first run's last step, once the service accepted the rule
 }
 
 // ruleCards are the accounts of the rule form as cards, the chosen ones ticked.
@@ -383,6 +385,7 @@ func readForm(r *http.Request) ruleForm {
 		Accounts: r.PostForm["account"], Default: strings.TrimSpace(r.PostFormValue("default")),
 		Max: strings.TrimSpace(r.PostFormValue("max")), Approval: r.PostFormValue("approval"),
 		Approver: r.PostFormValue("approver"), Privileged: r.PostFormValue("privileged") == "on",
+		Welcome: r.PostFormValue("welcome") == "1",
 	}
 }
 
@@ -463,7 +466,16 @@ func (a *App) ruleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(problems) > 0 {
-		a.showRule(w, r, form, false, Alert{Kind: "error", Text: strings.Join(problems, " ")})
+		alert := Alert{Kind: "error", Text: strings.Join(problems, " ")}
+		if form.Welcome {
+			a.showWelcome(w, r, form, nil, alert)
+			return
+		}
+		a.showRule(w, r, form, false, alert)
+		return
+	}
+	if form.Welcome {
+		a.reviewFirstRule(w, r, form, rule)
 		return
 	}
 	raw, err := json.Marshal(rule)

@@ -531,24 +531,43 @@ function paginate(box) {
 }
 
 // A form in steps: <form data-steps> shows one [data-step] section at a time, and Next
-// moves on only when the fields of the current one are valid. Without this script every
-// step shows at once and the form still works.
+// moves on only when the fields of the current one are valid. [data-step-current] is the
+// one to show first; [data-step-mark] items mark where the form is. A [data-step-review]
+// step, made by the server from what was sent, ends with its own buttons; Edit
+// ([data-step-goto="n"]) drops it, since the steps may change, and goes back to step n.
+// Without this script every step shows at once and the form still works.
 function steps(form) {
-  const all = [...form.querySelectorAll("[data-step]")];
+  let all = [...form.querySelectorAll("[data-step]")];
+  const marks = [...form.querySelectorAll("[data-step-mark]")];
   const back = form.querySelector("[data-step-back]");
   const next = form.querySelector("[data-step-next]");
   const done = form.querySelector("[data-step-done]");
-  let at = 0;
+  let at = Math.max(0, all.findIndex((s) => s.hasAttribute("data-step-current")));
   const show = () => {
+    const review = all[at].hasAttribute("data-step-review");
     all.forEach((s, i) => { s.hidden = i !== at; });
-    back.hidden = at === 0;
-    next.hidden = at === all.length - 1;
-    done.hidden = at !== all.length - 1;
+    back.hidden = at === 0 || review;
+    next.hidden = review || at === all.length - 1;
+    done.hidden = review || at !== all.length - 1;
+    marks.forEach((m, i) => {
+      m.classList.toggle("current", i === at);
+      m.classList.toggle("done", i < at);
+      if (i === at) m.setAttribute("aria-current", "step"); else m.removeAttribute("aria-current");
+    });
+    all[at].querySelector("h2")?.scrollIntoView({ block: "nearest" });
   };
   back.addEventListener("click", () => { at--; show(); });
   next.addEventListener("click", () => {
     if (!showErrors(all[at], [...all[at].querySelectorAll("input, select, textarea")])) return;
     at++;
+    show();
+  });
+  form.addEventListener("click", (e) => {
+    const go = e.target.closest("[data-step-goto]");
+    if (!go) return;
+    const review = form.querySelector("[data-step-review]");
+    if (review) { review.remove(); all = all.filter((s) => s !== review); }
+    at = Number(go.dataset.stepGoto);
     show();
   });
   show();

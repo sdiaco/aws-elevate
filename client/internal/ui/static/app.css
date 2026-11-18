@@ -321,7 +321,7 @@ p.desc { margin: 4px 0 12px; color: var(--text-2); }
 .section-head h2 { margin: 0; }
 
 /* First run: full screen, no navigation, the form in steps. */
-.app.bare .main { max-width: 760px; margin: 0 auto; padding-top: 40px; }
+.app.bare .main { max-width: 1040px; margin: 0 auto; padding-top: 40px; }
 [data-step] h2 { margin: 0 0 4px; }
 [data-step] > .desc { margin: 0 0 16px; }
 form:not(:has([data-step][hidden])) [data-step] + [data-step] { margin-top: 32px; }
@@ -474,3 +474,28 @@ tr.covered td { color: var(--text-2); }
 .menu-item { display: block; width: 100%; padding: 6px 16px; font: inherit; text-align: left; color: var(--text); background: none; border: 0; cursor: pointer; white-space: nowrap; }
 .menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--surface-soft); outline: none; }
 .menu-item:disabled { color: var(--text-disabled); cursor: default; }
+
+/* First run: a wizard with its steps on the left, like the console's create flows. */
+.eyebrow { display: block; font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.wizard { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
+.wizard-steps { list-style: none; margin: 0; padding: 0; }
+.wizard-steps li { display: flex; flex-direction: column; padding: 8px 0 16px 16px; border-left: 2px solid var(--divider); }
+.wizard-step-n { font-size: 12px; color: var(--text-2); }
+.wizard-step-name { color: var(--text-2); }
+.wizard-steps li.done .wizard-step-name { color: var(--text); }
+.wizard-steps li.current { border-left-color: var(--accent); }
+.wizard-steps li.current .wizard-step-name { color: var(--text-strong); font-weight: 700; }
+.wizard-body.form-box { max-width: none; }
+.wizard-body .field input[type="text"], .wizard-body .field textarea, .wizard-body .select-trigger { width: 100%; max-width: none; }
+.welcome .page-head > div:first-child { flex: 1 1 400px; }
+.review-part { border: 1px solid var(--divider); border-radius: 12px; padding: 12px 20px 16px; margin: 0 0 16px; }
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.review-head h3 { margin: 0; }
+.kv.cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px; }
+@media (max-width: 688px) {
+  .wizard { grid-template-columns: minmax(0, 1fr); }
+  .wizard-steps { display: flex; overflow-x: auto; gap: 0; }
+  .wizard-steps li { border-left: 0; border-bottom: 2px solid var(--divider); padding: 4px 12px 8px; white-space: nowrap; }
+  .wizard-steps li.current { border-bottom-color: var(--accent); }
+  .kv.cols3 { grid-template-columns: minmax(0, 1fr); }
+}
