@@ -244,14 +244,35 @@ func (a *App) publish(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "Rules", "/rules", fmt.Errorf("publish the rules on AppConfig: %w", err))
 		return
 	}
-	text := fmt.Sprintf("Published rules version %d. It applies to new requests within about 30 seconds.", n)
+	text := c.published(n)
 	if b.Latest != nil && n <= *b.Latest {
 		text = fmt.Sprintf("No change: version %d already has this content.", n)
 	}
-	a.redirectWithNotice(w, r, "/rules", notice{
-		Kind: "success",
-		Text: text + " The list shows it once the service has read it.",
-	})
+	a.redirectWithNotice(w, r, "/rules", notice{Kind: "success", Text: text})
+}
+
+// published says what is happening to the rules after version n went out: the service
+// reads a new version within about 30 seconds, so the list still shows the old one.
+func (c change) published(n int) string {
+	later := fmt.Sprintf(" The list shows it once the service has read version %d.", n)
+	switch c.Kind {
+	case "delete":
+		if len(c.IDs) == 1 {
+			return "Deleting rule " + c.IDs[0] + ". New requests can no longer use it within about 30 seconds." + later
+		}
+		return fmt.Sprintf("Deleting %d rules: %s. New requests can no longer use them within about 30 seconds.",
+			len(c.IDs), strings.Join(c.IDs, ", ")) + later
+	case "put":
+		var head struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(c.Rule, &head)
+		if c.Orig == "" {
+			return "Saving rule " + head.ID + ". New requests can use it within about 30 seconds." + later
+		}
+		return "Saving the changes to rule " + head.ID + ". They apply to new requests within about 30 seconds." + later
+	}
+	return "Publishing the imported rules. They apply to new requests within about 30 seconds." + later
 }
 
 func samePtr(x, y *int) bool { return (x == nil && y == nil) || (x != nil && y != nil && *x == *y) }
