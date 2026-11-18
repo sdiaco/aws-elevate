@@ -40,15 +40,16 @@ func runStatus(ctx context.Context, e *Env, args []string) error {
 	}
 	toApprove := slices.DeleteFunc(approvable, func(g api.Grant) bool { return !slices.Contains(g.Actions, "approve") })
 
+	u := e.UI()
 	if len(mine) == 0 {
 		fmt.Fprintln(e.Stdout, "You have no open grant or request.")
 	} else {
-		fmt.Fprintln(e.Stdout, "Your grants and requests:")
-		printGrants(e, mine)
+		fmt.Fprintln(e.Stdout, u.Bold("Grants"))
+		printGrants(e, mine, false)
 	}
 	if len(toApprove) > 0 {
-		fmt.Fprintln(e.Stdout, "\nTo approve (aws elevate approve <id> [--reject]):")
-		printGrants(e, toApprove)
+		fmt.Fprintf(e.Stdout, "\n%s\n", u.Bold(fmt.Sprintf("To approve (%d)", len(toApprove))))
+		printGrants(e, toApprove, true)
 	}
 	return nil
 }
@@ -68,9 +69,14 @@ func listAll(ctx context.Context, svc Service, q api.ListQuery) ([]api.Grant, er
 	}
 }
 
-func printGrants(e *Env, grants []api.Grant) {
+// printGrants writes a table of grants; withCommand adds how to approve each one.
+func printGrants(e *Env, grants []api.Grant, withCommand bool) {
 	w := tabwriter.NewWriter(e.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  ID\tSTATE\tRULE\tPERMISSION SET\tACCOUNT\tREQUESTER\tUNTIL\tREASON")
+	header := "  ID\tSTATE\tRULE\tPERMISSION SET\tACCOUNT\tREQUESTER\tUNTIL\tREASON"
+	if withCommand {
+		header += "\tCOMMAND"
+	}
+	fmt.Fprintln(w, header)
 	for _, g := range grants {
 		rule := g.RuleID
 		if g.RuleRemoved {
@@ -84,8 +90,12 @@ func printGrants(e *Env, grants []api.Grant) {
 		if g.State == api.StatePending {
 			until = g.ApprovalExpiresAt // when the request times out
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.ID, state, rule, g.SourcePs.Name, g.Account,
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", g.ID, state, rule, g.SourcePs.Name, g.Account,
 			g.Requester.UserName, when(until), g.Reason)
+		if withCommand {
+			fmt.Fprintf(w, "\taws elevate approve %s", g.ID)
+		}
+		fmt.Fprintln(w)
 	}
 	w.Flush()
 }
@@ -95,6 +105,7 @@ func printGrants(e *Env, grants []api.Grant) {
 func runRevoke(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "revoke")
 	reason := f.String("reason", "", "why the access ends early (not needed to cancel a request)")
+	yes := f.Bool("yes", false, "do not ask for confirmation")
 	ids, err := f.parse(args)
 	if err != nil {
 		return err
@@ -112,7 +123,7 @@ func runRevoke(ctx context.Context, e *Env, args []string) error {
 	}
 	failed := 0
 	for _, id := range ids {
-		if err := revokeOne(ctx, svc, id, *reason, e); err != nil {
+		if err := revokeOne(ctx, svc, id, *reason, *yes, e); err != nil {
 			fmt.Fprintf(e.Stderr, "%s: %v\n", id, err)
 			failed++
 		}
@@ -123,13 +134,21 @@ func runRevoke(ctx context.Context, e *Env, args []string) error {
 	return nil
 }
 
-func revokeOne(ctx context.Context, svc Service, id, reason string, e *Env) error {
+func revokeOne(ctx context.Context, svc Service, id, reason string, yes bool, e *Env) error {
 	d, err := svc.Grant(ctx, id)
 	if err != nil {
 		return err
 	}
+	cancel := slices.Contains(d.Grant.Actions, "cancel")
+	question := "Revoke " + id + "?"
+	if cancel {
+		question = "Cancel the request " + id + "?"
+	}
+	if err := confirmOn(e, &d.Grant, question, yes); err != nil {
+		return err
+	}
 	var g *api.Grant
-	if slices.Contains(d.Grant.Actions, "cancel") {
+	if cancel {
 		g, err = svc.Cancel(ctx, id)
 	} else {
 		g, err = svc.Revoke(ctx, id, reason)
@@ -145,6 +164,7 @@ func runApprove(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "approve")
 	reject := f.Bool("reject", false, "reject the request instead")
 	reason := f.String("reason", "", "why the request is rejected (required with --reject)")
+	yes := f.Bool("yes", false, "do not ask for confirmation")
 	ids, err := f.parse(args)
 	if err != nil {
 		return err
@@ -161,6 +181,17 @@ func runApprove(ctx context.Context, e *Env, args []string) error {
 	}
 	_, svc, err := connect(ctx, e, f.profileName(e))
 	if err != nil {
+		return err
+	}
+	d, err := svc.Grant(ctx, ids[0])
+	if err != nil {
+		return err
+	}
+	question := "Approve " + ids[0] + "?"
+	if *reject {
+		question = "Reject " + ids[0] + "?"
+	}
+	if err := confirmOn(e, &d.Grant, question, *yes); err != nil {
 		return err
 	}
 	var g *api.Grant
@@ -246,6 +277,31 @@ func onlyOpen(ctx context.Context, svc Service, keep func(api.Grant) bool) (*api
 		ids[i] = g.ID + " (" + g.SourcePs.Name + " on " + g.Account + ")"
 	}
 	return nil, fmt.Errorf("more than one open grant: %s; pass the id", strings.Join(ids, ", "))
+}
+
+// confirmOn shows what the action applies to, as the service returned it, and asks.
+func confirmOn(e *Env, g *api.Grant, question string, yes bool) error {
+	u := e.UI()
+	if !yes {
+		account := g.Account
+		if g.AccountName != "" {
+			account = g.AccountName + " (" + g.Account + ")"
+		}
+		access := g.SourcePs.Name + " on " + account
+		if g.DurationSeconds > 0 {
+			access += ", " + short(g.DurationSeconds)
+		}
+		fmt.Fprintf(u.Writer(), "  %s   %s\n  %s   %s\n  %s   %s\n\n", u.Dim("Requester"), g.Requester.UserName,
+			u.Dim("Access   "), access, u.Dim("Reason   "), g.Reason)
+	}
+	ok, err := u.Confirm(question, yes)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("nothing done")
+	}
+	return nil
 }
 
 func isActive(g api.Grant) bool { return g.State == api.StateActive }
