@@ -139,3 +139,12 @@ func TestConfirmDefaultsToNo(t *testing.T) {
 		t.Fatalf("prompt: %q", out.String())
 	}
 }
+
+func TestPlainHasNoColorsAndReadsLines(t *testing.T) {
+	out := &bytes.Buffer{}
+	u := Plain(strings.NewReader("2\n"), out, true)
+	got, err := u.Select("Rule", []Item{{Title: "a"}, {Title: "b"}}, false)
+	if err != nil || got != 1 || strings.ContainsRune(out.String(), '\x1b') || !u.Interactive() {
+		t.Fatalf("got %d, %v, %q", got, err, out.String())
+	}
+}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -227,6 +228,11 @@ func (h *harness) setUp(t *testing.T) {
 	if err := awsx.SaveSettings(h.env.SettingsPath, awsx.Settings{Profiles: map[string]awsx.Target{"work": target}}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// typing makes the run interactive, as on a terminal, with input as what the user types.
+func (h *harness) typing(input string) {
+	h.env.ui = term.Plain(strings.NewReader(input), h.out, true)
 }
 
 func (h *harness) run(args ...string) int {

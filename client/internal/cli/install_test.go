@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,6 +20,14 @@ type fakeInstaller struct {
 	states   []awsx.StackState // returned one per call, the last one repeated
 	polls    int
 	checked  bool
+	total    int // resources in the template
+}
+
+func (f *fakeInstaller) TemplateResources(_ context.Context, url string) (int, error) {
+	if url == "" {
+		return 0, errors.New("no template url")
+	}
+	return f.total, nil
 }
 
 func (f *fakeInstaller) Check(context.Context) (awsx.Installation, error) {
@@ -70,7 +80,7 @@ func (h *harness) withInstaller(inst *fakeInstaller, stdin string) {
 		}
 		return h.backend.source, nil
 	}
-	h.env.Stdin = strings.NewReader(stdin)
+	h.typing(stdin)
 	h.env.Installer = func(_ context.Context, profile, region string) (Installer, error) {
 		if profile != "work" {
 			return nil, errors.New("unexpected profile " + profile)
@@ -82,9 +92,9 @@ func (h *harness) withInstaller(inst *fakeInstaller, stdin string) {
 
 func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 	h := newHarness(t)
-	inst := &fakeInstaller{groups: installGroups, states: installed}
-	// region confirmed, admin group by number, requester by name, no auditor, e-mail.
-	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\n")
+	inst := &fakeInstaller{groups: installGroups, states: installed, total: 2}
+	// region confirmed, admin group by number, requester by name, no auditor, e-mail, proceed.
+	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\ny\n")
 
 	if code := h.run("install", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
@@ -110,12 +120,22 @@ func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 		}
 	}
 	out := h.out.String()
-	// groups listed by name, progress printed once per event, then setup.
+	// groups listed by name, checks, summary, one result line, then setup.
 	if !strings.Contains(out, "1) admins") || strings.Index(out, "admins") > strings.Index(out, "readers") {
 		t.Errorf("groups not listed by name:\n%s", out)
 	}
-	if strings.Count(out, "Precheck") != 1 || !strings.Contains(out, "CREATE_COMPLETE") {
-		t.Errorf("progress:\n%s", out)
+	for _, want := range []string{
+		"aws-elevate install · v" + version.Client,
+		"✓ Account   111111111111 (Identity Center delegated administrator)",
+		"✓ Region   eu-west-1",
+		"✓ Template   official v" + version.Client + ", bucket aws-elevate-releases-eu-west-1",
+		`Stack "elevate" in 111111111111 · eu-west-1`,
+		"Idle cost: 0 $ · remove it with aws-elevate uninstall",
+		"✓ Stack created   in ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
 	}
 	if !strings.Contains(out, "ops@example.com") || !strings.Contains(out, "Signed in as") {
 		t.Errorf("no subscription reminder or setup:\n%s", out)
@@ -132,7 +152,7 @@ func TestInstallWithFlagsAsksNothingAndPassesTheTestOverrides(t *testing.T) {
 
 	code := h.run("install", "--profile", "work", "--region", "us-east-1",
 		"--admin-group", "admins", "--requester-group", "devs", "--auditor-group", "readers",
-		"--email", "ops@example.com", "--stack-name", "elevate-e2e",
+		"--email", "ops@example.com", "--yes", "--stack-name", "elevate-e2e",
 		"--template-url", "https://example.com/elevate.yaml", "--code-bucket", "b", "--code-key", "k.zip")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
@@ -157,7 +177,7 @@ func TestInstallWithTheGroupFlagsDoesNotAskForTheAuditor(t *testing.T) {
 	h.withInstaller(inst, "")
 
 	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
-		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com", "--yes")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
@@ -228,7 +248,7 @@ func TestInstallShowsWhyTheStackFailed(t *testing.T) {
 	h.withInstaller(inst, "")
 
 	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
-		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com", "--yes")
 	if code != 1 {
 		t.Fatalf("exit %d", code)
 	}
@@ -248,7 +268,7 @@ func TestInstallSaysHowToSetUpWhenSetupFails(t *testing.T) {
 	h.backend.discoverErr = errors.New("no account with ElevateAdmin or ElevateRequester")
 
 	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
-		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com", "--yes")
 	if code != 1 {
 		t.Fatalf("exit %d", code)
 	}
@@ -262,7 +282,7 @@ func TestInstallSaysHowToSetUpWhenSetupFails(t *testing.T) {
 func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
-	h.withInstaller(inst, "y\n")
+	h.withInstaller(inst, "y\ny\n")
 	h.backend.source = awsx.SourceProfile{Name: "work", Region: "us-east-1"}
 
 	code := h.run("install", "--profile", "work", "--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
@@ -272,7 +292,7 @@ func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
 	if inst.region != "us-east-1" || !strings.Contains(h.out.String(), "region of profile work") {
 		t.Errorf("region %q, out %s", inst.region, h.out)
 	}
-	if !strings.Contains(h.out.String(), "aws-elevate setup --profile <your SSO profile>") {
+	if !strings.Contains(h.out.String(), "Next: aws-elevate setup --profile <a profile with sso_session>") {
 		t.Errorf("out %s", h.out)
 	}
 	if _, err := setUpTarget(h.env, "work"); err == nil {
@@ -301,5 +321,97 @@ func TestInstallNeedsARegion(t *testing.T) {
 
 	if code := h.run("install", "--profile", "work"); code != 1 || !strings.Contains(h.errOut.String(), "--region") {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+}
+
+func TestInstallShowsASummaryAndAsksBeforeCreating(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "n\n")
+
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+	if code != 1 || inst.created != nil {
+		t.Fatalf("exit %d, created %v", code, inst.created)
+	}
+	if !strings.Contains(h.out.String(), "Proceed? [y/N]") || !strings.Contains(h.errOut.String(), "install stopped") {
+		t.Errorf("out %s\nstderr %s", h.out, h.errOut)
+	}
+}
+
+func TestInstallWithoutTerminalNeedsYes(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	h.env.ui = nil
+	h.env.Stdin = strings.NewReader("y\n")
+
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
+	if code != 1 || inst.created != nil || !strings.Contains(h.errOut.String(), "--yes") {
+		t.Fatalf("exit %d, created %v, stderr %s", code, inst.created, h.errOut)
+	}
+}
+
+func TestInstallWithFlagsAndYesAsksNothing(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	h.env.ui = nil // no terminal at all
+	h.env.Stdin = strings.NewReader("")
+
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 || inst.created == nil {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if strings.Contains(h.out.String(), "?") {
+		t.Errorf("asked something:\n%s", h.out)
+	}
+}
+
+func TestInstallProgressIsOneLine(t *testing.T) {
+	h := newHarness(t)
+	var events []awsx.StackEvent
+	for i := range 20 {
+		events = append(events, awsx.StackEvent{ID: fmt.Sprint(i), Resource: fmt.Sprintf("Resource%d", i), Status: "CREATE_COMPLETE"})
+	}
+	inst := &fakeInstaller{groups: installGroups, total: 20, states: []awsx.StackState{
+		{Status: "CREATE_IN_PROGRESS", Events: events[:5]},
+		{Status: "CREATE_IN_PROGRESS", Events: events[:15]},
+		{Status: "CREATE_COMPLETE", Events: append(events, awsx.StackEvent{ID: "s", Resource: "elevate", Status: "CREATE_COMPLETE"})},
+	}}
+	h.withInstaller(inst, "")
+
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1",
+		"--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if out := h.out.String(); strings.Contains(out, "Resource1") || !strings.Contains(out, "Stack created   in ") {
+		t.Errorf("output:\n%s", out)
+	}
+	if done := stackDone(inst.states[2].Events, "elevate"); done != 20 {
+		t.Errorf("done %d, want 20 without the stack itself", done)
+	}
+}
+
+func TestInstallWithAProfileThatIsNotSSOSuggestsTheSSOProfiles(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	h.backend.source = awsx.SourceProfile{Name: "work", Region: "us-east-1"}
+	config := "[profile admin]\nrole_arn = x\n[profile a]\nsso_session = s\n[profile b]\nsso_start_url = https://example.awsapps.com/start\n[sso-session s]\nsso_region = eu-west-1\n"
+	if err := os.WriteFile(h.env.ConfigFile, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code := h.run("install", "--profile", "work", "--region", "us-east-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if out := h.out.String(); !strings.Contains(out, "Next: aws-elevate setup --profile a") || !strings.Contains(out, "(SSO profiles found: a, b)") {
+		t.Errorf("out %s", out)
 	}
 }

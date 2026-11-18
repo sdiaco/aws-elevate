@@ -68,6 +68,12 @@ func (f *fakeInstallAWS) serve(t *testing.T) *httptest.Server {
 			}
 			f.create = form
 			xml(`<CreateStackResponse><CreateStackResult><StackId>arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1</StackId></CreateStackResult></CreateStackResponse>`)
+		case form.Get("Action") == "GetTemplateSummary":
+			if form.Get("TemplateURL") == "" {
+				http.Error(w, "no template", http.StatusBadRequest)
+				return
+			}
+			xml(`<GetTemplateSummaryResponse><GetTemplateSummaryResult><ResourceTypes><member>AWS::SSO::PermissionSet</member><member>AWS::SSO::PermissionSet</member><member>AWS::DynamoDB::Table</member></ResourceTypes></GetTemplateSummaryResult></GetTemplateSummaryResponse>`)
 		case form.Get("Action") == "DescribeStacks":
 			xml(`<DescribeStacksResponse><DescribeStacksResult><Stacks><member><StackName>elevate</StackName><StackStatus>CREATE_IN_PROGRESS</StackStatus><CreationTime>2026-11-16T09:00:00Z</CreationTime></member></Stacks></DescribeStacksResult></DescribeStacksResponse>`)
 		case form.Get("Action") == "DescribeStackEvents":
@@ -173,5 +179,17 @@ func TestInstallReadsTheStackEventsOldestFirst(t *testing.T) {
 	}
 	if s.Events[0].ID != "e1" || s.Events[1] != (StackEvent{ID: "e2", Resource: "Precheck", Status: "CREATE_FAILED", Reason: "wrong account"}) {
 		t.Errorf("events %+v", s.Events)
+	}
+}
+
+func TestInstallCountsTheTemplateResourcesWithRepeatedTypes(t *testing.T) {
+	srv := (&fakeInstallAWS{}).serve(t)
+	defer srv.Close()
+	n, err := installerFor(srv).TemplateResources(context.Background(), "https://example.com/elevate.yaml")
+	if err != nil || n != 3 {
+		t.Fatalf("%d %v", n, err)
+	}
+	if _, err := installerFor(srv).TemplateResources(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "read the template") {
+		t.Fatalf("err %v", err)
 	}
 }

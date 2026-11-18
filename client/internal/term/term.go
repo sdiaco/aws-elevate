@@ -176,3 +176,9 @@ func (u *UI) Confirm(question string, yes bool) (bool, error) {
 	answer = strings.ToLower(answer)
 	return answer == "y" || answer == "yes", nil
 }
+
+// Plain is a UI without colors that reads answers line by line: interactive says whether
+// it behaves as a terminal with someone typing. For tests of the commands.
+func Plain(in io.Reader, out io.Writer, interactive bool) *UI {
+	return &UI{out: out, in: bufio.NewReader(in), fd: -1, interactive: interactive, now: time.Now}
+}
