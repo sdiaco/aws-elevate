@@ -110,7 +110,7 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	var svc Service
 	if live {
 		var err error
-		if svc, err = r.openGrantsCheck(ctx, elevateProfile); err != nil {
+		if svc, err = r.openGrantsCheck(ctx, elevateProfile, "No open grants"); err != nil {
 			return err
 		}
 	}
@@ -141,7 +141,7 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	}
 	if left.Stack != nil {
 		if live {
-			if _, err := r.openGrantsCheck(ctx, elevateProfile); err != nil {
+			if _, err := r.openGrantsCheck(ctx, elevateProfile, "Still no open grants"); err != nil {
 				return err
 			}
 		}
@@ -188,8 +188,9 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 }
 
 // openGrantsCheck connects with the ElevateAdmin profile and stops while a grant is open:
-// deleting the stack would leave its access without an end.
-func (r *uninstallRun) openGrantsCheck(ctx context.Context, profile string) (Service, error) {
+// deleting the stack would leave its access without an end. done is the line printed
+// when none is open.
+func (r *uninstallRun) openGrantsCheck(ctx context.Context, profile, done string) (Service, error) {
 	profile, err := r.elevateProfile(profile)
 	if err != nil {
 		return nil, err
@@ -203,7 +204,7 @@ func (r *uninstallRun) openGrantsCheck(ctx context.Context, profile string) (Ser
 		return nil, fmt.Errorf("read the open grants: %w", err)
 	}
 	if len(open) == 0 {
-		r.u.OK("No open grants", "read with profile "+profile)
+		r.u.OK(done, "read with profile "+profile)
 		return svc, nil
 	}
 	w := r.u.Writer()
