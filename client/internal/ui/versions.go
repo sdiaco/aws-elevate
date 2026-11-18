@@ -325,3 +325,14 @@ func errorCount(n int) string {
 	}
 	return strconv.Itoa(n) + " errors"
 }
+
+// AppConfig prints its whole JSON schema before the reason a version failed it; the
+// reason is what an admin needs, so it comes first and the full text stays one click away.
+const schemaReason = "Original error message:"
+
+func errorReason(e string) string {
+	if i := strings.Index(e, schemaReason); i >= 0 {
+		return "schema: " + strings.TrimSpace(e[i+len(schemaReason):])
+	}
+	return e
+}

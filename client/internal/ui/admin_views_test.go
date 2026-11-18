@@ -109,6 +109,22 @@ func TestVersionErrorsHaveTheirOwnBoxUnderTheDetails(t *testing.T) {
 	lacks(t, out, "<dt>Errors</dt>")
 }
 
+func TestAVersionErrorShowsItsReasonAndKeepsTheFullTextClosed(t *testing.T) {
+	h := newHarness("auditor")
+	versionsFixture(h)
+	h.svc.versions.Versions[0].Errors = []string{
+		`schema: Could not build JSON schema from invalid input: {"title":"aws-elevate rules"}. Original error message:
+ [message: "instance value (\"nope\") not found in enum" - parent node: /rules/0/approval]`,
+		"rules[0].approval: must be auto or manual",
+	}
+	out := h.get(t, "/versions?open=4")
+	contains(t, out,
+		`<li>schema: [message: &#34;instance value (\&#34;nope\&#34;) not found in enum&#34; - parent node: /rules/0/approval]`,
+		`<details><summary>Show full error</summary><pre>schema: Could not build JSON schema`,
+		"<li>rules[0].approval: must be auto or manual</li>",
+	)
+}
+
 func TestVersionOpensInThePanelAndExports(t *testing.T) {
 	h := newHarness("admin")
 	versionsFixture(h)

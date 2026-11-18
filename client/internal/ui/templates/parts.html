@@ -135,7 +135,7 @@
 <div><dt>Published</dt><dd>{{with $v.CreatedAt}}{{at .}}{{else}}<span class="muted">unknown</span>{{end}}</dd></div>
 <div><dt>Validity</dt><dd>{{if $v.Valid}}{{template "state" "valid"}}{{else}}{{template "state" "invalid"}} <span class="muted">ignored by the service</span>{{end}}</dd></div>
 </dl></div>
-{{with $v.Errors}}<div class="box errors"><h3>Errors ({{len .}})</h3><ul>{{range .}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+{{with $v.Errors}}<div class="box errors"><h3>Errors ({{len .}})</h3><ul>{{range .}}{{$r := errorReason .}}<li>{{$r}}{{if ne $r .}}<details><summary>Show full error</summary><pre>{{.}}</pre></details>{{end}}</li>{{end}}</ul></div>{{end}}
 </div>
 <div role="tabpanel" data-tabpanel="document" hidden><div class="box"><h3>Document</h3><pre>{{.Doc}}</pre></div></div>
 </div></div>{{end}}

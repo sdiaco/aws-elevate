@@ -175,6 +175,7 @@ var funcs = template.FuncMap{
 		return "st-outcome"
 	},
 	"reasonLabel": reasonLabel,
+	"errorReason": errorReason,
 	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"exact":       exact,
 	"at":          at,
