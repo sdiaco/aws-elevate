@@ -26,16 +26,17 @@ FILES = {
 }
 
 
-def build(version: str, out: Path) -> subprocess.CompletedProcess:
+def build(version: str, out: Path, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(SCRIPT), version, str(out)], capture_output=True, text=True, check=False
+        [str(SCRIPT), version, str(out)], cwd=cwd, capture_output=True, text=True, check=False
     )
 
 
 @pytest.fixture(scope="module")
 def release(tmp_path_factory) -> Path:
     out = tmp_path_factory.mktemp("first")
-    result = build(VERSION, out)
+    # A relative output directory, as make and the release workflow pass it.
+    result = build(VERSION, Path(out.name), cwd=out.parent)
     assert result.returncode == 0, result.stderr
     return out / f"v{VERSION}"
 
