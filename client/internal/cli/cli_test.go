@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -215,6 +216,7 @@ func newHarness(t *testing.T) *harness {
 		SettingsPath: filepath.Join(dir, "settings.json"),
 		ConfigFile:   filepath.Join(dir, "config"),
 		AliasFile:    filepath.Join(dir, "alias"),
+		LookPath:     func(string) (string, error) { return "/usr/local/bin/aws-elevate", nil },
 	}
 	return h
 }
@@ -789,5 +791,85 @@ func TestAnExpiredSessionSaysOnlyWhatToRun(t *testing.T) {
 	want := "aws-elevate: your AWS session for profile work has expired. Run:\n  aws sso login --profile work\n"
 	if h.errOut.String() != want {
 		t.Errorf("stderr %q", h.errOut.String())
+	}
+}
+
+func TestCommandsUseTheSetUpProfileByDefault(t *testing.T) {
+	h := newHarness(t)
+	if err := awsx.SaveSettings(h.env.SettingsPath, awsx.Settings{
+		Profiles: map[string]awsx.Target{"work": target}, Default: "work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.run("status"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+}
+
+func TestProfileFlagAndEnvWinOverTheDefault(t *testing.T) {
+	h := newHarness(t)
+	if err := awsx.SaveSettings(h.env.SettingsPath, awsx.Settings{
+		Profiles: map[string]awsx.Target{"work": target}, Default: "work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.run("status", "--profile", "other"); got != 1 || !strings.Contains(h.errOut.String(), `profile "other" is not set up`) {
+		t.Errorf("flag: exit %d, %q", got, h.errOut.String())
+	}
+	h.errOut.Reset()
+	h.vars["AWS_PROFILE"] = "env"
+	if got := h.run("status"); got != 1 || !strings.Contains(h.errOut.String(), `profile "env" is not set up`) {
+		t.Errorf("env: exit %d, %q", got, h.errOut.String())
+	}
+	if !strings.Contains(h.errOut.String(), "set up: work") {
+		t.Errorf("no hint of the set-up profiles: %q", h.errOut.String())
+	}
+}
+
+func TestSetupSavesTheProfileAsDefault(t *testing.T) {
+	h := newHarness(t)
+	if got := h.run("setup", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	s, err := awsx.LoadSettings(h.env.SettingsPath)
+	if err != nil || s.Default != "work" {
+		t.Fatalf("default %q, %v", s.Default, err)
+	}
+	if !strings.Contains(h.out.String(), "✓ Profile work saved as default for aws-elevate") {
+		t.Errorf("output %q", h.out.String())
+	}
+	if strings.Contains(h.out.String(), "not on your PATH") {
+		t.Errorf("warned while on the PATH: %q", h.out.String())
+	}
+	if !strings.HasSuffix(h.out.String(), "  Next: aws elevate request\n") {
+		t.Errorf("last line: %q", h.out.String())
+	}
+}
+
+func TestSetupWarnsWhenNotOnPath(t *testing.T) {
+	h := newHarness(t)
+	h.env.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	if got := h.run("setup", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	for _, want := range []string{
+		`! aws-elevate is not on your PATH: the alias "aws elevate" cannot find it`,
+		"Fix: move it to ~/.local/bin, or run install.sh",
+	} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("missing %q in %q", want, h.out.String())
+		}
+	}
+}
+
+func TestSetupNextIncludesTheProfileWhenNotDefault(t *testing.T) {
+	h := newHarness(t)
+	h.vars["AWS_PROFILE"] = "other"
+	h.svc.roles = []string{"auditor"}
+	if got := h.run("setup", "--profile", "work"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	if !strings.Contains(h.out.String(), "Next: aws elevate ui --profile work") {
+		t.Errorf("output %q", h.out.String())
 	}
 }

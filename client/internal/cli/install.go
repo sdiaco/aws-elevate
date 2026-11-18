@@ -50,7 +50,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if len(rest) > 0 {
 		return fmt.Errorf("unexpected argument %q: %w", rest[0], errUsage)
 	}
-	profile := f.profileName(e)
+	profile := f.awsProfileName(e)
 	in := bufio.NewReader(e.Stdin)
 
 	src, err := e.Profile(ctx, profile)

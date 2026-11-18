@@ -13,6 +13,9 @@ import (
 // and the user's choices.
 type Settings struct {
 	Profiles map[string]Target `json:"profiles"`
+	// Default is the profile of the last setup, used when neither --profile nor
+	// $AWS_PROFILE names one.
+	Default string `json:"default,omitempty"`
 	// CheckUpdates false stops every call to the public release list.
 	CheckUpdates *bool `json:"checkUpdates,omitempty"`
 }
