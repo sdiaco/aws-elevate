@@ -110,6 +110,7 @@ a:hover { color: var(--accent); text-decoration-color: currentColor; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px; }
 .muted { color: var(--text-2); }
+.cell-sub { display: block; color: var(--text-2); font-size: 12px; }
 .hidden { display: none !important; }
 
 /* Layout: side navigation and content. */
@@ -163,6 +164,14 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-outcome-red { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-publishing { color: var(--info); background: var(--bg-info); --glyph: ""; }
 .st-deleting { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
+.st-valid { color: var(--success); background: var(--bg-success); --glyph: "✓"; }
+.st-invalid { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
+.st { vertical-align: middle; }
+.st + .muted { margin-left: 6px; vertical-align: middle; }
+.box.errors ul { margin: 0; padding-left: 20px; }
+.box.errors details { margin-top: 4px; color: var(--text-2); }
+.box.errors pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.box.errors li { color: var(--error); overflow-wrap: anywhere; margin: 4px 0; }
 .st-ps_missing { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-activating::before, .st-starting::before, .st-revoking::before, .st-publishing::before, .st-deleting::before { border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

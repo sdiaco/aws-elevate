@@ -126,6 +126,7 @@ type Cell struct {
 	At       time.Time
 	Refresh  string // a button next to the state reads the row again from this address
 	Title    string // the full value on hover, when Text shortens it
+	Sub      string // a second, grey line under the text, such as an id under a name
 	Outcome  string // a close reason, shown as one label: red when the access was refused or broke
 }
 
@@ -156,6 +157,9 @@ var stateLabels = map[string]string{
 	"publishing": "Publishing",
 	"deleting":   "Deleting",
 	"ps_missing": "PS not found",
+	// Config versions: whether the service would use a version.
+	"valid":   "Valid",
+	"invalid": "Not valid",
 }
 
 var funcs = template.FuncMap{
@@ -171,6 +175,7 @@ var funcs = template.FuncMap{
 		return "st-outcome"
 	},
 	"reasonLabel": reasonLabel,
+	"errorReason": errorReason,
 	"iso":         func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"exact":       exact,
 	"at":          at,
@@ -338,4 +343,13 @@ func ago(at time.Time) string {
 		return fmt.Sprintf("%d h ago", int(d.Hours()))
 	}
 	return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+}
+
+// accountCell names the account as it was when requested, with its id under the name.
+// Grants from before names were kept show the id alone.
+func accountCell(g api.Grant) Cell {
+	if g.AccountName == "" {
+		return Cell{Text: g.Account}
+	}
+	return Cell{Text: g.AccountName, Sub: g.Account}
 }

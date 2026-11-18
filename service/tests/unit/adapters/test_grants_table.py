@@ -87,6 +87,7 @@ def test_item_round_trip_keeps_every_field():
             "revoked_by": Principal(user_id="u-2", user_name="lead@example.com"),
             "revoke_reason": "done",
             "reject_reason": "not needed",
+            "account_name": "prod",
             "activated_at": "2026-11-15T10:00:00Z",
             "expires_at": "2026-11-15T11:00:00Z",
             "closed_at": "2026-11-15T10:30:00Z",
@@ -329,6 +330,12 @@ def test_item_round_trip_of_auto_grant_without_approver_group():
     grant = GRANT.__class__(**{**GRANT.__dict__, "approval": Approval.AUTO, "approver_group": None})
     assert "approverGroup" not in to_item(grant)
     assert from_item(to_item(grant)) == grant
+
+
+def test_grant_written_before_account_names_reads_without_one():
+    item = to_item(GRANT.__class__(**{**GRANT.__dict__, "account_name": "prod"}))
+    del item["accountName"]
+    assert from_item(item).account_name is None
 
 
 # ---------- config versions (design §7.1, §7.3) ----------

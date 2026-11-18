@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -342,4 +343,30 @@ func TestEveryPageCarriesTheNoticeForAClosedInterface(t *testing.T) {
 	contains(t, out, `<template id="closed-alert">`,
 		"This interface has stopped (after 30 minutes without use, or from the terminal). Run this command to open it again:",
 		"aws elevate ui --profile work")
+}
+
+func TestAccountsShowTheNameTheyHadWhenRequested(t *testing.T) {
+	h := newHarness("requester")
+	named := grant("new2345678", "active", me, "revoke")
+	named.AccountName = "prod"
+	older := grant("old2345678", "active", me, "revoke")
+	h.svc.lists["mine"] = []api.Grant{named, older}
+	h.svc.grants["new2345678"] = named
+	out := h.get(t, "/requests?open=new2345678")
+	contains(t, out,
+		`<span>prod</span><span class="cell-sub">222222222222</span>`,           // the row
+		`<dt>Account</dt><dd>prod <span class="muted">222222222222</span></dd>`, // the panel
+		`<span>222222222222</span>`,                                             // a grant from before names were kept
+	)
+
+	h.svc.lists["mine"] = []api.Grant{named}
+	w := h.do(t, "GET", "/history/export.csv?period=13m&scope=mine", nil)
+	rows, err := csv.NewReader(w.Body).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.Index(rows[0], "accountName")
+	if i < 0 || rows[1][i] != "prod" || rows[0][i-1] != "account" {
+		t.Errorf("header %v, row %v", rows[0], rows[1])
+	}
 }

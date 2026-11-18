@@ -47,6 +47,7 @@ _FIELDS = {
     "approver_group": "approverGroup",
     "source_ps": "sourcePs",
     "account": "account",
+    "account_name": "accountName",
     "duration_seconds": "durationSeconds",
     "reason": "reason",
     "privileged": "privileged",

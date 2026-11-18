@@ -103,6 +103,8 @@ class Grant:
     revoked_by: Principal | None = None
     revoke_reason: str | None = None
     reject_reason: str | None = None
+    # The account's name when requested; None for grants written before it was kept.
+    account_name: str | None = None
     task_token: str | None = None
     error: str | None = None
     # ARN of JIT-<id>, recorded as soon as it exists so revocation never has to search.

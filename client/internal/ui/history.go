@@ -85,7 +85,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 			{Outcome: closeReasonOf(g)},
 			{At: g.CreatedAt},
 			{Text: g.SourcePs.Name, Tags: tags(g)},
-			{Text: g.Account},
+			accountCell(g),
 		}
 		if scope == "all" {
 			cells = slices.Insert(cells, 3, Cell{Text: g.Requester.UserName})
@@ -113,7 +113,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 }
 
 var csvHeader = []string{
-	"id", "state", "closeReason", "ruleId", "permissionSet", "account", "requester", "approver",
+	"id", "state", "closeReason", "ruleId", "permissionSet", "account", "accountName", "requester", "approver",
 	"privileged", "durationSeconds", "reason", "createdAt", "activatedAt", "expiresAt", "closedAt",
 	"revokedBy", "revokeReason", "rejectReason", "error", "configVersion",
 }
@@ -166,7 +166,7 @@ func csvRow(g api.Grant) []string {
 		return t.UTC().Format(time.RFC3339)
 	}
 	row := []string{
-		g.ID, g.State, str(g.CloseReason), g.RuleID, g.SourcePs.Name, g.Account, g.Requester.UserName,
+		g.ID, g.State, str(g.CloseReason), g.RuleID, g.SourcePs.Name, g.Account, g.AccountName, g.Requester.UserName,
 		user(g.Approver), strconv.FormatBool(g.Privileged), strconv.Itoa(g.DurationSeconds), g.Reason,
 		at(&g.CreatedAt), at(g.ActivatedAt), at(g.ExpiresAt), at(g.ClosedAt), user(g.RevokedBy),
 		str(g.RevokeReason), str(g.RejectReason), str(g.Error), strconv.Itoa(g.ConfigVersion),
