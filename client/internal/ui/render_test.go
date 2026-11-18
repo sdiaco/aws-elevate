@@ -54,7 +54,7 @@ func TestEveryStateHasALabelAndAColor(t *testing.T) {
 	css, _ := files.ReadFile("static/app.css")
 	// "starting" is shown for a pending request the service cannot decide yet; the rest
 	// are the Status of a rule, which is no grant state.
-	shown := append(vocab.States, "starting", "publishing", "deleting", "ps_missing")
+	shown := append(vocab.States, "starting", "publishing", "deleting", "ps_missing", "valid", "invalid")
 	for _, s := range shown {
 		if stateLabels[s] == "" {
 			t.Errorf("no label for state %s", s)

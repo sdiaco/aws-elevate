@@ -76,6 +76,7 @@ func versionsFixture(h *harness) {
 	h.svc.docs = map[int]string{
 		2: `{"schemaVersion":1,"rules":[{"id":"ssm-dev","privileged":false},{"id":"old-rule"}]}`,
 		3: `{"schemaVersion":1,"rules":[{"id":"ssm-dev","privileged":true},{"id":"ssm-prod"}]}`,
+		4: `{"schemaVersion":1,"rules":[{"id":"ssm-dev","approval":"sometimes"}]}`,
 	}
 }
 
@@ -87,11 +88,25 @@ func TestVersionsListAuthorsValidityAndTheVersionInUse(t *testing.T) {
 		// The user name only; the full identity on hover and in the panel.
 		`<span title="arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_0123456789abcdef/user@example.com">user@example.com</span>`,
 		"author being verified", "in use",
-		"schema: approval must be auto or manual", "not valid, ignored",
+		`<span class="st st-valid">Valid</span>`, `<span class="st st-invalid">Not valid</span>`,
+		`<span class="muted">1 error, ignored</span>`,
 		`href="/versions?open=3" data-panel="/versions/3/panel"`,
 		`formaction="/versions/compare"`, `data-count="2"`, "Compare",
 		`<section class="split-panel" data-panel-slot hidden>`,
 	)
+}
+
+func TestVersionErrorsHaveTheirOwnBoxUnderTheDetails(t *testing.T) {
+	h := newHarness("auditor")
+	versionsFixture(h)
+	list := h.get(t, "/versions")
+	lacks(t, list, "schema: approval must be auto or manual") // long text belongs in the panel
+	out := h.get(t, "/versions?open=4")
+	contains(t, out,
+		`<dt>Validity</dt><dd><span class="st st-invalid">Not valid</span> <span class="muted">ignored by the service</span></dd>`,
+		`<div class="box errors"><h3>Errors (1)</h3><ul><li>schema: approval must be auto or manual</li></ul></div>`,
+	)
+	lacks(t, out, "<dt>Errors</dt>")
 }
 
 func TestVersionOpensInThePanelAndExports(t *testing.T) {

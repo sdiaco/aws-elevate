@@ -164,6 +164,11 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .st-outcome-red { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-publishing { color: var(--info); background: var(--bg-info); --glyph: ""; }
 .st-deleting { color: var(--inactive); background: var(--bg-inactive); --glyph: ""; }
+.st-valid { color: var(--success); background: var(--bg-success); --glyph: "✓"; }
+.st-invalid { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
+td .st + .muted { margin-left: 6px; }
+.box.errors ul { margin: 0; padding-left: 20px; }
+.box.errors li { color: var(--error); overflow-wrap: anywhere; margin: 4px 0; }
 .st-ps_missing { color: var(--error); background: var(--bg-error); --glyph: "✕"; }
 .st-activating::before, .st-starting::before, .st-revoking::before, .st-publishing::before, .st-deleting::before { border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

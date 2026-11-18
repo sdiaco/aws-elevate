@@ -157,6 +157,9 @@ var stateLabels = map[string]string{
 	"publishing": "Publishing",
 	"deleting":   "Deleting",
 	"ps_missing": "PS not found",
+	// Config versions: whether the service would use a version.
+	"valid":   "Valid",
+	"invalid": "Not valid",
 }
 
 var funcs = template.FuncMap{

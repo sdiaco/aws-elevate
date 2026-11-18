@@ -35,9 +35,10 @@ func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 		if info.CreatedAt != nil {
 			published.At = *info.CreatedAt
 		}
-		validity := Cell{Text: "valid"}
+		// The errors can be long: the list counts them, the panel shows them.
+		validity := Cell{State: "valid"}
 		if !info.Valid {
-			validity = Cell{Text: "not valid, ignored", Tags: info.Errors}
+			validity = Cell{State: "invalid", Text: errorCount(len(info.Errors)) + ", ignored", Muted: true}
 		}
 		var tags []string
 		if v.Current != nil && *v.Current == info.Number {
@@ -316,4 +317,11 @@ func jsonEqual(x, y json.RawMessage) bool {
 // user. The column stays narrow; the full ARN shows on hover and in the panel.
 func userName(arn string) string {
 	return arn[strings.LastIndex(arn, "/")+1:]
+}
+
+func errorCount(n int) string {
+	if n == 1 {
+		return "1 error"
+	}
+	return strconv.Itoa(n) + " errors"
 }
