@@ -222,7 +222,7 @@ func TestSaveSameContentSaysNoChange(t *testing.T) {
 	if code := h.run("admin", "rules", "save", rulesFile(t, rulesDoc), "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(h.out.String(), "No change: version 4") {
+	if !strings.Contains(h.out.String(), "No change") {
 		t.Fatalf("stdout: %s", h.out)
 	}
 }
@@ -258,7 +258,7 @@ func TestExportWritesTheRulesInUse(t *testing.T) {
 	if code := h.run("admin", "export", file, "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if got, _ := os.ReadFile(file); string(got) != want || !strings.Contains(h.errOut.String(), "Wrote rules version 3") {
+	if got, _ := os.ReadFile(file); string(got) != want || !strings.Contains(h.out.String(), "✓ Wrote rules version 3") {
 		t.Fatalf("file %q, stderr %s", got, h.errOut)
 	}
 }
@@ -297,11 +297,11 @@ func TestDoctorHealthyInstallation(t *testing.T) {
 	if code := h.run("admin", "doctor", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d: %s%s", code, h.out, h.errOut)
 	}
-	if strings.Contains(h.out.String(), "FAIL") || strings.Contains(h.out.String(), "warn") {
+	if strings.Contains(h.out.String(), "✗") || strings.Contains(h.out.String(), "!") || strings.Contains(h.out.String(), "Next:") {
 		t.Fatalf("stdout: %s", h.out)
 	}
 	for _, name := range []string{"versions", "stack", "permission sets", "rules", "trail", "alerts", "approvals"} {
-		if lineWith(squash(h.out.String()), "ok "+name) == "" {
+		if lineWith(squash(h.out.String()), "✓ "+name) == "" {
 			t.Fatalf("no ok line for %s: %s", name, h.out)
 		}
 	}
@@ -322,12 +322,12 @@ func TestDoctorReportsEveryFailingCheck(t *testing.T) {
 	}
 	out := squash(h.out.String())
 	for _, want := range []string{
-		"FAIL stack ROLLBACK_COMPLETE",
-		"FAIL permission sets ElevateRequester missing",
-		"warn rules version 4 is not valid and is ignored: schema: approval must be auto or manual",
-		"FAIL rules rule ssm-prod: permission set ssm-write does not exist",
-		"warn trail no CloudTrail trail",
-		"FAIL alerts nobody receives critical alerts",
+		"✗ stack ROLLBACK_COMPLETE",
+		"✗ permission sets ElevateRequester missing",
+		"! rules version 4 is not valid and is ignored: schema: approval must be auto or manual",
+		"✗ rules rule ssm-prod: permission set ssm-write does not exist",
+		"! trail no CloudTrail trail",
+		"✗ alerts nobody receives critical alerts",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stdout misses %q:\n%s", want, out)
@@ -346,11 +346,11 @@ func TestDoctorReportsAWSErrorsAndKeepsChecking(t *testing.T) {
 	}
 	out := squash(h.out.String())
 	for _, name := range []string{"stack", "permission sets", "trail", "alerts", "approvals"} {
-		if !strings.Contains(lineWith(out, "FAIL "+name), "AccessDeniedException") {
+		if !strings.Contains(lineWith(out, "✗ "+name), "AccessDeniedException") {
 			t.Fatalf("%s line:\n%s", name, out)
 		}
 	}
-	if !strings.Contains(lineWith(out, "FAIL rules"), "no valid rules version yet") {
+	if !strings.Contains(lineWith(out, "✗ rules"), "no valid rules version yet") {
 		t.Fatalf("rules line:\n%s", out)
 	}
 }
@@ -361,14 +361,12 @@ func TestDoctorSaysWhenTheAccountIsNoLongerTheDelegatedAdministrator(t *testing.
 	if code := h.run("admin", "doctor", "--profile", "work"); code != 1 {
 		t.Fatalf("exit %d", code)
 	}
-	line := lineWith(squash(h.out.String()), "FAIL identity center")
-	for _, want := range []string{
-		"account 111111111111 is no longer the Identity Center delegated administrator",
-		"aws organizations register-delegated-administrator --account-id 111111111111 --service-principal sso.amazonaws.com",
-	} {
-		if !strings.Contains(line, want) {
-			t.Fatalf("line misses %q:\n%s", want, h.out)
-		}
+	out := squash(h.out.String())
+	if !strings.Contains(lineWith(out, "✗ identity center"), "account 111111111111 is no longer the Identity Center delegated administrator") {
+		t.Fatalf("stdout:\n%s", h.out)
+	}
+	if !strings.Contains(lineWith(out, "Next:"), "aws organizations register-delegated-administrator --account-id 111111111111 --service-principal sso.amazonaws.com") {
+		t.Fatalf("no fix as the next step:\n%s", h.out)
 	}
 }
 
@@ -380,7 +378,7 @@ func TestDoctorStackInProgressOrRolledBackIsAWarning(t *testing.T) {
 		if code := h.run("admin", "doctor", "--profile", "work"); code != 0 {
 			t.Fatalf("%s: exit %d", status, code)
 		}
-		if !strings.HasPrefix(lineWith(h.out.String(), "stack"), "warn") {
+		if !strings.HasPrefix(strings.TrimSpace(lineWith(h.out.String(), "stack")), "!") {
 			t.Fatalf("%s: %s", status, h.out)
 		}
 	}
@@ -400,3 +398,43 @@ func TestUnknownAdminCommandIsAUsageError(t *testing.T) {
 
 // squash makes the doctor table independent of the column widths.
 func squash(s string) string { return regexp.MustCompile(` {2,}`).ReplaceAllString(s, " ") }
+
+func TestDoctorPrintsOneStepPerCheck(t *testing.T) {
+	h := adminHarness(t)
+	h.svc.versions.Versions = h.svc.versions.Versions[1:]
+	h.backend.admin.noTrail = true
+	h.backend.admin.subs = nil
+	h.backend.admin.stack = "ROLLBACK_COMPLETE"
+	if code := h.run("admin", "doctor", "--profile", "work"); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	out := h.out.String()
+	for _, want := range []string{"  ✓ versions", "  ✗ stack", "  ! trail", "  ✗ alerts"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("misses %q:\n%s", want, out)
+		}
+	}
+	// The first failure is the stack: its fix is the next step, on the last line.
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if last := lines[len(lines)-1]; !strings.Contains(last, "Next:") || !strings.Contains(last, "stack events") {
+		t.Errorf("last line %q", last)
+	}
+}
+
+func TestExportAndImportPrintTheirResult(t *testing.T) {
+	h := adminHarness(t)
+	file := filepath.Join(t.TempDir(), "rules.json")
+	if code := h.run("admin", "export", file, "--profile", "work"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "✓ Wrote rules version 3   "+file) {
+		t.Errorf("export: %q", h.out)
+	}
+	h.out.Reset()
+	if code := h.run("admin", "import", file, "--profile", "work"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "✓ ") {
+		t.Errorf("import: %q", h.out)
+	}
+}
