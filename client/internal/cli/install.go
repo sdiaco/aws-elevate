@@ -27,7 +27,7 @@ type Installer interface {
 // stackPoll is how often the install reads the stack's progress.
 const stackPoll = 10 * time.Second
 
-const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--yes]"
+const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--yes]"
 
 // runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
@@ -38,6 +38,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	requesterGroup := f.String("requester-group", "", "name of the group that may request access (ElevateRequester)")
 	auditorGroup := f.String("auditor-group", "", "name of the optional auditor group")
 	email := f.String("email", "", "e-mail address for the alerts")
+	organization := f.String("organization-name", "", "name of your organization, shown in the interface (optional)")
 	yes := f.Bool("yes", false, "answer yes to the confirmations, for scripts")
 	stackName := f.String("stack-name", "elevate", "stack name, for tests")
 	templateURL := f.String("template-url", "", "template URL, for tests (default: the release bucket of the region)")
@@ -113,6 +114,14 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		}
 	}
 	stack.Parameters["AlertEmail"] = *email
+	if *organization == "" && !*yes && u.Interactive() {
+		if *organization, err = u.Ask("Organization name, optional", ""); err != nil {
+			return err
+		}
+	}
+	if *organization != "" {
+		stack.Parameters["OrganizationName"] = *organization
+	}
 	if *codeBucket != "" {
 		stack.Parameters["CodeBucket"] = *codeBucket
 	}

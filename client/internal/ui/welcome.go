@@ -96,7 +96,7 @@ func (a *App) showWelcome(w http.ResponseWriter, r *http.Request, form ruleForm,
 		a.fail(w, "Your first rule", "/rules", err)
 		return
 	}
-	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Content: v, Alerts: alerts, Bare: true, Closed: a.closedAlert()}
+	p := Page{Title: "Your first rule", Path: "/welcome", User: a.me().User.UserName, Organization: a.me().OrganizationName, Content: v, Alerts: alerts, Bare: true, Closed: a.closedAlert()}
 	if err := renderPage(w, http.StatusOK, "welcome", p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

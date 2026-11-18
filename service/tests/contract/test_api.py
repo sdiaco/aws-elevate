@@ -110,6 +110,7 @@ def respond(fx, name: str, example: dict) -> tuple[int, dict]:
             "alertsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-alerts",
             "approvalsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-approvals",
         },
+        organization_name="Example Corp",
     )
     request = example["request"]
     resp = api.handle(

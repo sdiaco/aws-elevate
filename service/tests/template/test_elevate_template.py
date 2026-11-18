@@ -607,3 +607,14 @@ def test_install_parameters():
     assert params["MaxOpenGrantsPerUser"]["Default"] == 5
     assert params["ConfigVersionsListed"]["Default"] == 50
     assert params["ConfigVersionsListed"]["MinValue"] == 1
+
+
+def test_organization_name_is_optional_and_reaches_the_api():
+    # Shown in the interface only; free text, so no markup characters.
+    param = TEMPLATE["Parameters"]["OrganizationName"]
+    assert param["Type"] == "String"
+    assert param["Default"] == ""
+    assert param["MaxLength"] == 64
+    assert param["AllowedPattern"] == "^[^<>]*$"
+    env = RESOURCES["ApiFunction"]["Properties"]["Environment"]["Variables"]
+    assert env["ORGANIZATION_NAME"] == {"Ref": "OrganizationName"}

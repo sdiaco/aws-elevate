@@ -93,8 +93,9 @@ func (h *harness) withInstaller(inst *fakeInstaller, stdin string) {
 func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed, total: 2}
-	// region confirmed, admin group by number, requester by name, no auditor, e-mail, proceed.
-	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\ny\n")
+	// region confirmed, admin group by number, requester by name, no auditor, e-mail, no
+	// organization name, proceed.
+	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\n\ny\n")
 
 	if code := h.run("install", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
@@ -282,7 +283,7 @@ func TestInstallSaysHowToSetUpWhenSetupFails(t *testing.T) {
 func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
-	h.withInstaller(inst, "y\ny\n")
+	h.withInstaller(inst, "y\n\ny\n")
 	h.backend.source = awsx.SourceProfile{Name: "work", Region: "us-east-1"}
 
 	code := h.run("install", "--profile", "work", "--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
@@ -413,5 +414,29 @@ func TestInstallWithAProfileThatIsNotSSOSuggestsTheSSOProfiles(t *testing.T) {
 	}
 	if out := h.out.String(); !strings.Contains(out, "Next: aws-elevate setup --profile a") || !strings.Contains(out, "(SSO profiles found: a, b)") {
 		t.Errorf("out %s", out)
+	}
+}
+
+func TestInstallPassesTheOrganizationName(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--organization-name", "Example Corp", "--yes")
+	if code != 0 || inst.created.Parameters["OrganizationName"] != "Example Corp" {
+		t.Fatalf("exit %d, parameters %v, stderr %s", code, inst.created, h.errOut)
+	}
+
+	// Asked when not given; empty keeps the template default.
+	h = newHarness(t)
+	inst = &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "\ny\n")
+	code = h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if _, ok := inst.created.Parameters["OrganizationName"]; ok || !strings.Contains(h.out.String(), "? Organization name, optional") {
+		t.Errorf("parameters %v, out %s", inst.created.Parameters, h.out)
 	}
 }
