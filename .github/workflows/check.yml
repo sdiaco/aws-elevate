@@ -1,0 +1,46 @@
+# make check on every pull request. One job: private repositories bill each job rounded up
+# to the minute. Tools run on the runner with cached downloads instead of building the
+# development container each time; their versions are those of dev/Dockerfile (a test
+# keeps them equal).
+name: check
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: 0.13.8
+          python-version: 3.12.16
+          enable-cache: true
+          cache-python: true
+          cache-dependency-glob: service/uv.lock
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+      # The title becomes the squash commit message. It is untrusted text: it goes through
+      # a file and never becomes part of a command.
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/pr-title"
+          uv run --project service cz --config service/pyproject.toml check --commit-msg-file "$RUNNER_TEMP/pr-title"
+      - run: make check

@@ -68,15 +68,17 @@ Dependencies point inward. Inner layers never import outer ones.
 - **Internal material stays local.** Some directories exist only on the maintainer's disk and are git-excluded. Never add them, never force-add ignored files.
 - **Generated files** (builds, coverage, caches) are never committed.
 - **Infrastructure** is plain CloudFormation. No SAM, CDK or Terraform.
-- **No GitHub Actions.** Checks run locally through `make` and `lefthook`.
+- **Continuous integration** is GitHub Actions in `.github/workflows/`: `check` runs `make check` on every pull request; `release` publishes when a release reaches `main`. Workflow rules, enforced by `service/tests/release/test_workflows.py`: actions pinned to a full commit sha (a release at least two weeks old), `GITHUB_TOKEN` read-only by default and widened per job, `persist-credentials: false`, no `pull_request_target`, no `${{ }}` inside `run:` (untrusted text goes through `env`), tool versions equal to `dev/Dockerfile`. AWS access only through OIDC to the role of `infra/release-ci.yaml`, never stored keys. End-to-end tests never run in CI: they run locally on real AWS.
 
 ## Branches, commits, pull requests
 
-- `main`: released versions only. It receives one pull request from `develop` per release. Never commit to it directly.
+- `main`: released versions only. It receives the release pull request from `develop` and hotfix pull requests. Never commit to it directly. No staging environment: tests run locally on real AWS.
 - `develop`: base branch. Never commit to it directly once implementation starts.
 - Work branches start from `develop`: `<type>/<short-description>`, for example `feat/t1-3-grants-table`, `fix/revoke-retry`, `docs/install-guide`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`.
+- Hotfixes start from `main` as `hotfix/<short-description>` and go back to `main` by pull request. After every change to `main` the release workflow opens the pull request that merges `main` back into `develop` (merge commit).
 - **Conventional Commits**, enforced by commitizen through a `lefthook` commit-msg hook: `<type>(<scope>): <subject>`, imperative, lower case, no trailing period. Scopes: `service`, `client`, `infra`, `contract`, `docs`, `dev`.
-- One logical change per commit. One task per pull request, targeting `develop`, merged by squash only when `make check` is green. Pull requests into `main` are merged by the maintainer only.
+- One logical change per commit. One task per pull request, targeting `develop`, merged by squash only when `make check` is green, locally and in the `check` workflow. The pull request title is the squash commit message, checked by commitizen in CI.
+- **Release.** A pull request on `develop` sets the new version in the code (`chore(release): x.y.z`). The release pull request `develop` → `main` is merged with a merge commit, not squash, by the maintainer only: that merge is the approval. It needs exactly one label `release:security`, `release:fix` or `release:feature`, a green `check` and an `e2e` commit status on its head: `make e2e-auto` for small changes and hotfixes; for changes to UI, IAM, templates, the engine flow or the rules format, the manual checks (second-user approval, UI, Launch Stack) and then `make e2e-status STATE=success`. The release workflow then builds, uploads to the release buckets and creates the tag and the GitHub release; a published version is never overwritten.
 - **No AI attribution.** Commits and pull requests carry no `Co-Authored-By` for an assistant, no "generated with" line, no session links. This overrides any tool default.
 - Never force-push `main` or `develop`. Never push branches named `archive/*`.
 - Versions follow semantic versioning, starting at `0.0.1`. Tags are `v<version>` on `main`.
@@ -88,7 +90,8 @@ Stop and ask the maintainer before any of these:
 - Creating AWS resources outside the test accounts, or anything in the management account.
 - Enabling, changing or attaching service control policies.
 - Creating anything that costs money, or leaving test resources running.
-- Pushing to `main`, creating a tag or publishing a release.
+- Pushing to `main`, merging into `main`, creating a tag or publishing a release.
+- Changing a workflow's triggers or permissions, the release role or its trust policy, or adding an action.
 - Adding a dependency, a new AWS service or a new IAM permission not listed in the design.
 - Deleting or rewriting history, or deleting files you did not create.
 - Changing the design document. Only choices the maintainer approved go in; open points are proposed in conversation first.
@@ -104,7 +107,7 @@ Always:
 - `make dev` opens a shell in the development container (Go, Python, uv, cfn-lint, AWS CLI). Nothing else needs to be installed.
 - `make check`: all local checks. `make test`: tests only.
 - `make e2e-up`, `make e2e`, `make e2e-down`: end-to-end tests against a real organization.
-- `make e2e-auto`: unattended end-to-end run (up, tests, always down), outcome in `build/e2e/result`.
+- `make e2e-auto`: unattended end-to-end run (up, tests, always down) that posts the `e2e` commit status on the pushed HEAD. `make e2e-status STATE=success|failure`: the same status after the manual checks.
 - `make build`, `make release-upload`, `make release-github`, `make report`: artifacts, publication, quality report.
 
 Detailed developer documentation will live in `docs/development.md`; this section will link to it once it exists.

@@ -17,6 +17,10 @@ UPLOADED = ("elevate.yaml", "elevate-guardrails.yaml", "lambda.zip")
 
 FAKE = """#!/usr/bin/env bash
 { printf '%s' "$(basename "$0")"; printf ' %q' "$@"; echo; } >>"$CALLS"
+if [ "$(basename "$0")" = gh ] && [ "$1" = api ]; then
+	echo "$E2E_STATE"
+	exit 0
+fi
 if [ "$(basename "$0")" = aws ] && [ "$2" = head-object ]; then
 	case " $* " in *" $EXISTING "*) exit 0 ;; esac
 	exit 254
@@ -54,8 +58,6 @@ def repo(tmp_path) -> Path:
     (built / "checksums.txt").write_text(
         "".join(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}\n" for name in names)
     )
-    (repo / "build/e2e").mkdir()
-    (repo / "build/e2e/result").write_text(f"{git(repo, 'rev-parse', 'HEAD^{tree}')} passed\n")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -65,7 +67,9 @@ def repo(tmp_path) -> Path:
     return repo
 
 
-def run(repo: Path, *args: str, existing: str = "none") -> tuple[subprocess.CompletedProcess, list]:
+def run(
+    repo: Path, *args: str, existing: str = "none", e2e: str = "success"
+) -> tuple[subprocess.CompletedProcess, list]:
     calls = repo.parent / "calls"
     calls.touch()
     env = {
@@ -73,15 +77,28 @@ def run(repo: Path, *args: str, existing: str = "none") -> tuple[subprocess.Comp
         "PATH": f"{repo.parent / 'bin'}:{os.environ['PATH']}",
         "CALLS": str(calls),
         "EXISTING": existing,
+        "E2E_STATE": e2e,
+        "GITHUB_REPOSITORY": "owner/repo",
     }
     result = subprocess.run(
         [str(repo / "dev/release.sh"), *args], capture_output=True, text=True, env=env, check=False
     )
-    return result, calls.read_text().splitlines()
+    lines = calls.read_text().splitlines()
+    status = f"gh api repos/owner/repo/commits/{head(repo)}/status"
+    return result, [c for c in lines if not c.startswith(status)]
+
+
+def head(repo: Path) -> str:
+    return git(repo, "rev-parse", "HEAD")
+
+
+def publish(repo: Path, step: str, last: str | None, **kw):
+    args = [step, VERSION, head(repo)] + ([last] if last else [])
+    return run(repo, *args, **kw)
 
 
 def test_upload_puts_each_file_in_every_listed_bucket_without_overwriting(repo):
-    result, calls = run(repo, "upload", VERSION, "pub")
+    result, calls = publish(repo, "upload", "pub")
     assert result.returncode == 0, result.stderr
     puts = [c for c in calls if " put-object " in c]
     assert len(puts) == len(BUCKETS) * len(UPLOADED)
@@ -96,14 +113,14 @@ def test_upload_puts_each_file_in_every_listed_bucket_without_overwriting(repo):
 
 
 def test_upload_writes_nothing_when_one_file_is_already_published(repo):
-    result, calls = run(repo, "upload", VERSION, "pub", existing=f"v{VERSION}/lambda.zip")
+    result, calls = publish(repo, "upload", "pub", existing=f"v{VERSION}/lambda.zip")
     assert result.returncode != 0
     assert "never overwritten" in result.stderr
     assert not [c for c in calls if " put-object " in c]
 
 
 def test_github_release_carries_the_header_lines_read_from_the_code(repo):
-    result, calls = run(repo, "github", VERSION, "fix")
+    result, calls = publish(repo, "github", "fix")
     assert result.returncode == 0, result.stderr
     (call,) = calls
     assert call.startswith(f"gh release create v{VERSION} ")
@@ -113,40 +130,57 @@ def test_github_release_carries_the_header_lines_read_from_the_code(repo):
 
 
 def test_github_refuses_an_unknown_type(repo):
-    result, calls = run(repo, "github", VERSION, "major")
+    result, calls = publish(repo, "github", "major")
     assert result.returncode != 0 and "security, fix or feature" in result.stderr
     assert calls == []
 
 
 def test_only_main_publishes(repo):
     git(repo, "checkout", "-q", "-b", "develop")
-    result, calls = run(repo, "upload", VERSION, "pub")
+    result, calls = publish(repo, "upload", "pub")
     assert result.returncode != 0 and "from main only" in result.stderr
     assert calls == []
 
 
 def test_a_dirty_tree_does_not_publish(repo):
     (repo / "contract/new.json").write_text("{}")
-    result, calls = run(repo, "upload", VERSION, "pub")
+    result, calls = publish(repo, "upload", "pub")
     assert result.returncode != 0 and "has changes" in result.stderr
     assert calls == []
 
 
 def test_a_build_that_does_not_match_its_checksums_does_not_publish(repo):
     (repo / "build/release" / f"v{VERSION}" / "lambda.zip").write_text("changed")
-    result, calls = run(repo, "upload", VERSION, "pub")
+    result, calls = publish(repo, "upload", "pub")
     assert result.returncode != 0 and "does not match" in result.stderr
     assert calls == []
 
 
-@pytest.mark.parametrize("content", [None, "failed", "other-tree passed"])
-def test_without_a_passing_e2e_run_of_this_tree_nothing_is_published(repo, content):
-    result_file = repo / "build/e2e/result"
-    if content is None:
-        result_file.unlink()
-    else:
-        tree = git(repo, "rev-parse", "HEAD^{tree}")
-        result_file.write_text(content.replace("failed", f"{tree} failed") + "\n")
-    result, calls = run(repo, "github", VERSION, "fix")
-    assert result.returncode != 0 and "make e2e-auto" in result.stderr
+def test_upload_without_a_profile_uses_the_environment_credentials(repo):
+    result, calls = publish(repo, "upload", None)
+    assert result.returncode == 0, result.stderr
+    assert calls and not [c for c in calls if "--profile" in c]
+
+
+@pytest.mark.parametrize("state", ["", "failure", "pending"])
+def test_without_a_successful_e2e_status_nothing_is_published(repo, state):
+    result, calls = publish(repo, "github", "fix", e2e=state)
+    assert result.returncode != 0 and "no successful e2e status" in result.stderr
     assert calls == []
+
+
+def test_a_tested_commit_with_another_tree_does_not_publish(repo):
+    tested = head(repo)
+    (repo / "contract/new.json").write_text("{}")
+    git(repo, "add", ".")
+    git(repo, "-c", "user.name=t", "-c", "user.email=user@example.com", "commit", "-qm", "more")
+    result, calls = run(repo, "upload", VERSION, tested, "pub")
+    assert result.returncode != 0 and "did not test this code" in result.stderr
+    assert calls == []
+
+
+def test_a_detached_checkout_of_main_in_github_actions_publishes(repo, monkeypatch):
+    git(repo, "checkout", "-q", "--detach")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    result, _ = publish(repo, "upload", "pub")
+    assert result.returncode == 0, result.stderr
