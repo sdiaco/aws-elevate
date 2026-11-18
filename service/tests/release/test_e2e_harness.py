@@ -114,3 +114,31 @@ def test_client_env_isolates_config_home_and_settings(tmp_path, monkeypatch):
         assert (home / ".aws" / "sso").resolve() == (real_home / ".aws" / "sso").resolve()
     assert not home.exists()
     assert os.environ["HOME"] == str(real_home)
+
+
+def _ddb_answering(error_code: str | None) -> tuple:
+    ddb = _session().client("dynamodb")
+    stub = Stubber(ddb)
+    if error_code:
+        stub.add_client_error("delete_table", error_code, "Table is being deleted")
+    else:
+        stub.add_response("delete_table", {})
+    stub.activate()
+    return ddb, stub
+
+
+@pytest.mark.parametrize("code", ["ResourceInUseException", "ResourceNotFoundException"])
+def test_down_counts_a_table_being_deleted_or_gone_as_done(code):
+    # uninstall returns while DynamoDB still deletes the table.
+    ddb, stub = _ddb_answering(code)
+    failures: list[str] = []
+    harness.delete_table(ddb, failures)
+    assert failures == []
+    stub.assert_no_pending_responses()
+
+
+def test_down_reports_any_other_table_error():
+    ddb, _ = _ddb_answering("AccessDeniedException")
+    failures: list[str] = []
+    harness.delete_table(ddb, failures)
+    assert len(failures) == 1 and "AccessDeniedException" in failures[0]

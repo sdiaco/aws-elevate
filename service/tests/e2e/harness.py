@@ -696,6 +696,24 @@ def _try(what: str, call, failures: list) -> None:
         log(f"FAILED {what}: {err}")
 
 
+def delete_table(ddb, failures: list) -> None:
+    """Deletes the grants table. DeleteTable returns while the table is still being deleted,
+    so right after uninstall a second call meets ResourceInUseException: that is done too."""
+    name = f"{STACK}-grants"
+    try:
+        ddb.delete_table(TableName=name)
+        log(f"deleted table {name}")
+    except ClientError as err:
+        code = err.response["Error"]["Code"]
+        if code == "ResourceNotFoundException":
+            return
+        if code == "ResourceInUseException" and "being deleted" in str(err):
+            log(f"table {name} already being deleted")
+            return
+        failures.append(f"table: {err}")
+        log(f"FAILED table: {err}")
+
+
 def _wait_request(describe, key: str, id_key: str, instance: str, request_id: str) -> None:
     for _ in range(120):
         status = describe(InstanceArn=instance, **{id_key: request_id})[key]["Status"]
@@ -819,9 +837,7 @@ def stack_down(session: boto3.Session) -> None:
     delete_people(session, failures)
     delete_groups(session, failures)
     # Retained by the stack on purpose. uninstall deleted them; this is the net when it failed.
-    ddb = session.client("dynamodb")
-    _try("table", lambda: ddb.delete_table(TableName=f"{STACK}-grants") and log(
-        f"deleted table {STACK}-grants"), failures)  # fmt: skip
+    delete_table(session.client("dynamodb"), failures)
     appconfig = session.client("appconfig")
     for app in appconfig.list_applications()["Items"]:
         if app["Name"] != STACK:
