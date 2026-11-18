@@ -500,18 +500,27 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
         "cloudformation:CreateChangeSet",
         "cloudformation:DescribeChangeSet",
         "cloudformation:ListChangeSets",
+        "cloudformation:GetTemplateSummary",
     }
-    for s in cfn:
-        assert s["Resource"] == {"Ref": "AWS::StackId"}
-    (create,) = [s for s in cfn if "cloudformation:CreateChangeSet" in as_list(s["Action"])]
-    assert as_list(create["Action"]) == ["cloudformation:CreateChangeSet"]
-    assert create["Condition"] == {
+    release_templates = {
         "StringLike": {
             "cloudformation:TemplateUrl": {
                 "Fn::Sub": f"https://{release_bucket}.s3.${{AWS::Region}}.amazonaws.com/*"
             }
         }
     }
+    # GetTemplateSummary on a template URL names no stack, so it cannot be scoped to this
+    # stack's ARN: it is read-only and limited to release templates instead.
+    (summary,) = [s for s in cfn if "cloudformation:GetTemplateSummary" in as_list(s["Action"])]
+    assert as_list(summary["Action"]) == ["cloudformation:GetTemplateSummary"]
+    assert summary["Resource"] == "*"
+    assert summary["Condition"] == release_templates
+    for s in cfn:
+        if s is not summary:
+            assert s["Resource"] == {"Ref": "AWS::StackId"}
+    (create,) = [s for s in cfn if "cloudformation:CreateChangeSet" in as_list(s["Action"])]
+    assert as_list(create["Action"]) == ["cloudformation:CreateChangeSet"]
+    assert create["Condition"] == release_templates
     (read,) = [s for s in statements if "s3:GetObject" in as_list(s["Action"])]
     assert as_list(read["Action"]) == ["s3:GetObject"]
     assert read["Resource"] == {"Fn::Sub": f"arn:${{AWS::Partition}}:s3:::{release_bucket}/*"}

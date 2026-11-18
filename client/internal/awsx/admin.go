@@ -133,8 +133,10 @@ type Change struct {
 const previewPoll = 2 * time.Second
 
 // PreviewUpdate creates a change set of the stack from templateURL and waits for it: it
-// changes nothing (design §12.3). Every parameter keeps its value except CodeKey, whose
-// default names the Lambda package of the new release.
+// changes nothing (design §12.3). A parameter of the new template keeps the stack's value
+// except CodeKey, whose default names the Lambda package of the new release; parameters
+// the new template no longer declares are left out, since CloudFormation refuses them,
+// and new ones take their default.
 func (a *Admin) PreviewUpdate(ctx context.Context, stackID, templateURL string) (Preview, error) {
 	client := cloudformation.NewFromConfig(a.cfg)
 	stacks, err := client.DescribeStacks(ctx, &cloudformation.DescribeStacksInput{StackName: &stackID})
@@ -143,6 +145,14 @@ func (a *Admin) PreviewUpdate(ctx context.Context, stackID, templateURL string) 
 	}
 	if len(stacks.Stacks) == 0 {
 		return Preview{}, fmt.Errorf("stack %s not found", stackID)
+	}
+	summary, err := client.GetTemplateSummary(ctx, &cloudformation.GetTemplateSummaryInput{TemplateURL: &templateURL})
+	if err != nil {
+		return Preview{}, fmt.Errorf("read the new template: %w", err)
+	}
+	declared := map[string]bool{}
+	for _, par := range summary.Parameters {
+		declared[aws.ToString(par.ParameterKey)] = true
 	}
 	var p Preview
 	in := &cloudformation.CreateChangeSetInput{
@@ -154,7 +164,7 @@ func (a *Admin) PreviewUpdate(ctx context.Context, stackID, templateURL string) 
 	}
 	for _, par := range stacks.Stacks[0].Parameters {
 		key := aws.ToString(par.ParameterKey)
-		if key == "CodeKey" {
+		if key == "CodeKey" || !declared[key] {
 			continue
 		}
 		p.Parameters = append(p.Parameters, key)

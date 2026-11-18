@@ -1557,6 +1557,15 @@ Resources:
             Condition:
               StringLike:
                 cloudformation:TemplateUrl: !Sub https://elevate-releases-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/*
+          # The preview passes only the parameters the new template declares. A summary
+          # of a template URL names no stack, so it cannot be scoped to this stack's ARN.
+          - Sid: ReadReleaseTemplateParameters
+            Effect: Allow
+            Action: cloudformation:GetTemplateSummary
+            Resource: "*"
+            Condition:
+              StringLike:
+                cloudformation:TemplateUrl: !Sub https://elevate-releases-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/*
           - Sid: ReadReleaseTemplates
             Effect: Allow
             Action: s3:GetObject
