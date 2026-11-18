@@ -12,8 +12,8 @@ import (
 // region name: in a region without a release someone else could own that name and serve
 // their own template and code.
 var buckets = map[string]string{
-	"eu-west-1": "elevate-releases-eu-west-1",
-	"us-east-1": "elevate-releases-us-east-1",
+	"eu-west-1": "aws-elevate-releases-eu-west-1",
+	"us-east-1": "aws-elevate-releases-us-east-1",
 }
 
 // TemplateURL is the infrastructure template of version v in region, or an error when
