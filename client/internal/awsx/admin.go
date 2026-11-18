@@ -17,11 +17,11 @@ import (
 )
 
 // ErrVersionConflict: another rules version was published after the one the save
-// started from (design §7.1).
+// started from.
 var ErrVersionConflict = errors.New("another rules version was published meanwhile")
 
 // Admin makes the AWS calls of the admin commands with ElevateAdmin credentials: the
-// publication of rules (design §7.2) and the reads of doctor.
+// publication of rules and the reads of doctor.
 type Admin struct {
 	cfg   aws.Config
 	sleep func(ctx context.Context, d time.Duration) error
@@ -36,7 +36,7 @@ func NewAdmin(cfg aws.Config, creds aws.CredentialsProvider) *Admin {
 // PublishRules creates a hosted configuration version. latest is the newest version
 // number the save started from (nil when there is none yet); AppConfig refuses the
 // version if a newer one exists. It returns the number of the version that is now the
-// latest: the same as latest when the content did not change (spike C4).
+// latest: the same as latest when the content did not change.
 func (a *Admin) PublishRules(ctx context.Context, app, profile string, latest *int, doc []byte) (int, error) {
 	in := &appconfig.CreateHostedConfigurationVersionInput{
 		ApplicationId:          &app,
@@ -129,11 +129,11 @@ type Change struct {
 }
 
 // previewPoll is how often PreviewUpdate reads the change set; it takes about 8 s
-// (spike C10).
+// .
 const previewPoll = 2 * time.Second
 
 // PreviewUpdate creates a change set of the stack from templateURL and waits for it: it
-// changes nothing (design §12.3). A parameter of the new template keeps the stack's value
+// changes nothing. A parameter of the new template keeps the stack's value
 // except CodeKey, whose default names the Lambda package of the new release; parameters
 // the new template no longer declares are left out, since CloudFormation refuses them,
 // and new ones take their default.

@@ -1,4 +1,4 @@
-"""Rule routes (design §5.4, §7.1, §7.5, §11.2): what a caller may request, what a rule
+"""Rule routes: what a caller may request, what a rule
 grants, and the pre-publication check that only api can run because it reads the PS."""
 
 import copy
@@ -95,7 +95,7 @@ def test_requestable_scope_keeps_the_rules_of_the_caller_groups(make, fx):
 
 def test_requestable_scope_lists_the_accounts_where_the_caller_has_an_open_grant(make, fx):
     # Same permission set and account as an open grant: a request would be a duplicate,
-    # whatever rule it came from (design §11.2).
+    # whatever rule it came from.
     two = dataclasses.replace(
         fx.AUTO_RULE,
         accounts=(
@@ -176,7 +176,7 @@ def test_requester_asking_for_a_rule_not_theirs_is_forbidden(make, fx):
 
 
 def test_approver_of_a_rule_reads_its_permissions_without_being_able_to_request_it(make, fx):
-    # The approver must see what they grant (design §11.2, In attesa).
+    # The approver must see what they grant.
     routes, sso = make()
     assert routes.permissions(fx.LEAD, "ssm-prod")["managed"]
     assert sso.reads == [fx.PS_ARN]
@@ -208,7 +208,7 @@ def test_permissions_of_a_deleted_permission_set_is_not_found(make, fx):
     assert "ssm-write" in err.message
 
 
-# ---------- GET /permission-sets/permissions (Rules form, design §7.5) ----------
+# ---------- GET /permission-sets/permissions (Rules form) ----------
 
 
 def test_admin_reads_any_permission_set_by_arn(make, fx):
@@ -246,7 +246,7 @@ def test_unknown_permission_set_by_arn_is_not_found(make, fx):
     assert arn in err.message
 
 
-# ---------- POST /rules/check (design §5.4, §7.1) ----------
+# ---------- POST /rules/check ----------
 
 
 def test_check_codes_are_the_vocabulary():
@@ -311,7 +311,7 @@ def test_permission_set_that_does_not_exist(make, fx):
 
 
 def test_inline_over_the_limit_once_the_expiry_is_added(make, fx):
-    # Fits alone, but not with the expiry statement the grant adds (design §5.4).
+    # Fits alone, but not with the expiry statement the grant adds.
     resource = "x" * (MAX_INLINE_CHARS - 100)
     inline = {
         "Version": "2012-10-17",
@@ -348,7 +348,7 @@ def test_a_reserved_permission_set_cannot_be_a_source(make, fx, name):
 
 def test_a_reserved_account_cannot_be_a_target(make, fx):
     # The management account and the service account: a grant there could tamper with
-    # aws-elevate itself (design §7.5).
+    # aws-elevate itself.
     doc = copy.deepcopy(VALID_DOC)
     rule_id = doc["rules"][1]["id"]
     routes, _ = make(fx.source_ps(arn=DOC_ARN), reserved=frozenset({"222222222222"}))

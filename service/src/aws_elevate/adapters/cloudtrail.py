@@ -1,4 +1,4 @@
-"""Who created a rules version and when (design §7.3). AppConfig does not expose it;
+"""Who created a rules version and when. AppConfig does not expose it;
 CloudTrail Event history (free, 90 days) does, a few minutes after the fact."""
 
 import json

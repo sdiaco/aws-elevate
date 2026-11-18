@@ -1,6 +1,6 @@
 """Entry point of the `engine` Lambda. Its only input is the state machine payload:
 `action`, `grantId` and, for store_token, `taskToken`. Anything else is refused, so the
-engine never acts on data that did not come from the grant record (design §4.3)."""
+engine never acts on data that did not come from the grant record."""
 
 import os
 import re

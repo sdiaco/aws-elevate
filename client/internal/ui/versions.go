@@ -13,7 +13,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// versionsPage lists the rules versions with author and validity (design §7.3); a
+// versionsPage lists the rules versions with author and validity; a
 // version opens in the bottom panel.
 func (a *App) versionsPage(w http.ResponseWriter, r *http.Request) {
 	v, err := a.Service.ConfigVersions(r.Context())
@@ -109,7 +109,7 @@ func (a *App) versionPanelPart(w http.ResponseWriter, r *http.Request) {
 	part(w, "panel", panelSlot{Version: p})
 }
 
-// versionExport downloads a version as a file that admin import takes back (design §7.4).
+// versionExport downloads a version as a file that admin import takes back.
 func (a *App) versionExport(w http.ResponseWriter, r *http.Request) {
 	n, err := strconv.Atoi(r.PathValue("n"))
 	if err != nil {

@@ -48,7 +48,7 @@ type StackState struct {
 	Events []StackEvent
 }
 
-// Installer makes the calls of the guided install (design §12.1) with the admin's own
+// Installer makes the calls of the guided install with the admin's own
 // profile, in the region chosen for the stack.
 type Installer struct{ cfg aws.Config }
 
@@ -61,8 +61,8 @@ func OpenInstaller(ctx context.Context, profile, region string) (*Installer, err
 	return &Installer{cfg: cfg}, nil
 }
 
-// RegisterHint tells how to make account the Identity Center delegated administrator
-// (design §4), the only organization prerequisite.
+// RegisterHint tells how to make account the Identity Center delegated administrator,
+// the only organization prerequisite.
 func RegisterHint(account string) string {
 	return "To make it the delegated administrator, run once from the management account: " +
 		"aws organizations register-delegated-administrator --account-id " + account + " --service-principal sso.amazonaws.com"

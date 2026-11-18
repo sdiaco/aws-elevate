@@ -1,5 +1,5 @@
-"""What each role of infra/elevate.yaml can and cannot do, and the guarantees the
-design puts on the template (design §8.2, §8.3, §12.1)."""
+"""What each role of infra/elevate.yaml can and cannot do, and the guarantees
+the template must keep."""
 
 import hashlib
 import json
@@ -41,7 +41,7 @@ def test_template_decodes_without_errors():
     assert not _errors
 
 
-# ---------- engine role (design §8.2) ----------
+# ---------- engine role ----------
 
 
 def engine_allows():
@@ -136,7 +136,7 @@ def test_every_role_is_tested():
     assert set(roles()) == {"EngineRole", "StateMachineRole", "PrecheckRole", "ApiRole"}
 
 
-# ---------- table (design §8.3, §11.3) ----------
+# ---------- table ----------
 
 
 def test_table_is_retained():
@@ -173,7 +173,7 @@ def test_table_has_the_three_indexes_and_ttl():
     assert props["TimeToLiveSpecification"] == {"AttributeName": "ttl", "Enabled": True}
 
 
-# ---------- precheck (design §12.1) ----------
+# ---------- precheck ----------
 
 
 def depends_on(name: str) -> set[str]:
@@ -260,12 +260,12 @@ def test_sns_topic_policy_statements_name_one_topic_each():
             assert not isinstance(stmt["Resource"], list), name
 
 
-# ---------- api role (design §8.2): reads untrusted input, never writes to sso ----------
+# ---------- api role: reads untrusted input, never writes to sso ----------
 
 SCHEMA_PATH = TEMPLATE_PATH.parent / "rules.schema.json"
 
 
-# What adapters.sso_read.read_source calls (design §5.4 limits, "Cosa otterrai").
+# What adapters.sso_read.read_source calls (rule limits and the summary of what the requester gets).
 API_PS_READS = (
     "sso:DescribePermissionSet",
     "sso:GetInlinePolicyForPermissionSet",
@@ -373,7 +373,7 @@ def test_api_role_name_matches_the_table_exception():
     assert props["Path"] == "/elevate/"
 
 
-# ---------- API Gateway (design §8.1) ----------
+# ---------- API Gateway ----------
 
 SERVICE_ROLES = [
     "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*"
@@ -413,7 +413,7 @@ def test_resource_policy_allows_the_two_roles_and_denies_everyone_else_explicitl
     assert allow["Condition"] == {
         "ArnLike": {"aws:PrincipalArn": [{"Fn::Sub": r} for r in SERVICE_ROLES]}
     }
-    # Same account: an Allow alone refuses nobody (spike S5).
+    # Same account: an Allow alone refuses nobody.
     assert deny["Effect"] == "Deny" and deny["Principal"] == {"AWS": "*"}
     assert deny["Action"] == "execute-api:Invoke"
     assert deny["Resource"] == "execute-api:/*"
@@ -432,7 +432,7 @@ def test_api_url_is_published_under_the_fixed_parameter_name():
     assert RESOURCES["ApiUrlParameter"]["Properties"]["Name"] == "/elevate/api-url"
 
 
-# ---------- rules profile (design §7.1) ----------
+# ---------- rules profile ----------
 
 
 def test_rules_profile_validates_with_the_rules_schema():
@@ -441,7 +441,7 @@ def test_rules_profile_validates_with_the_rules_schema():
     assert json.loads(validator["Content"]) == json.loads(SCHEMA_PATH.read_text())
 
 
-# ---------- service permission sets (design §8.1, §8.2) ----------
+# ---------- service permission sets ----------
 
 
 def ps_statements(name: str) -> list[dict]:
@@ -469,7 +469,7 @@ def test_requester_can_only_call_the_api_and_read_its_address():
 
 def test_auditor_has_exactly_the_requester_policy():
     # The name tells the auditor what they are in the portal; what they may do through the
-    # API is decided by the service from their groups (design §3.3).
+    # API is decided by the service from their groups.
     assert ps_statements("AuditorPs") == ps_statements("RequesterPs")
 
 
@@ -495,7 +495,7 @@ RELEASE_BUCKET = {"Fn::FindInMap": ["ReleaseBuckets", {"Ref": "AWS::Region"}, "B
 
 def test_release_buckets_come_from_the_contract_map_never_from_the_region_name():
     # A name derived from the region could be taken by someone else in a region where
-    # aws-elevate is not published (design §12.1): only mapped buckets are read, and a
+    # aws-elevate is not published: only mapped buckets are read, and a
     # region without one fails the stack before anything is created.
     assert TEMPLATE["Mappings"]["ReleaseBuckets"] == {
         region: {"Bucket": bucket} for region, bucket in RELEASE_BUCKETS.items()
@@ -509,7 +509,7 @@ def test_release_buckets_come_from_the_contract_map_never_from_the_region_name()
 
 
 def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket():
-    # design §12.3, spike C10: create and read change sets, never apply them.
+    # Create and read change sets, never apply them.
     statements = ps_statements("AdminPs")
     cfn = [
         s for s in statements if any(a.startswith("cloudformation:") for a in as_list(s["Action"]))
@@ -551,7 +551,7 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
 
 
 def test_auditors_get_api_access_only_when_the_group_is_given():
-    # An auditor only reads (design §3.3), but without a service permission set cannot call
+    # An auditor only reads, but without a service permission set cannot call
     # the API at all: seen in the UI pass with an auditor outside the requesters group.
     assert TEMPLATE["Conditions"]["HasAuditors"] == {
         "Fn::Not": [{"Fn::Equals": [{"Ref": "AuditorGroupId"}, ""]}]
@@ -594,7 +594,7 @@ def test_api_function_knows_what_the_admin_client_reads_with_its_own_credentials
 
 @pytest.mark.parametrize("function", ["ApiFunction", "EngineFunction"])
 def test_api_and_engine_know_the_reserved_accounts(function):
-    # The check before publishing and the activation refuse them as targets (design §7.5).
+    # The check before publishing and the activation refuse them as targets.
     env = RESOURCES[function]["Properties"]["Environment"]["Variables"]
     assert env["MANAGEMENT_ACCOUNT_ID"] == {"Fn::GetAtt": ["Precheck", "ManagementAccountId"]}
     assert env["SERVICE_ACCOUNT_ID"] == {"Ref": "AWS::AccountId"}

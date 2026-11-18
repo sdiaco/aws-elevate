@@ -29,7 +29,7 @@ deletion (table, AppConfig application).
 A new stack is installed with the client (`aws-elevate install`, built into
 build/aws-elevate) at the previous infrastructure version, PREVIOUS_INFRA: the same code
 with another INFRA_VERSION. test_upgrade.py, run first, updates it to the current code
-with a grant open (design §12.2). The install signs as OrganizationAccountAccessRole of
+with a grant open. The install signs as OrganizationAccountAccessRole of
 the service account, through a temporary AWS config with one more profile."""
 
 import hashlib
@@ -372,7 +372,7 @@ def _update(cfn, params: list[dict], url: str) -> None:
 
 
 def upgrade(session: boto3.Session) -> None:
-    """The update an admin runs from `admin updates --preview` (design §12.3): every
+    """The update an admin runs from `admin updates --preview`: every
     parameter keeps its value except CodeKey, the package of the new release."""
     bucket, key = upload(session)
     cfn = session.client("cloudformation")
@@ -545,8 +545,8 @@ def role_credentials(
     human: boto3.Session, role: str, timeout_s: float = 120, account: str | None = None
 ) -> dict:
     """Credentials of a role of the test user from the access portal, by default in the
-    target account. Right after the assignment the portal refuses for a few seconds
-    (spike C12): retry."""
+        target account. Right after the assignment the portal refuses for a few seconds:
+    retry."""
     portal, token = human.client("sso"), sso_token(human)
     started = time.monotonic()
     while True:
@@ -743,7 +743,7 @@ def stack_down(session: boto3.Session) -> None:
     # The stack's group assignments are gone with it: the groups can go now.
     delete_people(session, failures)
     delete_groups(session, failures)
-    # Retained by the stack on purpose (design §12.3): remove them for the test stack.
+    # Retained by the stack on purpose: remove them for the test stack.
     ddb = session.client("dynamodb")
     _try("table", lambda: ddb.delete_table(TableName=f"{STACK}-grants") and log(
         f"deleted table {STACK}-grants"), failures)  # fmt: skip

@@ -1,4 +1,4 @@
-"""Identity of a call comes only from the signature (design §8.1, spike C9)."""
+"""Identity of a call comes only from the signature."""
 
 import pytest
 

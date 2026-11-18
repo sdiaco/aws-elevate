@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// AliasLine makes `aws elevate …` run this client (design §10.1).
+// AliasLine makes `aws elevate …` run this client.
 const AliasLine = "elevate = !aws-elevate"
 
 // AliasFile is the AWS CLI alias file, ~/.aws/cli/alias.

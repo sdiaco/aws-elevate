@@ -1,4 +1,4 @@
-"""Rules version routes of api (design §7.3, §11.2). The list and the content pass through
+"""Rules version routes of api. The list and the content pass through
 api so the auditor sees them without any AWS permission of their own."""
 
 from ..core.models import ConfigVersion, Identity

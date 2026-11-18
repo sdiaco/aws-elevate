@@ -30,7 +30,7 @@ const stackPoll = 10 * time.Second
 
 const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>]"
 
-// runInstall is the guided install of design §12.1: it creates the stack in the
+// runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
 func runInstall(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "install")

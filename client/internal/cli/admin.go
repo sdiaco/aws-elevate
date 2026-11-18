@@ -144,7 +144,7 @@ func runRulesList(ctx context.Context, e *Env, args []string) error {
 }
 
 // runPublish is `admin rules save` and `admin import`: the service checks the document,
-// then the admin publishes it on AppConfig from the newest version (design §7.1, §7.2).
+// then the admin publishes it on AppConfig from the newest version.
 func runPublish(ctx context.Context, e *Env, args []string) error {
 	profile, rest, err := adminArgs(e, args, 1)
 	if err != nil {
@@ -269,7 +269,7 @@ const (
 
 type finding struct{ status, name, text string }
 
-// runDoctor checks the installation and says what is missing (design §10.2). Every
+// runDoctor checks the installation and says what is missing. Every
 // check runs even when another fails; the exit status is 1 if one failed.
 func runDoctor(ctx context.Context, e *Env, args []string) error {
 	profile, _, err := adminArgs(e, args, 0)
@@ -281,7 +281,7 @@ func runDoctor(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 	// Reaching here means the service accepted this client and the client accepted the
-	// infrastructure (design §12.2).
+	// infrastructure.
 	found := []finding{{checkOK, "versions", fmt.Sprintf("client %s, infrastructure %s (oldest client accepted %s)",
 		version.Client, s.me.InfraVersion, s.me.MinClient)}}
 	found = append(found, checkStack(ctx, s), checkServicePermissionSets(ctx, s))
@@ -385,7 +385,7 @@ func checkTrail(ctx context.Context, s *adminSession) finding {
 	case has:
 		return finding{checkOK, "trail", "a CloudTrail trail covers this account"}
 	}
-	// Optional (design §7.3): elevate does not create one, a second trail costs money.
+	// Optional: elevate does not create one, a second trail costs money.
 	return finding{checkWarn, "trail", "no CloudTrail trail: the free event history keeps who published rules for 90 days only"}
 }
 
@@ -405,6 +405,6 @@ func checkApprovals(ctx context.Context, s *adminSession) finding {
 	if err != nil {
 		return finding{checkFail, "approvals", err.Error()}
 	}
-	// Optional (design §9.2): without subscribers, requests show in status and the UI.
+	// Optional: without subscribers, requests show in status and the UI.
 	return finding{checkOK, "approvals", fmt.Sprintf("%d confirmed subscriber(s) to requests waiting for approval", n)}
 }

@@ -1,4 +1,4 @@
-"""Rules in force for api (design §7.1, §7.3).
+"""Rules in force for api.
 
 The latest valid version wins. Every version is evaluated once (schema check by
 AppConfig plus the full parser) and recorded in the table; an invalid one is skipped
@@ -18,7 +18,7 @@ from ..adapters.events import EventPublishFailed
 from ..core.models import ConfigVersion, Rule
 from ..core.rules import InvalidRules, parse
 
-REFRESH_SECONDS = 30  # design §6.6, §7.1
+REFRESH_SECONDS = 30
 
 log = logging.getLogger(__name__)
 

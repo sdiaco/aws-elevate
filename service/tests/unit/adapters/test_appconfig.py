@@ -69,7 +69,7 @@ def test_latest_without_versions(appconfig):
 
 
 def test_get_refuses_content_that_is_not_json(appconfig):
-    # AppConfig stores any content: the schema is not applied on creation (spike C4).
+    # AppConfig stores any content: the schema is not applied on creation.
     ac, stub = appconfig
     body = b"not json"
     stub.add_response(

@@ -1,5 +1,5 @@
 """Grant snapshot returned by every engine action. The state machine builds the event
-detail (design §9.1) from it, so it holds only what events may publish."""
+detail from it, so it holds only what events may publish."""
 
 from .models import Grant, Group, PermissionSetRef, Principal
 

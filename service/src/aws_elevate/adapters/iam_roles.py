@@ -1,6 +1,5 @@
 """The real IAM roles behind the two service permission sets. api compares the RoleId of
-a signed call with these, so a role that only imitates the name is refused (design §8.1,
-spike C9)."""
+a signed call with these, so a role that only imitates the name is refused."""
 
 from botocore.exceptions import ClientError
 

@@ -338,7 +338,7 @@ def test_grant_written_before_account_names_reads_without_one():
     assert from_item(item).account_name is None
 
 
-# ---------- config versions (design §7.1, §7.3) ----------
+# ---------- config versions ----------
 
 CONFIG_KEY = {"pk": {"S": "CONFIG"}, "sk": {"S": "V#00000007"}}
 INVALID = ConfigVersion(
@@ -447,7 +447,7 @@ def test_release_rejected_event(table):
     t.release_rejected_event(7)
 
 
-# ---------- reads by index (design §11.3: never a Scan) ----------
+# ---------- reads by index (never a Scan) ----------
 
 
 def _query(stub, params, items, last=None):

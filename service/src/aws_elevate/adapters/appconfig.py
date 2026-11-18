@@ -1,4 +1,4 @@
-"""AppConfig hosted configuration holding the rules document (design §7.1). Every saved
+"""AppConfig hosted configuration holding the rules document. Every saved
 version is immutable and numbered; the latest valid one is in force."""
 
 import json
@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 
 
 class NotJson(Exception):
-    """A version whose content is not JSON. AppConfig stores any content (spike C4)."""
+    """A version whose content is not JSON. AppConfig stores any content."""
 
 
 class AppConfig:
@@ -40,7 +40,7 @@ class AppConfig:
 
     def validate(self, version: int) -> tuple[bool, str | None]:
         """Check a version against the profile's schema. AppConfig applies the schema
-        only on request, never when a version is created (spike C4)."""
+        only on request, never when a version is created."""
         try:
             self._appconfig.validate_configuration(**self._ids, ConfigurationVersion=str(version))
         except ClientError as err:

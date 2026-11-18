@@ -121,7 +121,7 @@ def test_a_different_approver_group_is_reported():
     ]
 
 
-# ---------- parse (design §3.1, §7.1) ----------
+# ---------- parse ----------
 
 
 def doc_with(**changes):
@@ -213,7 +213,7 @@ def test_parse_collects_errors_of_every_rule():
     assert [e.split(".")[0].split(":")[0] for e in errors] == ["rules[0]", "rules[1]"]
 
 
-# ---------- requestable, validate_request (design §6.1) ----------
+# ---------- requestable, validate_request ----------
 
 
 def identity(*groups, admin=False):

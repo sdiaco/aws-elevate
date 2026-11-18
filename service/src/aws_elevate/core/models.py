@@ -1,10 +1,10 @@
 """Domain types shared by api and engine. Enum values are the wire strings of
-contract/vocabulary.json (design §3.2, §3.3)."""
+contract/vocabulary.json."""
 
 from dataclasses import dataclass
 from enum import StrEnum
 
-# How long a manual request waits for its approvers (design §6.2).
+# How long a manual request waits for its approvers.
 APPROVAL_TIMEOUT_SECONDS = 1800
 
 
@@ -119,7 +119,7 @@ class Grant:
 
 @dataclass(frozen=True)
 class ConfigVersion:
-    """What api recorded about a rules version the first time it saw it (design §7.3)."""
+    """What api recorded about a rules version the first time it saw it."""
 
     number: int
     valid: bool
@@ -144,7 +144,7 @@ class Identity:
 
 @dataclass(frozen=True)
 class SourcePs:
-    """Full content of the permission set a rule points to (design §5.1)."""
+    """Full content of the permission set a rule points to."""
 
     arn: str
     name: str

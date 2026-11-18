@@ -10,7 +10,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
-// Updates is what the Updates view needs from the process (design §12.3): the releases
+// Updates is what the Updates view needs from the process: the releases
 // and the client update, the same ones `aws elevate admin updates` and `aws-elevate
 // update` use.
 type Updates struct {
@@ -117,7 +117,7 @@ type previewView struct {
 }
 
 // preview creates a change set of the stack for an infrastructure release: CloudFormation
-// lists what would change and applies nothing (design §12.3).
+// lists what would change and applies nothing.
 func (a *App) preview(w http.ResponseWriter, r *http.Request) {
 	v := r.PostFormValue("version")
 	if _, err := version.Cmp(v, v); err != nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// periods on screen (design §11.3): 30 days by default, up to the 13 months kept.
+// periods on screen: 30 days by default, up to the 13 months kept.
 var periods = []struct {
 	key, label string
 	from       func(time.Time) time.Time
@@ -99,7 +99,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 		l.First = "/history?" + base
 	}
 	v := listView{List: l}
-	// The detail is read only when opened (design §11.1).
+	// The detail is read only when opened.
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, "/history?"+here)
 		if err != nil {

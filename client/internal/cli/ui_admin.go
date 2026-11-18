@@ -11,7 +11,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/ui"
 )
 
-// uiAdmin gives the Rules view the admin's own AWS calls: the reads of §7.5, with the
+// uiAdmin gives the Rules view the admin's own AWS calls: the permission set reads, with the
 // permission sets cached per profile, and the publication on this installation.
 type uiAdmin struct {
 	aws   AdminAWS
@@ -39,7 +39,7 @@ func (a *uiAdmin) PermissionSets(ctx context.Context, refresh bool) ([]awsx.Name
 }
 
 // Accounts leaves out the account running aws-elevate, the account of its stack: a grant
-// there could tamper with it (design §7.5). The service refuses it as well; the management
+// there could tamper with it. The service refuses it as well; the management
 // account is already left out by awsx.
 func (a *uiAdmin) Accounts(ctx context.Context) ([]awsx.Named, error) {
 	all, err := a.aws.Accounts(ctx)

@@ -1,4 +1,4 @@
-"""Who is calling, from the request signature only (design §8.1, spike C9).
+"""Who is calling, from the request signature only.
 
 API Gateway already admits only the service roles; api checks again, and also
 compares the RoleId of the signature with the real role, so a role that imitates the
@@ -29,7 +29,7 @@ class IdentityResolver:
         self._roles = roles
         self._store = store
         # ElevateAuditor is ElevateRequester under a clearer name: auditing comes from the
-        # auditor group, never from the role (design §3.3).
+        # auditor group, never from the role.
         self._prefixes = {
             f"AWSReservedSSO_{requester_ps}_": False,
             f"AWSReservedSSO_{admin_ps}_": True,

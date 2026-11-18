@@ -57,7 +57,7 @@ def test_author_found_on_a_later_page(trail):
 
 
 def test_author_not_recorded_yet(trail):
-    # CloudTrail records with a few minutes of delay (design §7.3).
+    # CloudTrail records with a few minutes of delay.
     ct, stub = trail
     stub.add_response("lookup_events", {"Events": [event(2)]}, LOOKUP)
     assert ct.version_author(3) is None

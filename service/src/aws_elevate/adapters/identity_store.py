@@ -1,5 +1,5 @@
 """Identity Center users and groups. Group membership is read on every call, so a
-change in Identity Center applies at once (design §8.1)."""
+change in Identity Center applies at once."""
 
 from botocore.exceptions import ClientError
 

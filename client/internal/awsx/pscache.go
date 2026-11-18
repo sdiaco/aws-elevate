@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// PermissionSetCacheTTL is how long the list of permission sets is reused (design §7.5).
+// PermissionSetCacheTTL is how long the list of permission sets is reused.
 const PermissionSetCacheTTL = 10 * time.Minute
 
 // PermissionSetCache keeps the list of permission sets (names and ARNs only) in a file of

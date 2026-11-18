@@ -120,7 +120,7 @@ def test_manual_request_refused_to_its_requester_then_cancelled(org, requester, 
     assert status == 201, body
     grant_id = body["grant"]["id"]
     assert body["grant"]["state"] == "pending"
-    # Approver group member, but it is their own request (design §3.3), from either role.
+    # Approver group member, but it is their own request, from either role.
     for creds in (requester, admin):
         status, refused = org.call(creds, "POST", f"grants/{grant_id}/approve")
         assert (status, refused["error"]) == (403, "forbidden"), refused

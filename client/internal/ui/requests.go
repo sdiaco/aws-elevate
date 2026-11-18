@@ -12,7 +12,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// The Requests view (design §11.2): one table of the open grants, a bottom panel for the
+// The Requests view: one table of the open grants, a bottom panel for the
 // detail of one, and the actions the service gives on the selected rows.
 
 // requestFilter is one quick filter of the table; who sees which follows the role.
@@ -88,7 +88,7 @@ func ends(g api.Grant) time.Time {
 
 // requestActions are the header's Actions menu: what is done on several rows at once.
 // The decisions on one request (approve, reject, retry) are in the panel, next to its
-// detail (design §11.2). Each is enabled only when every selected row allows it.
+// detail. Each is enabled only when every selected row allows it.
 var requestActions = []Action{
 	{Label: "Revoke…", Path: "/requests/revoke", Name: "revoke", Danger: true, Confirm: true},
 	{Label: "Cancel request…", Path: "/requests/cancel", Name: "cancel", Danger: true, Confirm: true},
@@ -104,7 +104,7 @@ type listView struct {
 	Alert  *Alert
 }
 
-// panelSlot is the bottom panel of a page, closed until a row is chosen (design §11.1):
+// panelSlot is the bottom panel of a page, closed until a row is chosen:
 // the detail of a grant, a rule or a rules version.
 type panelSlot struct {
 	Panel   *panel
@@ -166,7 +166,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	// The selection column is there for whoever may act, as in the console: Revoke stays
 	// disabled until the selected rows are all ones the service lets this user revoke. An
-	// auditor only reads, and gets no action at all (design §3.3).
+	// auditor only reads, and gets no action at all.
 	if a.has("requester") || a.has("approver") || a.has("admin") {
 		l.Actions, l.Menu = requestActions, true
 	}
@@ -187,7 +187,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 			v.Flash = &f
 		}
 	}
-	// The detail is read only when opened (design §11.1).
+	// The detail is read only when opened.
 	if id := r.URL.Query().Get("open"); id != "" {
 		p, err := a.panel(r.Context(), id, here)
 		if err != nil {
@@ -228,7 +228,7 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 		row.Poll = "/requests/row/" + g.ID
 	}
 	// An active grant changes only when it ends: the page reads it once then, with no timer
-	// meanwhile, so an open tab costs no calls (design §11.1).
+	// meanwhile, so an open tab costs no calls.
 	if state == api.StateActive {
 		row.Expire = "/requests/row/" + g.ID
 	}
@@ -332,7 +332,7 @@ func (a *App) panel(ctx context.Context, id, closeTo string) (*panel, error) {
 
 // profilePart writes the CLI profile of the user's own active grant and shows its name, for
 // the Access box of the panel: read after the panel shows, since AWS may need a few seconds
-// to accept a role that just became active (spike C12).
+// to accept a role that just became active.
 func (a *App) profilePart(w http.ResponseWriter, r *http.Request) {
 	d, err := a.Service.Grant(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -391,7 +391,7 @@ func markOpen(rows []Row, id string) {
 }
 
 // confirm asks before an action on grants: it lists the ids and, for a revocation, asks
-// for the reason (design §11.1).
+// for the reason.
 type confirm struct {
 	Title  string
 	Text   string

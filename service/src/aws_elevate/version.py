@@ -1,4 +1,4 @@
-"""Release constants exchanged with the client (design §12.2)."""
+"""Release constants exchanged with the client."""
 
 INFRA_VERSION = "0.0.1"
 # Oldest client version this infrastructure accepts.

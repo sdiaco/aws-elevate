@@ -176,7 +176,7 @@ func runApprove(ctx context.Context, e *Env, args []string) error {
 	return nil
 }
 
-// runShell starts $SHELL with the profile of an active grant (design §10.3).
+// runShell starts $SHELL with the profile of an active grant.
 func runShell(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "shell")
 	ids, err := f.parse(args)

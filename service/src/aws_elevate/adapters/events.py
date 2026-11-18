@@ -1,5 +1,5 @@
 """Events api publishes on the elevate bus. Grant events come from the state machine;
-api emits only elevate.config.rejected (design §9.1)."""
+api emits only elevate.config.rejected."""
 
 import json
 

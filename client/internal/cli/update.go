@@ -15,7 +15,7 @@ import (
 )
 
 // runUpdate replaces this executable with the newest release whose client works with the
-// connected infrastructure (design §12.3), after checking its SHA-256.
+// connected infrastructure, after checking its SHA-256.
 func runUpdate(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "update")
 	rest, err := f.parse(args)

@@ -164,7 +164,7 @@ type StatementSummary struct {
 	Conditions json.RawMessage `json:"conditions"`
 }
 
-// Permissions is "what you will get" for a rule (design §6.1).
+// Permissions is "what you will get" for a rule.
 type Permissions struct {
 	Managed         []string           `json:"managed"`
 	CustomerManaged []PolicyRef        `json:"customerManaged"`

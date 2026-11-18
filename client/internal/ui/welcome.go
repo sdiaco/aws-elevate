@@ -10,7 +10,7 @@ import (
 )
 
 // firstRun is true for an admin with AWS access while no rule exists and the first run
-// was not skipped in this session (design §11.2, Primo avvio).
+// was not skipped in this session.
 func (a *App) firstRun(ctx context.Context) (bool, error) {
 	if !a.has("admin") || a.Admin == nil || a.skippedWelcome.Load() {
 		return false, nil

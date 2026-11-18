@@ -23,7 +23,7 @@ from aws_elevate.engine.actions import Engine
 START = datetime(2026, 11, 15, 10, 0, 0, tzinfo=UTC)
 SRC_ARN = "arn:aws:sso:::permissionSet/ssoins-1/ps-1"
 JIT_ARN = "arn:aws:sso:::permissionSet/ssoins-1/ps-jit"
-# Management and service accounts (design §7.5); never the grant targets of these tests.
+# Management and service accounts; never the grant targets of these tests.
 RESERVED = frozenset({"999999999999", "888888888888"})
 
 RULE_DOC = {

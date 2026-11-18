@@ -1,4 +1,4 @@
-"""Allowed grant state transitions (design §3.2, §6). Every write to the grants table
+"""Allowed grant state transitions. Every write to the grants table
 is conditional on the source state; this table says which targets are legal."""
 
 from .models import State

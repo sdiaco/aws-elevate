@@ -1,5 +1,5 @@
-"""Step Functions calls made by api: one execution per grant, named after the grant id
-(design §6.1), the end of a wait, and the redrive of a failed revocation (design §6.5)."""
+"""Step Functions calls made by api: one execution per grant, named after the grant id,
+the end of a wait, and the redrive of a failed revocation."""
 
 import json
 

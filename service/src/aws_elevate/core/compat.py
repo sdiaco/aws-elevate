@@ -1,4 +1,4 @@
-"""Client and infrastructure versions (design §12.2). Each side declares the oldest
+"""Client and infrastructure versions. Each side declares the oldest
 version of the other it works with; the pair is valid only if both conditions hold.
 Cases are in contract/compat.json, shared with the Go client."""
 

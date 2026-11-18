@@ -1,4 +1,4 @@
-"""Inline policy of the ephemeral permission set (design §5.1, §5.4)."""
+"""Inline policy of the ephemeral permission set."""
 
 import json
 import math
@@ -12,7 +12,7 @@ from .times import iso
 EXPIRY_SID = "JitExpiry"
 POLICY_VERSION = "2012-10-17"
 
-# Permission set limits documented by AWS, not adjustable (design §5.4).
+# Permission set limits documented by AWS, not adjustable.
 MAX_INLINE_CHARS = 10_240  # excluding whitespace
 MAX_INLINE_BYTES = 32_768
 # IAM quota on managed policies per role (adjustable by the organization, not by us).
@@ -103,7 +103,7 @@ def _as_list(value) -> list:
 
 
 def summarize(inline: dict | None) -> list[dict]:
-    """One entry per statement, for "what you will get" (design §11.2)."""
+    """One entry per statement, for "what you will get"."""
     summary = []
     for stmt in _statements(inline):
         entry = {
@@ -136,7 +136,7 @@ def _tag_value(value: str) -> str:
 
 
 def ephemeral_tags(grant: Grant) -> dict[str, str]:
-    """Tags of JIT-<id> (design §5.3). `jit=true` is what the engine role is scoped on."""
+    """Tags of JIT-<id>. `jit=true` is what the engine role is scoped on."""
     tags = {
         "jit": "true",
         "jit:grantId": grant.id,

@@ -13,7 +13,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
-// runUpdates is `admin updates` (design §12.3): the new releases for this client and for
+// runUpdates is `admin updates`: the new releases for this client and for
 // the infrastructure, or with --preview the changes an infrastructure update would make
 // and the command that applies it. The admin applies it with their own admin role:
 // ElevateAdmin can only create and read previews.

@@ -8,7 +8,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
-// runSetup finds the service through the SSO session (design §10.1), remembers it for the
+// runSetup finds the service through the SSO session, remembers it for the
 // profile and adds the `aws elevate` alias.
 func runSetup(ctx context.Context, e *Env, args []string) error {
 	f := newFlags(e, "setup")

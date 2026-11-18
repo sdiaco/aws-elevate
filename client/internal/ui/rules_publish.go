@@ -15,8 +15,8 @@ import (
 )
 
 // change is what the admin asked, kept apart from the document it applies to so that,
-// when another version comes out meanwhile, it can be applied again to that version
-// (design §7.1): put a rule (replacing Orig), delete rules, or replace the document.
+// when another version comes out meanwhile, it can be applied again to that version:
+// put a rule (replacing Orig), delete rules, or replace the document.
 type change struct {
 	Kind string          `json:"kind"`
 	Orig string          `json:"orig,omitempty"`
@@ -118,16 +118,16 @@ type reviewView struct {
 	Change  string
 	Latest  string
 	// Replaces are rules another admin changed meanwhile that this publish overwrites:
-	// publishing them needs one more confirmation (design §7.2).
+	// publishing them needs one more confirmation.
 	Replaces []string
 	// Deletes are the rules this publish removes; deleting asks once more in a dialog
-	// (design §11.1).
+	//.
 	Deletes     []string
 	DeleteTitle string
 }
 
 // review asks the service to check the changed document, then shows what changes and
-// waits for confirmation (design §7.1: no drafts, summary and confirmation). On a check
+// waits for confirmation (no drafts: summary and confirmation). On a check
 // error, back shows the page the admin came from with the errors.
 func (a *App) review(w http.ResponseWriter, r *http.Request, c change, back func(...Alert), alerts ...Alert) {
 	b, err := a.base(r.Context())

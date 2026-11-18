@@ -1,4 +1,4 @@
-// Package ui is the local web interface of aws-elevate (design §8.6, §11). The pages
+// Package ui is the local web interface of aws-elevate. The pages
 // call the service through this process, which holds the credentials: the browser
 // never sees them.
 package ui

@@ -1,4 +1,4 @@
-// The JavaScript of the interface (design §11.1): plain, no framework, no build. Pages
+// The JavaScript of the interface: plain, no framework, no build. Pages
 // come from the server and work without it; the script spares reloads (panel, filters,
 // pages, rule choice), counts down, polls grants in transition and copies.
 "use strict";
@@ -36,7 +36,7 @@ document.addEventListener("change", (e) => {
 
 // A click on a row, outside its links and controls, selects it as its box or radio would
 // (Cloudscape): the 16-pixel control alone is hard to hit, above all on a phone. Only the
-// id link opens the panel (design §11.1).
+// id link opens the panel.
 document.addEventListener("click", (e) => {
   const tr = e.target.closest("tbody tr");
   if (!tr || e.target.closest("a, button, input, label, select, textarea, summary")) return;
@@ -107,7 +107,7 @@ async function followPanel(next, moved) {
 // Expiry: an active row changes only when the grant ends, so the page asks nothing while
 // it runs. Once the countdown ends it reads the row 20 seconds later, time for the service
 // to close the grant, then at most 3 more times; a row still active after that keeps
-// saying "Ending…" until the page is reloaded (design §11.1).
+// saying "Ending…" until the page is reloaded.
 const expireDelays = [20000, 30000, 30000, 30000];
 
 function expire(el, attempt) {
@@ -721,7 +721,7 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// What cannot be undone asks over the page (design §11.1): a [data-confirm] link or list
+// What cannot be undone asks over the page: a [data-confirm] link or list
 // action opens its confirmation page's form in a dialog, the chosen grants shown as a
 // small table taken from their rows. Without the script, or if the page cannot be read,
 // the confirmation opens as a page.
@@ -796,7 +796,7 @@ document.addEventListener("submit", (e) => {
   confirmDialog(`${button.getAttribute("formaction")}?${query}`, button);
 });
 
-// Validation in the console's style (design §11.1): the browser's own bubbles speak its
+// Validation in the console's style: the browser's own bubbles speak its
 // language and show one field at a time, so forms check themselves on submit and show
 // every error in red under its field, in English. The submit button stays enabled; an
 // error goes away when its field changes. Without the script the browser checks.

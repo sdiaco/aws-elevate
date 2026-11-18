@@ -27,7 +27,7 @@ def active_with_credentials(org, duration_seconds):
     snap = org.wait_state(grant.id, "active")
     creds = harness.role_credentials(org.human, ps_name(grant.id))
     started = time.monotonic()
-    while harness.probe(creds) != "allowed":  # first call may be denied for 1-2 s (C12)
+    while harness.probe(creds) != "allowed":  # first call may be denied for 1-2 s (measured)
         assert time.monotonic() - started < 30, "never allowed"
         time.sleep(1)
     return grant, execution, snap, creds
