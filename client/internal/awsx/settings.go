@@ -13,6 +13,9 @@ import (
 // and the user's choices.
 type Settings struct {
 	Profiles map[string]Target `json:"profiles"`
+	// Default is the profile of the last setup, used when neither --profile nor
+	// $AWS_PROFILE names one.
+	Default string `json:"default,omitempty"`
 	// CheckUpdates false stops every call to the public release list.
 	CheckUpdates *bool `json:"checkUpdates,omitempty"`
 }
@@ -58,4 +61,23 @@ func SaveSettings(path string, s Settings) error {
 		return fmt.Errorf("encode settings: %w", err)
 	}
 	return writeFileAtomic(path, append(data, '\n'))
+}
+
+// RemoveSettings deletes the settings file, and its folder once empty. It reports whether
+// there was a file to delete.
+func RemoveSettings(path string) (bool, error) {
+	err := os.Remove(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("delete %s: %w", path, err)
+	}
+	dir := filepath.Dir(path)
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) == 0 {
+		if err := os.Remove(dir); err != nil {
+			return true, fmt.Errorf("delete %s: %w", dir, err)
+		}
+	}
+	return true, nil
 }

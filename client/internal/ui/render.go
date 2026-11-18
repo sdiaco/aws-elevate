@@ -25,15 +25,17 @@ var files embed.FS
 
 // Page is what the base layout shows around a view.
 type Page struct {
-	Title   string
-	Path    string // the current view, marked in the navigation
-	Nav     []NavGroup
-	User    string
-	Roles   string
-	Alerts  []Alert
-	Content any   // the data of the view's "content" template
-	Bare    bool  // full screen, without the navigation
-	Closed  Alert // shown by the page when the interface has closed
+	Title string
+	Path  string // the current view, marked in the navigation
+	Nav   []NavGroup
+	User  string
+	Roles string
+	// Organization is the installation's organization name, shown above the navigation.
+	Organization string
+	Alerts       []Alert
+	Content      any   // the data of the view's "content" template
+	Bare         bool  // full screen, without the navigation
+	Closed       Alert // shown by the page when the interface has closed
 }
 
 // Alert is a message above the view. Kind is error, success, warning or info.

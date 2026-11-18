@@ -358,7 +358,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil || len(empty.Profiles) != 0 {
 		t.Fatalf("missing file: %+v, %v", empty, err)
 	}
-	s := Settings{Profiles: map[string]Target{"work": {Account: "111111111111", Role: RoleRequester, APIURL: "https://api.example.com/v1"}}}
+	s := Settings{Profiles: map[string]Target{"work": {Account: "111111111111", Role: RoleRequester, APIURL: "https://api.example.com/v1"}}, Default: "work"}
 	if err := SaveSettings(path, s); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Errorf("mode %v", info.Mode().Perm())
 	}
 	got, err := LoadSettings(path)
-	if err != nil || got.Profiles["work"] != s.Profiles["work"] {
+	if err != nil || got.Profiles["work"] != s.Profiles["work"] || got.Default != "work" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
@@ -400,5 +400,65 @@ func TestRoleCredentialsAreFetchedAgainBeforeTheyExpire(t *testing.T) {
 	p.Retrieve(ctx)
 	if ending.calls != 2 {
 		t.Errorf("credentials about to expire fetched %d times", ending.calls)
+	}
+}
+
+func TestRemoveManagedBlockKeepsTheRestOfTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[default]\nregion = eu-west-1\n\n" + blockBegin + "\n[profile jit]\nregion = eu-west-1\n" + blockEnd + "\n\n[profile after]\nregion = us-east-1\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveManagedBlock(path)
+	if err != nil || !removed {
+		t.Fatalf("removed %v, err %v", removed, err)
+	}
+	data, _ := os.ReadFile(path)
+	if want := "[default]\nregion = eu-west-1\n\n[profile after]\nregion = us-east-1\n"; string(data) != want {
+		t.Errorf("got %q, want %q", data, want)
+	}
+	removed, err = RemoveManagedBlock(path)
+	if err != nil || removed {
+		t.Errorf("second run removed %v, err %v", removed, err)
+	}
+}
+
+func TestRemoveManagedBlockWithoutAFile(t *testing.T) {
+	removed, err := RemoveManagedBlock(filepath.Join(t.TempDir(), "config"))
+	if err != nil || removed {
+		t.Errorf("removed %v, err %v", removed, err)
+	}
+}
+
+func TestRemoveSettingsDeletesTheFileAndItsEmptyFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "aws-elevate")
+	path := filepath.Join(dir, "config.json")
+	if err := SaveSettings(path, Settings{}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveSettings(path)
+	if err != nil || !removed {
+		t.Fatalf("removed %v, err %v", removed, err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("folder still there: %v", err)
+	}
+	if removed, err := RemoveSettings(path); err != nil || removed {
+		t.Errorf("second run removed %v, err %v", removed, err)
+	}
+}
+
+func TestRemoveManagedBlockIgnoresMarkersInsideOtherLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[default]\n# copied: " + blockBegin + "\nregion = eu-west-1\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveManagedBlock(path)
+	if err != nil || removed {
+		t.Errorf("removed %v, err %v", removed, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != doc {
+		t.Errorf("rewritten: %q", data)
 	}
 }

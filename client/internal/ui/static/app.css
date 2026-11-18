@@ -118,6 +118,9 @@ code, pre, .mono { font-family: var(--mono); font-size: 12px; line-height: 18px;
 .app { display: flex; min-height: 100vh; }
 .nav { width: 250px; flex: none; background: var(--nav-bg); border-right: 1px solid var(--divider); display: flex; flex-direction: column; padding-bottom: 20px; }
 .nav-brand { font-size: 18px; line-height: 22px; font-weight: 500; letter-spacing: -.01em; color: var(--text-strong); padding: 20px 28px; border-bottom: 1px solid var(--divider); margin-bottom: 12px; }
+.nav-brand-org { display: flex; flex-direction: column; gap: 2px; }
+.nav-brand-product { font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .08em; color: var(--text-2); }
+.nav-brand-name { overflow-wrap: anywhere; }
 .nav-group { margin: 20px 28px 4px; color: var(--text-strong); font-size: 16px; line-height: 20px; font-weight: 500; }
 .nav a { display: flex; justify-content: space-between; align-items: center; min-height: 30px; padding: 5px 8px; margin: 0 20px; border-radius: 4px; color: var(--text); text-decoration: none; }
 .nav a:hover { color: var(--accent); }
@@ -492,6 +495,9 @@ tr.covered td { color: var(--text-2); }
 .wizard-step-n { font-size: 12px; color: var(--text-2); }
 .wizard-step-name { color: var(--text-2); }
 .wizard-steps li.done .wizard-step-name { color: var(--text); }
+.wizard-steps li.done { cursor: pointer; }
+.wizard-steps li.done:hover .wizard-step-name { color: var(--accent); text-decoration: underline; }
+.wizard-steps li.done:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wizard-steps li.current { border-left-color: var(--accent); }
 .wizard-steps li.current .wizard-step-name { color: var(--text-strong); font-weight: 700; }
 .wizard-body.form-box { max-width: none; }

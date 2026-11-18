@@ -560,6 +560,8 @@ function limit(box) {
 // one to show first; [data-step-mark] items mark where the form is. A [data-step-review]
 // step, made by the server from what was sent, ends with its own buttons; Edit
 // ([data-step-goto="n"]) drops it, since the steps may change, and goes back to step n.
+// A mark of a step already passed goes back to it; marks never jump forward, since
+// only Next checks the fields.
 // Without this script every step shows at once and the form still works.
 function steps(form) {
   let all = [...form.querySelectorAll("[data-step]")];
@@ -578,6 +580,13 @@ function steps(form) {
       m.classList.toggle("current", i === at);
       m.classList.toggle("done", i < at);
       if (i === at) m.setAttribute("aria-current", "step"); else m.removeAttribute("aria-current");
+      if (i < at) {
+        m.setAttribute("role", "button");
+        m.tabIndex = 0;
+      } else {
+        m.removeAttribute("role");
+        m.removeAttribute("tabindex");
+      }
     });
     all[at].querySelector("h2")?.scrollIntoView({ block: "nearest" });
   };
@@ -587,13 +596,22 @@ function steps(form) {
     at++;
     show();
   });
-  form.addEventListener("click", (e) => {
-    const go = e.target.closest("[data-step-goto]");
-    if (!go) return;
+  const goTo = (n) => {
     const review = form.querySelector("[data-step-review]");
     if (review) { review.remove(); all = all.filter((s) => s !== review); }
-    at = Number(go.dataset.stepGoto);
+    at = n;
     show();
+  };
+  form.addEventListener("click", (e) => {
+    const go = e.target.closest("[data-step-goto]");
+    if (go) goTo(Number(go.dataset.stepGoto));
+  });
+  marks.forEach((m, i) => {
+    const back = () => { if (i < at) goTo(i); };
+    m.addEventListener("click", back);
+    m.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); back(); }
+    });
   });
   show();
 }

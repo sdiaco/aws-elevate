@@ -2,8 +2,11 @@ package awsx
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -214,4 +217,38 @@ func (p params) APIURL(ctx context.Context, creds aws.Credentials) (string, erro
 		return "", err
 	}
 	return aws.ToString(out.Parameter.Value), nil
+}
+
+// SSOProfiles lists the profiles of the AWS CLI config file that sign in through IAM
+// Identity Center, in the order of the file. A missing file has none.
+func SSOProfiles(configFile string) ([]string, error) {
+	data, err := os.ReadFile(configFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", configFile, err)
+	}
+	var names []string
+	current := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			section := strings.TrimSpace(line[1 : len(line)-1])
+			current = ""
+			if section == "default" {
+				current = section
+			} else if name, ok := strings.CutPrefix(section, "profile "); ok {
+				current = strings.TrimSpace(name)
+			}
+		case current != "":
+			key, _, _ := strings.Cut(line, "=")
+			if k := strings.TrimSpace(key); k == "sso_session" || k == "sso_start_url" {
+				names = append(names, current)
+				current = "" // listed once
+			}
+		}
+	}
+	return names, nil
 }

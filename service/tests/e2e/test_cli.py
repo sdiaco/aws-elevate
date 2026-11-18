@@ -85,7 +85,7 @@ def test_auto_request_profile_status_and_revoke(org, set_up):
     status = ok(cli(set_up, "status")).stdout
     assert gid in status and "active" in status
 
-    ok(cli(set_up, "revoke", gid, "--reason", REASON))
+    ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=180)["closeReason"] == "revoked"
 
 
@@ -95,10 +95,10 @@ def test_manual_request_returns_and_cannot_be_self_approved(org, set_up):
     assert "waiting for approval" in waiting.stderr
     gid = grant_id(waiting.stderr)
     try:
-        refused = cli(set_up, "approve", gid)
+        refused = cli(set_up, "approve", gid, "--yes")
         assert refused.returncode != 0, refused.stdout
     finally:
-        ok(cli(set_up, "revoke", gid, "--reason", REASON))
+        ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=120)["closeReason"] == "cancelled"
 
 
@@ -112,9 +112,9 @@ def test_manual_request_approved_by_another_user(org, set_up):
     waiting = ok(cli(set_up, "request", MANUAL_RULE_ID, "--account", harness.env("TARGET_ACCOUNT"),
                      "--reason", REASON))  # fmt: skip
     gid = grant_id(waiting.stderr)
-    ok(cli(set_up, "approve", gid, profile=approver))
+    ok(cli(set_up, "approve", gid, "--yes", profile=approver))
     org.wait_state(gid, "active", timeout_s=180)
-    ok(cli(set_up, "revoke", gid, "--reason", REASON))
+    ok(cli(set_up, "revoke", gid, "--reason", REASON, "--yes"))
     assert org.wait_state(gid, "closed", timeout_s=180)["closeReason"] == "revoked"
 
 
@@ -132,7 +132,7 @@ def test_admin_rules_save_export_and_refusal(org, set_up, tmp_path):
 
     # The same file again: AppConfig creates no version.
     same = ok(cli(set_up, "admin", "rules", "save", str(exported))).stdout
-    assert f"No change: version {version}" in same, same
+    assert f"version {version} already has this content" in same, same
 
     broken = tmp_path / "broken.json"
     broken.write_text(json.dumps({"schemaVersion": 1, "rules": [{"id": "e2e-broken"}]}))
@@ -148,13 +148,14 @@ def test_admin_rules_save_export_and_refusal(org, set_up, tmp_path):
 
 def test_admin_doctor(set_up):
     result = cli(set_up, "admin", "doctor")
+    # One step per check: "  ✓ name   detail", with ✗ for a failure and ! for a warning.
     rows = {}
     for line in result.stdout.splitlines():
-        status, name, *_ = re.split(r"\s{2,}", line.strip()) + [""]
-        rows.setdefault(name, status)
+        if step := re.match(r"\s*([✓✗!]) (\S.*?)(?:\s{3,}|$)", line):
+            rows.setdefault(step.group(2), step.group(1))
     for name in ("versions", "stack"):
-        assert rows.get(name) == "ok", result.stdout
-    assert "FAIL" not in {s for n, s in rows.items() if n != "alerts"}, result.stdout
+        assert rows.get(name) == "✓", result.stdout
+    assert "✗" not in {s for n, s in rows.items() if n != "alerts"}, result.stdout
     # The e2e stack subscribes user@example.com to alerts, never confirmed: the only
     # failure doctor may report here.
-    assert result.returncode == (1 if rows.get("alerts") == "FAIL" else 0), result.stdout
+    assert result.returncode == (1 if rows.get("alerts") == "✗" else 0), result.stdout

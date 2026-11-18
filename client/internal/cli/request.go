@@ -9,6 +9,7 @@ import (
 
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 )
 
 // pollDelays is the client polling backoff: 2, 4, 8 s, then every 8 s.
@@ -42,20 +43,21 @@ func runRequest(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(rest) == 0 {
+	var req api.CreateRequest
+	switch {
+	case len(rest) == 1:
+		acc, err := accountID(rules.Rules, rest[0], *account)
+		if err != nil {
+			return err
+		}
+		req = api.CreateRequest{RuleID: rest[0], Account: acc, DurationSeconds: seconds, Reason: *reason}
+	case !e.UI().Interactive() || len(rules.Rules) == 0:
 		printRules(e, rules.Rules)
 		return nil
-	}
-
-	acc, err := accountID(rules.Rules, rest[0], *account)
-	if err != nil {
-		return err
-	}
-	req := api.CreateRequest{
-		RuleID:          rest[0],
-		Account:         acc,
-		DurationSeconds: seconds,
-		Reason:          *reason,
+	default:
+		if req, err = askRequest(e.UI(), rules.Rules, *account, *duration, *reason); err != nil {
+			return err
+		}
 	}
 	g, err := svc.CreateGrant(ctx, req)
 	if err != nil {
@@ -99,6 +101,8 @@ func waitActive(ctx context.Context, e *Env, svc Service, g *api.Grant) (*api.Gr
 			return nil, fmt.Errorf("request %s is %s: see aws elevate status", g.ID, g.State)
 		}
 		if err := e.Sleep(ctx, pollDelays[min(attempt, len(pollDelays)-1)]); err != nil {
+			// Leaving the wait does not withdraw the request: the service keeps activating it.
+			fmt.Fprintf(e.Stderr, "The request %s stays open: aws elevate status\n", g.ID)
 			return nil, fmt.Errorf("stopped waiting for %s: %w", g.ID, err)
 		}
 		d, err := svc.Grant(ctx, g.ID)
@@ -107,6 +111,78 @@ func waitActive(ctx context.Context, e *Env, svc Service, g *api.Grant) (*api.Gr
 		}
 		g = &d.Grant
 	}
+}
+
+// askRequest asks what the flags did not give: the rule, the account when the rule has more
+// than one, the duration and the reason. The service decides whether the request is allowed.
+func askRequest(u *term.UI, rules []api.Rule, account, duration, reason string) (api.CreateRequest, error) {
+	items := make([]term.Item, len(rules))
+	for i, r := range rules {
+		items[i] = term.Item{Title: r.ID, Detail: ruleDetail(r)}
+	}
+	i, err := u.Select("Rule", items, false)
+	if err != nil {
+		return api.CreateRequest{}, err
+	}
+	r := rules[i]
+	req := api.CreateRequest{RuleID: r.ID}
+	if req.Account, err = askAccount(u, r, account); err != nil {
+		return req, err
+	}
+	if duration == "" {
+		if duration, err = u.Ask("Duration, empty for "+short(r.Duration.DefaultSeconds), ""); err != nil {
+			return req, err
+		}
+	}
+	if req.DurationSeconds, err = parseDuration(duration); err != nil {
+		return req, fmt.Errorf("duration: %w", err)
+	}
+	req.Reason, err = askReason(u, reason)
+	return req, err
+}
+
+func askAccount(u *term.UI, r api.Rule, account string) (string, error) {
+	if account != "" || len(r.Accounts) == 1 {
+		return accountID([]api.Rule{r}, r.ID, account)
+	}
+	items := make([]term.Item, len(r.Accounts))
+	for i, a := range r.Accounts {
+		items[i] = term.Item{Title: a.Name, Detail: a.ID}
+	}
+	i, err := u.Select("Account", items, false)
+	if err != nil {
+		return "", err
+	}
+	return r.Accounts[i].ID, nil
+}
+
+// askReason asks until there is a reason, a few times: the end of the input answers empty.
+func askReason(u *term.UI, reason string) (string, error) {
+	for range 3 {
+		if reason = strings.TrimSpace(reason); reason != "" {
+			return reason, nil
+		}
+		var err error
+		if reason, err = u.Ask("Reason (approvers and the audit read it)", ""); err != nil {
+			return "", err
+		}
+	}
+	if reason = strings.TrimSpace(reason); reason != "" {
+		return reason, nil
+	}
+	return "", fmt.Errorf("a reason is required: %w", errUsage)
+}
+
+func ruleDetail(r api.Rule) string {
+	accounts := make([]string, len(r.Accounts))
+	for i, a := range r.Accounts {
+		accounts[i] = a.Name
+	}
+	approval := r.Approval
+	if r.Privileged {
+		approval += ", privileged"
+	}
+	return fmt.Sprintf("%s on %s · %s · %s", r.PermissionSet.Name, strings.Join(accounts, ", "), short(r.Duration.DefaultSeconds), approval)
 }
 
 // accountID turns an account name of the rule into its id; anything else goes to the

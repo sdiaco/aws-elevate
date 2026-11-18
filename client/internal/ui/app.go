@@ -222,7 +222,7 @@ func (a *App) closedAlert() Alert {
 // show renders a view inside the base layout.
 func (a *App) show(w http.ResponseWriter, status int, view, title, path string, content any, alerts ...Alert) {
 	p := Page{
-		Title: title, Path: path, Nav: a.nav(), User: a.me().User.UserName,
+		Title: title, Path: path, Nav: a.nav(), User: a.me().User.UserName, Organization: a.me().OrganizationName,
 		Roles: strings.Join(a.me().Roles, ", "), Alerts: append(a.rolesAlert(), alerts...), Content: content,
 		Closed: a.closedAlert(),
 	}

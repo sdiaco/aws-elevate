@@ -201,3 +201,18 @@ func TestSessionExpiredErrorSaysWhatToRunAndKeepsTheCause(t *testing.T) {
 		t.Fatalf("message: %v", err)
 	}
 }
+
+func TestSSOProfiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[default]\nregion = eu-west-1\n[profile a]\nsso_session = s\n[profile x]\nrole_arn = r\n  # sso_session = commented\n[profile b]\nsso_start_url = https://example.awsapps.com/start\n[sso-session s]\nsso_start_url = https://example.awsapps.com/start\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SSOProfiles(path)
+	if err != nil || strings.Join(got, ",") != "a,b" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if got, err := SSOProfiles(filepath.Join(t.TempDir(), "none")); err != nil || len(got) != 0 {
+		t.Fatalf("missing file: %v, %v", got, err)
+	}
+}

@@ -210,3 +210,18 @@ func TestDurationsAreShortAsTheCLITakesThem(t *testing.T) {
 		}
 	}
 }
+
+func TestHeaderShowsTheOrganizationName(t *testing.T) {
+	out := render(t, "message", Page{Title: "Active", Path: "/active", User: "user@example.com", Organization: "Example <Corp>"})
+	want := `<div class="nav-brand nav-brand-org"><span class="nav-brand-product">AWS-ELEVATE</span><span class="nav-brand-name">Example &lt;Corp&gt;</span></div>`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing %s in\n%s", want, out)
+	}
+}
+
+func TestHeaderWithoutOrganizationName(t *testing.T) {
+	out := render(t, "message", Page{Title: "Active", Path: "/active", User: "user@example.com"})
+	if !strings.Contains(out, `<div class="nav-brand">aws-elevate</div>`) || strings.Contains(out, "nav-brand-name") {
+		t.Errorf("brand without organization:\n%s", out)
+	}
+}

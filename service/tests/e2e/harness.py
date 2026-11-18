@@ -30,8 +30,14 @@ A new stack is installed with the client (`aws-elevate install`, built into
 build/aws-elevate) at the previous infrastructure version, PREVIOUS_INFRA: the same code
 with another INFRA_VERSION. test_upgrade.py, run first, updates it to the current code
 with a grant open. The install signs as OrganizationAccountAccessRole of
-the service account, through a temporary AWS config with one more profile."""
+the service account, through a temporary AWS config with one more profile and a temporary
+home. `down` removes the stack with `aws-elevate uninstall` and deletes the rest directly;
+the direct deletion is also the net when uninstall fails, which still fails `down`.
 
+`up` stops when the Identity Center instance already has ElevateAdmin and no elevate-e2e
+stack: another installation lives there, and the service permission sets have fixed names."""
+
+import contextlib
 import hashlib
 import io
 import json
@@ -53,6 +59,7 @@ from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 
 STACK = "elevate-e2e"
+INSTALL_PROFILE = "elevate-e2e-install"  # admin of the service account, for the client
 PREVIOUS_INFRA = "0.0.0"  # what a new e2e stack runs until test_upgrade updates it
 CLI = Path(
     os.environ.get("ELEVATE_CLI", Path(__file__).resolve().parents[3] / "build" / "aws-elevate")
@@ -386,42 +393,104 @@ def upgrade(session: boto3.Session) -> None:
     _update(cfn, params, template_url(session))
 
 
+@contextlib.contextmanager
+def client_env(region: str):
+    """Environment for the client: a temporary AWS config with one more profile, the
+    OrganizationAccountAccessRole of the service account, and a temporary home, so the
+    client's settings and AWS CLI alias stay out of the maintainer's own. The SSO token
+    cache is linked from the real home: the profile signs in with it."""
+    real_home = Path.home()
+    real = Path(os.environ.get("AWS_CONFIG_FILE", real_home / ".aws" / "config"))
+    role = f"arn:aws:iam::{env('SERVICE_ACCOUNT')}:role/OrganizationAccountAccessRole"
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        (home / ".aws").mkdir()
+        (home / ".aws" / "sso").symlink_to(real_home / ".aws" / "sso")
+        config = home / ".aws" / "config"
+        config.write_text(
+            real.read_text()
+            + f"\n[profile {INSTALL_PROFILE}]\n"
+            + f"role_arn = {role}\n"
+            + f"source_profile = {env('PROFILE')}\n"
+            + f"region = {region}\n"
+        )
+        environ = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
+        environ.update(HOME=tmp, AWS_CONFIG_FILE=str(config), XDG_CONFIG_HOME=str(home / ".config"))
+        yield environ
+
+
+def _run_client(cmd: list[str], environ: dict, failure: str) -> None:
+    result = subprocess.run(cmd, env=environ, capture_output=True, text=True, timeout=1200)
+    print(result.stdout, end="", flush=True)
+    if result.returncode != 0:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+        raise SystemExit(failure)
+
+
 def install(session: boto3.Session) -> None:
     """`aws-elevate install` of the previous release, as an admin of the service account."""
     if not CLI.is_file():
         raise SystemExit(f"{CLI} is missing: run `make e2e-up`, which builds it")
     bucket, key = upload(session, PREVIOUS_INFRA)
     ensure_groups(session)
-    human = human_session()
-    role = f"arn:aws:iam::{env('SERVICE_ACCOUNT')}:role/OrganizationAccountAccessRole"
-    real = Path(os.environ.get("AWS_CONFIG_FILE", Path.home() / ".aws" / "config"))
-    with tempfile.TemporaryDirectory() as tmp:
-        config = Path(tmp) / "config"
-        config.write_text(
-            real.read_text()
-            + "\n[profile elevate-e2e-install]\n"
-            + f"role_arn = {role}\n"
-            + f"source_profile = {human.profile_name}\n"
-            + f"region = {session.region_name}\n"
-        )
-        environ = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
-        environ.update(AWS_CONFIG_FILE=str(config), XDG_CONFIG_HOME=tmp)
-        cmd = [
-            str(CLI), "install", "--profile", "elevate-e2e-install",
-            "--region", session.region_name, "--stack-name", STACK,
-            "--template-url", template_url(session), "--code-bucket", bucket, "--code-key", key,
-            "--admin-group", ADMIN_GROUP, "--requester-group", REQUESTER_GROUP,
-            "--auditor-group", AUDITOR_GROUP,
-            "--email", env("ALERT_EMAIL", "user@example.com"),
-        ]  # fmt: skip
-        log(f"installing {STACK} {PREVIOUS_INFRA} with aws-elevate install")
-        started = time.monotonic()
-        result = subprocess.run(cmd, env=environ, capture_output=True, text=True, timeout=1200)
-    print(result.stdout, end="", flush=True)
-    if result.returncode != 0:
-        print(result.stderr, end="", file=sys.stderr, flush=True)
-        raise SystemExit("aws-elevate install failed; run `make e2e-down` to remove leftovers")
+    cmd = [
+        str(CLI), "install", "--profile", INSTALL_PROFILE,
+        "--region", session.region_name, "--stack-name", STACK,
+        "--template-url", template_url(session), "--code-bucket", bucket, "--code-key", key,
+        "--admin-group", ADMIN_GROUP, "--requester-group", REQUESTER_GROUP,
+        "--auditor-group", AUDITOR_GROUP,
+        "--email", env("ALERT_EMAIL", "user@example.com"), "--yes",
+    ]  # fmt: skip
+    log(f"installing {STACK} {PREVIOUS_INFRA} with aws-elevate install")
+    started = time.monotonic()
+    with client_env(session.region_name) as environ:
+        failure = "aws-elevate install failed; run `make e2e-down` to remove leftovers"
+        _run_client(cmd, environ, failure)
     log(f"installed in {time.monotonic() - started:.0f}s")
+
+
+def setup_command(profile: str, account: str) -> list[str]:
+    return [str(CLI), "setup", "--profile", profile, "--account", account]
+
+
+def uninstall_command(region: str, elevate_profile: str) -> list[str]:
+    """The test history is deleted: the test organization keeps nothing."""
+    return [
+        str(CLI), "uninstall", "--profile", INSTALL_PROFILE,
+        "--elevate-profile", elevate_profile, "--region", region,
+        "--stack-name", STACK, "--history", "delete", "--yes",
+    ]  # fmt: skip
+
+
+def uninstall(session: boto3.Session) -> None:
+    """`aws-elevate setup` with the test user's profile, then `aws-elevate uninstall`."""
+    if not CLI.is_file():
+        raise SystemExit(f"{CLI} is missing: build it with `make e2e-up` or `make e2e`")
+    log(f"uninstalling {STACK} with aws-elevate uninstall")
+    with client_env(session.region_name) as environ:
+        _run_client(setup_command(env("PROFILE"), env("SERVICE_ACCOUNT")), environ,
+                    "aws-elevate setup failed before uninstall")  # fmt: skip
+        _run_client(uninstall_command(session.region_name, env("PROFILE")), environ,
+                    "aws-elevate uninstall failed")  # fmt: skip
+
+
+def guard_other_installation(session: boto3.Session, cfn) -> None:
+    """The service permission sets have fixed names: a second installation in the same
+    Identity Center instance would take over the real one's access."""
+    if _stack_exists(cfn):
+        return
+    sso = sso_admin(session)
+    instance = sso.list_instances()["Instances"][0]["InstanceArn"]
+    for page in sso.get_paginator("list_permission_sets").paginate(InstanceArn=instance):
+        for arn in page["PermissionSets"]:
+            name = sso.describe_permission_set(InstanceArn=instance, PermissionSetArn=arn)[
+                "PermissionSet"
+            ]["Name"]
+            if name == "ElevateAdmin":
+                raise SystemExit(
+                    "another Elevate installation uses this Identity Center instance: "
+                    "run e2e only in the dedicated test organization"
+                )
 
 
 # ---------- seeder (records written as the engine role) ----------
@@ -627,6 +696,24 @@ def _try(what: str, call, failures: list) -> None:
         log(f"FAILED {what}: {err}")
 
 
+def delete_table(ddb, failures: list) -> None:
+    """Deletes the grants table. DeleteTable returns while the table is still being deleted,
+    so right after uninstall a second call meets ResourceInUseException: that is done too."""
+    name = f"{STACK}-grants"
+    try:
+        ddb.delete_table(TableName=name)
+        log(f"deleted table {name}")
+    except ClientError as err:
+        code = err.response["Error"]["Code"]
+        if code == "ResourceNotFoundException":
+            return
+        if code == "ResourceInUseException" and "being deleted" in str(err):
+            log(f"table {name} already being deleted")
+            return
+        failures.append(f"table: {err}")
+        log(f"FAILED table: {err}")
+
+
 def _wait_request(describe, key: str, id_key: str, instance: str, request_id: str) -> None:
     for _ in range(120):
         status = describe(InstanceArn=instance, **{id_key: request_id})[key]["Status"]
@@ -735,6 +822,12 @@ def stack_down(session: boto3.Session) -> None:
     )
     cfn = session.client("cloudformation")
     if _stack_exists(cfn):
+        try:
+            uninstall(session)
+        except SystemExit as err:
+            failures.append(str(err))
+            log(f"FAILED {err}: removing the rest directly")
+    if _stack_exists(cfn):
         log("deleting stack")
         cfn.delete_stack(StackName=STACK)
         cfn.get_waiter("stack_delete_complete").wait(
@@ -743,10 +836,8 @@ def stack_down(session: boto3.Session) -> None:
     # The stack's group assignments are gone with it: the groups can go now.
     delete_people(session, failures)
     delete_groups(session, failures)
-    # Retained by the stack on purpose: remove them for the test stack.
-    ddb = session.client("dynamodb")
-    _try("table", lambda: ddb.delete_table(TableName=f"{STACK}-grants") and log(
-        f"deleted table {STACK}-grants"), failures)  # fmt: skip
+    # Retained by the stack on purpose. uninstall deleted them; this is the net when it failed.
+    delete_table(session.client("dynamodb"), failures)
     appconfig = session.client("appconfig")
     for app in appconfig.list_applications()["Items"]:
         if app["Name"] != STACK:
@@ -797,6 +888,7 @@ if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command == "up":
         svc = service_session()
+        guard_other_installation(svc, svc.client("cloudformation"))
         stack_up(svc)
         ensure_seeder(svc)
         ensure_console_ps(svc)

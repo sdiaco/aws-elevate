@@ -28,6 +28,8 @@ type Me struct {
 	Roles        []string `json:"roles"`
 	InfraVersion string   `json:"infraVersion"`
 	MinClient    string   `json:"minClient"`
+	// The stack parameter OrganizationName; empty when not set.
+	OrganizationName string `json:"organizationName,omitempty"`
 	// Only for admins: the resources the admin commands use with their own credentials.
 	Installation *Installation `json:"installation"`
 }

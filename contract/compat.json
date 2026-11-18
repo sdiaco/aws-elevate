@@ -2,6 +2,8 @@
   "outcomes": ["ok", "client_too_old", "infra_too_old"],
   "cases": [
     {"name": "first release, all equal", "client": "0.0.1", "infra": "0.0.1", "minClient": "0.0.1", "minInfra": "0.0.1", "expected": "ok"},
+    {"name": "0.0.2 client, 0.0.1 infra", "client": "0.0.2", "infra": "0.0.1", "minClient": "0.0.1", "minInfra": "0.0.1", "expected": "ok"},
+    {"name": "0.0.1 client, 0.0.2 infra", "client": "0.0.1", "infra": "0.0.2", "minClient": "0.0.1", "minInfra": "0.0.1", "expected": "ok"},
     {"name": "client below minClient", "client": "0.1.0", "infra": "0.2.0", "minClient": "0.2.0", "minInfra": "0.1.0", "expected": "client_too_old"},
     {"name": "infra below minInfra", "client": "0.3.0", "infra": "0.1.0", "minClient": "0.1.0", "minInfra": "0.2.0", "expected": "infra_too_old"},
     {"name": "client newer than infra but compatible", "client": "1.4.0", "infra": "1.0.0", "minClient": "1.0.0", "minInfra": "1.0.0", "expected": "ok"},

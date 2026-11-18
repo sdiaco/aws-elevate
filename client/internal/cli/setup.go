@@ -44,6 +44,7 @@ func runSetup(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 	settings.Profiles[profile] = target
+	settings.Default = profile
 	if err := awsx.SaveSettings(e.SettingsPath, settings); err != nil {
 		return err
 	}
@@ -52,16 +53,26 @@ func runSetup(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(e.Stdout, "Signed in as %s (%s) in account %s, infrastructure %s.\n",
-		me.User.UserName, target.Role, target.Account, me.InfraVersion)
+	u := e.UI()
+	u.OK(fmt.Sprintf("Signed in as %s (%s)", u.Bold(me.User.UserName), target.Role),
+		fmt.Sprintf("account %s · infra %s", u.Bold(target.Account), me.InfraVersion))
+	u.OK(fmt.Sprintf("Profile %s saved as default for aws-elevate", u.Bold(profile)), "")
 	if added {
-		fmt.Fprintf(e.Stdout, "Added the alias to %s: use aws elevate <command>.\n", e.AliasFile)
+		u.OK("Alias added", e.AliasFile+": use aws elevate <command>")
+	}
+	if _, err := e.LookPath("aws-elevate"); err != nil {
+		u.Warn(`aws-elevate is not on your PATH: the alias "aws elevate" cannot find it`,
+			"move it to ~/.local/bin, or run install.sh")
 	}
 	// Only a requester can ask for access; everyone else starts from the interface.
 	next := "aws elevate ui"
 	if slices.Contains(me.Roles, "requester") {
 		next = "aws elevate request"
 	}
-	fmt.Fprintln(e.Stdout, "Next: "+next)
+	// $AWS_PROFILE wins over the saved default: name the profile when it would.
+	if env := e.Getenv("AWS_PROFILE"); env != "" && env != profile {
+		next += " --profile " + profile
+	}
+	u.Next(next)
 	return nil
 }

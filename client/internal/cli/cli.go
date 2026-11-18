@@ -9,15 +9,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/release"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -31,6 +34,7 @@ type Env struct {
 	Open         func(ctx context.Context, profile string) (Backend, error)
 	Profile      func(ctx context.Context, profile string) (awsx.SourceProfile, error)
 	Installer    func(ctx context.Context, profile, region string) (Installer, error)
+	Uninstaller  func(ctx context.Context, profile, region, stack string) (Uninstaller, error)
 	Releases     func(ctx context.Context) ([]release.Release, error)
 	Download     func(ctx context.Context, version, goos, goarch string) ([]byte, error)
 	Executable   func() (string, error)
@@ -42,6 +46,21 @@ type Env struct {
 	ConfigFile   string
 	CacheDir     string // per-profile caches, ~/.cache/aws-elevate
 	AliasFile    string
+	LookPath     func(file string) (string, error)
+
+	ui *term.UI // one per run: it buffers the input
+}
+
+// UI is the terminal of this run.
+func (e *Env) UI() *term.UI {
+	if e.ui == nil {
+		in := e.Stdin
+		if in == nil {
+			in = strings.NewReader("")
+		}
+		e.ui = term.New(in, e.Stdout, e.Getenv)
+	}
+	return e.ui
 }
 
 // DefaultEnv wires the real process, AWS and files.
@@ -63,6 +82,7 @@ func DefaultEnv() (*Env, error) {
 		Open:         Open,
 		Profile:      awsx.ReadProfile,
 		Installer:    openInstaller,
+		Uninstaller:  openUninstaller,
 		Releases:     release.New().List,
 		Download:     release.New().Download,
 		Executable:   executable,
@@ -74,6 +94,7 @@ func DefaultEnv() (*Env, error) {
 		ConfigFile:   awsx.ConfigFile(),
 		AliasFile:    alias,
 		CacheDir:     cacheDir(),
+		LookPath:     exec.LookPath,
 	}, nil
 }
 
@@ -98,16 +119,17 @@ var commands map[string]command
 
 func init() {
 	commands = map[string]command{
-		"setup":   {"Find the service and add the `aws elevate` alias", "setup [--account <id|name>]", runSetup},
-		"request": {"Request access; without arguments, list what you can request", "request [<rule> --account <id|name> [--duration 45m] --reason \"…\"]", runRequest},
-		"shell":   {"Open a shell with an active grant's profile", "shell [<id>]", runShell},
-		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
-		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
-		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject --reason \"why\"]", runApprove},
-		"ui":      {"Open the local web interface in your browser", "ui", runUI},
-		"update":  {"Replace this executable with the newest version that works with your service", "update", runUpdate},
-		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},
-		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
+		"setup":     {"Find the service and add the `aws elevate` alias", "setup [--account <id|name>]", runSetup},
+		"request":   {"Request access; without arguments, list what you can request", "request [<rule> --account <id|name> [--duration 45m] --reason \"…\"]", runRequest},
+		"shell":     {"Open a shell with an active grant's profile", "shell [<id>]", runShell},
+		"status":    {"Your grants and requests, and requests you can approve", "status", runStatus},
+		"revoke":    {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\" [--yes]", runRevoke},
+		"approve":   {"Approve a request, or reject it with --reject", "approve <id> [--reject --reason \"why\"] [--yes]", runApprove},
+		"ui":        {"Open the local web interface in your browser", "ui", runUI},
+		"update":    {"Replace this executable with the newest version that works with your service", "update [--yes]", runUpdate},
+		"install":   {"Install the service in the delegated administrator account", installUsage, runInstall},
+		"admin":     {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
+		"uninstall": {"Remove an installation, or list what is left (account administrators)", uninstallUsage, runUninstall},
 	}
 }
 
@@ -162,7 +184,7 @@ func printHelp(w io.Writer) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		fmt.Fprintf(w, "  %-8s %s\n", n, commands[n].summary)
+		fmt.Fprintf(w, "  %-10s %s\n", n, commands[n].summary)
 	}
 	fmt.Fprintln(w, "\nEvery command takes --profile and --help. aws-elevate --version prints the version.")
 }
@@ -203,8 +225,21 @@ func (f *flags) parse(args []string) ([]string, error) {
 	}
 }
 
-// profileName follows the AWS CLI: --profile, else $AWS_PROFILE, else default.
+// profileName is --profile, else $AWS_PROFILE, else the profile of the last setup, else
+// default. A settings file that cannot be read is reported by the command that loads it.
 func (f *flags) profileName(e *Env) string {
+	if f.profile == "" && e.Getenv("AWS_PROFILE") == "" {
+		if s, err := awsx.LoadSettings(e.SettingsPath); err == nil && s.Default != "" {
+			return s.Default
+		}
+	}
+	return f.awsProfileName(e)
+}
+
+// awsProfileName follows the AWS CLI only: --profile, else $AWS_PROFILE, else default.
+// Commands that act as an account administrator use it, never the profile set up for
+// Elevate.
+func (f *flags) awsProfileName(e *Env) string {
 	if f.profile != "" {
 		return f.profile
 	}
@@ -222,7 +257,11 @@ func setUpTarget(e *Env, profile string) (awsx.Target, error) {
 	}
 	target, ok := settings.Profiles[profile]
 	if !ok {
-		return awsx.Target{}, fmt.Errorf("profile %q is not set up: run aws-elevate setup --profile %s", profile, profile)
+		hint := ""
+		if names := slices.Sorted(maps.Keys(settings.Profiles)); len(names) > 0 {
+			hint = " (set up: " + strings.Join(names, ", ") + ")"
+		}
+		return awsx.Target{}, fmt.Errorf("profile %q is not set up%s: run aws-elevate setup --profile %s", profile, hint, profile)
 	}
 	return target, nil
 }

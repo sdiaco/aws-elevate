@@ -10,7 +10,7 @@
 <body>
 <div class="app{{if .Bare}} bare{{end}}">
 {{if not .Bare}}<nav class="nav" aria-label="Views">
-<div class="nav-brand">aws-elevate</div>
+{{if .Organization}}<div class="nav-brand nav-brand-org"><span class="nav-brand-product">AWS-ELEVATE</span><span class="nav-brand-name">{{.Organization}}</span></div>{{else}}<div class="nav-brand">aws-elevate</div>{{end}}
 {{range .Nav}}{{if .Label}}<div class="nav-group">{{.Label}}</div>{{end}}
 {{range .Items}}<a href="{{.Path}}"{{if eq .Path $.Path}} aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="count{{if .Warn}} warn{{end}}">{{.Count}}</span>{{end}}</a>
 {{end}}{{end}}

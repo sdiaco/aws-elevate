@@ -205,7 +205,8 @@ func TestSavingARuleShowsTheChangesThenPublishesFromTheNewestVersion(t *testing.
 		t.Fatalf("published before confirmation, calls %v", h.svc.calls)
 	}
 	w = h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
-	contains(t, followed(t, h, w, "/rules"), `class="flash success"`, "Published rules version 5", "about 30 seconds")
+	contains(t, followed(t, h, w, "/rules"), `class="flash success"`, "Saving rule db-prod.",
+		"New requests can use it within about 30 seconds", "version 5")
 	if len(adm.published) != 1 || *adm.latest[0] != 4 {
 		t.Fatalf("published %v latest %v", adm.published, adm.latest)
 	}
@@ -372,7 +373,10 @@ func TestDeletingRules(t *testing.T) {
 		// Deleting cannot be undone from here: one more confirmation in a dialog.
 		`data-dialog="delete">Delete and publish…`, "Delete 1 rule?", `<li><code>ssm-prod</code></li>`)
 	lacks(t, out, `>Publish</button>`)
-	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
+	w := h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
+	// The notice says what is happening to the rule, not only which version was published.
+	contains(t, followed(t, h, w, "/rules"), `class="flash success"`, "Deleting rule ssm-prod.",
+		"New requests can no longer use it within about 30 seconds")
 	if len(adm.published) != 1 || strings.Contains(adm.published[0], "ssm-prod") || !strings.Contains(adm.published[0], "ssm-dev") {
 		t.Errorf("published %v", adm.published)
 	}
@@ -392,7 +396,8 @@ func TestImportingADocumentReplacesTheRules(t *testing.T) {
 	Pages(h.app).ServeHTTP(w, r)
 	out := w.Body.String()
 	contains(t, out, "Review changes", "Added", "only-rule", "Removed", "ssm-prod", "ssm-dev")
-	h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
+	w = h.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(out, "change")}, "latest": {hidden(out, "latest")}})
+	contains(t, followed(t, h, w, "/rules"), "Publishing the imported rules.")
 	if len(adm.published) != 1 || adm.published[0] != `{"schemaVersion":1,"rules":[{"id":"only-rule"}]}` {
 		t.Errorf("published %v", adm.published)
 	}

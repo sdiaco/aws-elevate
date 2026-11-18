@@ -75,12 +75,15 @@ def _check_client(event: dict) -> None:
 
 
 class Api:
-    def __init__(self, identity, grants, config, rules, versions, installation):
+    def __init__(
+        self, identity, grants, config, rules, versions, installation, organization_name=""
+    ):
         self._identity = identity
         self._config = config
         # Resource ids the admin client needs to publish rules and run doctor with its own
         # credentials, which cannot list them.
         self._installation = installation
+        self._organization_name = organization_name  # shown in the interface, may be empty
         self._targets = {"grants": grants, "rules": rules, "versions": versions}
 
     def handle(self, event: dict) -> dict:
@@ -142,13 +145,16 @@ class Api:
             roles.append(Role.ADMIN.value)
         if identity.is_auditor:
             roles.append(Role.AUDITOR.value)
-        return {
+        me = {
             "user": {"userId": identity.user_id, "userName": identity.user_name},
             "roles": roles,
             "infraVersion": INFRA_VERSION,
             "minClient": MIN_CLIENT,
             "installation": self._installation if identity.is_admin else None,
         }
+        if self._organization_name:
+            me["organizationName"] = self._organization_name
+        return me
 
 
 _api = None
@@ -211,7 +217,15 @@ def _build_api() -> Api:
         "alertsTopicArn": os.environ["ALERTS_TOPIC_ARN"],
         "approvalsTopicArn": os.environ["APPROVALS_TOPIC_ARN"],
     }
-    return Api(identity, grants, config, rules, ConfigRoutes(config), installation)
+    return Api(
+        identity,
+        grants,
+        config,
+        rules,
+        ConfigRoutes(config),
+        installation,
+        organization_name=os.environ["ORGANIZATION_NAME"],
+    )
 
 
 def _get_api() -> Api:
