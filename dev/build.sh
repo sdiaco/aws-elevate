@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the files of one release in $OUT/v$VERSION (design §12.1): the Lambda package, the
+# Build the files of one release in $OUT/v$VERSION: the Lambda package, the
 # two templates, one client executable per system and architecture, and checksums.txt.
 # Template, Lambda and client share one version: the build stops when the code says
 # otherwise, so a release never ships a template that points at another version's code.

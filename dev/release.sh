@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish one release built by dev/build.sh (design §12.1), in two steps with a real test
+# Publish one release built by dev/build.sh, in two steps with a real test
 # between them:
 #
 #   upload  copies templates and Lambda package to v<version>/ in the release bucket of

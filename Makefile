@@ -82,7 +82,7 @@ package:
 		import harness, pathlib; pathlib.Path('../build/lambda.zip').write_bytes(harness.package())"
 	@echo "build/lambda.zip"
 
-# Release (design §12.1). The build runs in the container (Go); publishing runs on the host,
+# Release. The build runs in the container (Go); publishing runs on the host,
 # which has aws and gh, from a clean main whose tree passed make e2e-auto.
 build: dev-image
 	@test -n '$(VERSION)' || { echo 'usage: make build VERSION=x.y.z' >&2; exit 2; }

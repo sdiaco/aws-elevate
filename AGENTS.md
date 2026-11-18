@@ -28,6 +28,7 @@ aws-elevate grants temporary elevated access (just-in-time) on AWS IAM Identity 
 - **SOLID, applied lightly.** One reason to change per module. Depend on small interfaces at the edges (AWS calls), not on concrete clients. Do not create an interface with a single implementation unless a test needs to replace it.
 - **No over-engineering.** No frameworks, no plugin systems, no generic helpers used once, no configuration for things that never vary.
 - **Small units.** Functions do one thing. Files have one clear responsibility. If a file grows hard to hold in your head, split it along a real seam.
+- **No references to material outside the repository.** Code, comments, tests, commit messages and pull requests never cite the design document, its sections (`design §5.5`), spike ids or conversation notes: a reader of the repository cannot open them. State the reason itself, or link a file in the repository or public documentation (AWS docs).
 - **Names say what, comments say why.** Comment only a constraint the code cannot express (an AWS quirk, a measured timing, a security reason). No commented-out code, no TODO without an issue.
 - **Errors are explicit.** Never swallow an exception or an `error`. Every failure path ends in a message a user or operator can act on.
 - **Idempotent by default.** Every engine step tolerates "already done". Every write to the grants table is conditional on the expected state.

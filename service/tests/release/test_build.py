@@ -1,4 +1,4 @@
-"""dev/build.sh: the files of one release (design §12.1). It needs Go, present wherever
+"""dev/build.sh: the files of one release. It needs Go, present wherever
 make check runs (host or development container)."""
 
 import hashlib
