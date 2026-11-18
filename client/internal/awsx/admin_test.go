@@ -146,12 +146,16 @@ func TestDoctorReadsWithTheSDK(t *testing.T) {
 	}
 }
 
-// fakePreview answers DescribeStacks, CreateChangeSet and DescribeChangeSet: the change
-// set is in progress at the first read, then complete over two pages, or failed.
+// fakePreview answers DescribeStacks, GetTemplateSummary, CreateChangeSet and
+// DescribeChangeSet: the stack has OldParam, which the new template drops, and the new
+// template adds NewParam (or the summary is denied); the change set is in progress at the first read, then complete
+// over two pages, or failed.
 type fakePreview struct {
-	failReason string
-	create     url.Values
-	reads      int
+	failReason    string
+	summaryDenied bool
+	summary       url.Values
+	create        url.Values
+	reads         int
 }
 
 func (f *fakePreview) serve(t *testing.T) *httptest.Server {
@@ -169,7 +173,20 @@ func (f *fakePreview) serve(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, `<DescribeStacksResponse><DescribeStacksResult><Stacks><member><StackName>elevate</StackName><StackStatus>CREATE_COMPLETE</StackStatus><CreationTime>2026-11-16T09:00:00Z</CreationTime><Parameters>`+
 				`<member><ParameterKey>AdminGroupId</ParameterKey><ParameterValue>g-1</ParameterValue></member>`+
 				`<member><ParameterKey>CodeKey</ParameterKey><ParameterValue>v0.0.1/lambda.zip</ParameterValue></member>`+
+				`<member><ParameterKey>OldParam</ParameterKey><ParameterValue>x</ParameterValue></member>`+
 				`</Parameters></member></Stacks></DescribeStacksResult></DescribeStacksResponse>`)
+		case "GetTemplateSummary":
+			f.summary = form
+			if f.summaryDenied {
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprint(w, `<ErrorResponse><Error><Type>Sender</Type><Code>AccessDenied</Code><Message>not authorized</Message></Error></ErrorResponse>`)
+				return
+			}
+			fmt.Fprint(w, `<GetTemplateSummaryResponse><GetTemplateSummaryResult><Parameters>`+
+				`<member><ParameterKey>AdminGroupId</ParameterKey></member>`+
+				`<member><ParameterKey>CodeKey</ParameterKey></member>`+
+				`<member><ParameterKey>NewParam</ParameterKey></member>`+
+				`</Parameters></GetTemplateSummaryResult></GetTemplateSummaryResponse>`)
 		case "CreateChangeSet":
 			f.create = form
 			fmt.Fprint(w, `<CreateChangeSetResponse><CreateChangeSetResult><Id>cs-1</Id></CreateChangeSetResult></CreateChangeSetResponse>`)
@@ -199,7 +216,7 @@ func previewAdmin(srv *httptest.Server) *Admin {
 	return a
 }
 
-func TestPreviewUpdateKeepsParametersButCodeKeyAndReadsEveryChange(t *testing.T) {
+func TestPreviewUpdateKeepsParametersOfTheNewTemplateButCodeKeyAndReadsEveryChange(t *testing.T) {
 	f := &fakePreview{}
 	srv := f.serve(t)
 	defer srv.Close()
@@ -219,6 +236,9 @@ func TestPreviewUpdateKeepsParametersButCodeKeyAndReadsEveryChange(t *testing.T)
 		c.Get("Parameters.member.1.UsePreviousValue") != "true" || c.Get("Parameters.member.2.ParameterKey") != "" {
 		t.Errorf("request %v", c)
 	}
+	if f.summary.Get("TemplateURL") != "https://example.com/v0.2.0/elevate.yaml" {
+		t.Errorf("summary request %v", f.summary)
+	}
 }
 
 func TestPreviewUpdateWithoutChangesOrFailed(t *testing.T) {
@@ -229,6 +249,12 @@ func TestPreviewUpdateWithoutChangesOrFailed(t *testing.T) {
 	if err != nil || !p.NoChanges {
 		t.Errorf("no changes: %+v %v", p, err)
 	}
+	f = &fakePreview{summaryDenied: true}
+	srv = f.serve(t)
+	if _, err := previewAdmin(srv).PreviewUpdate(context.Background(), "stack-1", "https://example.com/t.yaml"); err == nil || !strings.Contains(err.Error(), "read the new template") {
+		t.Errorf("summary refused: %v", err)
+	}
+	srv.Close()
 	f = &fakePreview{failReason: "S3 error: Access Denied"}
 	srv = f.serve(t)
 	defer srv.Close()
