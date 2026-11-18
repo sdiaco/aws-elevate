@@ -52,6 +52,7 @@ type Grant struct {
 	ApproverGroup   *Ref          `json:"approverGroup"`
 	SourcePs        PermissionSet `json:"sourcePs"`
 	Account         string        `json:"account"`
+	AccountName     string        `json:"accountName"` // the name when requested; empty for older grants
 	DurationSeconds int           `json:"durationSeconds"`
 	Reason          string        `json:"reason"`
 	Privileged      bool          `json:"privileged"`

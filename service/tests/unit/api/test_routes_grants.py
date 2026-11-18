@@ -123,6 +123,15 @@ def test_reason_is_stored_without_surrounding_spaces(make, fx):
     assert routes.create(fx.REQUESTER, {**REQUEST, "reason": "  fix  "})["grant"]["reason"] == "fix"
 
 
+def test_grant_keeps_the_account_name_of_its_rule(make, fx):
+    # The name as it was when requested: history and export show it even if the
+    # account is renamed or leaves the rule later.
+    routes, table, _ = make()
+    view = routes.create(fx.REQUESTER, REQUEST)["grant"]
+    assert view["accountName"] == "prod"
+    assert table.get(view["id"]).account_name == "prod"
+
+
 def test_same_request_twice_is_a_duplicate(make, fx):
     routes, _, _ = make()
     routes.create(fx.REQUESTER, REQUEST)
@@ -416,7 +425,8 @@ def test_grant_view_has_every_contract_key(make, fx):
     routes, _, _ = make(fx.make_grant())
     assert set(routes.get(fx.LEAD, "abcde23456")["grant"]) == {
         "id", "state", "closeReason", "ruleId", "approval", "configVersion", "requester",
-        "approver", "approverGroup", "sourcePs", "account", "durationSeconds", "reason",
+        "approver", "approverGroup", "sourcePs", "account", "accountName",
+        "durationSeconds", "reason",
         "privileged", "createdAt", "activatedAt", "expiresAt", "closedAt", "revokedBy",
         "revokeReason", "rejectReason", "error", "ruleRemoved", "starting", "actions",
         "approvalExpiresAt",
