@@ -32,10 +32,14 @@ func (a *Admin) instance(ctx context.Context) (ssotypes.InstanceMetadata, error)
 		return ssotypes.InstanceMetadata{}, err
 	}
 	if len(out.Instances) == 0 {
-		return ssotypes.InstanceMetadata{}, errors.New("no IAM Identity Center instance visible from this account")
+		return ssotypes.InstanceMetadata{}, ErrNoInstance
 	}
 	return out.Instances[0], nil
 }
+
+// ErrNoInstance means the account sees no Identity Center instance: in the service
+// account, it is no longer the delegated administrator.
+var ErrNoInstance = errors.New("no IAM Identity Center instance visible from this account")
 
 // PermissionSets are the permission sets of the Identity Center instance (design §7.5).
 func (a *Admin) PermissionSets(ctx context.Context) ([]Named, error) {
