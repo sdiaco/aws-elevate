@@ -26,3 +26,6 @@ func TemplateURL(region, v string) (string, error) {
 	}
 	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/v%s/elevate.yaml", bucket, region, v), nil
 }
+
+// Bucket is the release bucket of region, empty where aws-elevate is not published.
+func Bucket(region string) string { return buckets[region] }

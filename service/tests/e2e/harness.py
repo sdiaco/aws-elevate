@@ -412,7 +412,7 @@ def install(session: boto3.Session) -> None:
             "--template-url", template_url(session), "--code-bucket", bucket, "--code-key", key,
             "--admin-group", ADMIN_GROUP, "--requester-group", REQUESTER_GROUP,
             "--auditor-group", AUDITOR_GROUP,
-            "--email", env("ALERT_EMAIL", "user@example.com"),
+            "--email", env("ALERT_EMAIL", "user@example.com"), "--yes",
         ]  # fmt: skip
         log(f"installing {STACK} {PREVIOUS_INFRA} with aws-elevate install")
         started = time.monotonic()

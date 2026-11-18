@@ -31,7 +31,7 @@ func (p *Progress) Update(done, total int) {
 	if !p.animated() {
 		return
 	}
-	elapsed := p.u.now().Sub(p.start).Round(time.Second)
+	elapsed := p.Elapsed()
 	fmt.Fprintf(p.u.out, "\r\x1b[K  %s %s   %s  %d/%d · %s",
 		p.u.paint(cyan, string(spinner[p.frame%len(spinner)])), p.label, bar(done, total), done, total, elapsed)
 	p.frame++
@@ -51,4 +51,15 @@ func bar(done, total int) string {
 		full = min(done, total) * barWidth / total
 	}
 	return strings.Repeat("█", full) + strings.Repeat("░", barWidth-full)
+}
+
+// Elapsed is the time since the progress started, in whole seconds.
+func (p *Progress) Elapsed() time.Duration { return p.u.now().Sub(p.start).Round(time.Second) }
+
+// Fail replaces the line with a failed step.
+func (p *Progress) Fail(label, detail string) {
+	if p.animated() {
+		fmt.Fprint(p.u.out, "\r\x1b[K")
+	}
+	p.u.Fail(label, detail)
 }

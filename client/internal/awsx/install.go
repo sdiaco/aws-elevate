@@ -144,6 +144,16 @@ func (i *Installer) CreateStack(ctx context.Context, s NewStack) (string, error)
 	return aws.ToString(out.StackId), nil
 }
 
+// TemplateResources counts the resources of the template, conditional ones included: the
+// total of the install progress.
+func (i *Installer) TemplateResources(ctx context.Context, templateURL string) (int, error) {
+	out, err := cloudformation.NewFromConfig(i.cfg).GetTemplateSummary(ctx, &cloudformation.GetTemplateSummaryInput{TemplateURL: &templateURL})
+	if err != nil {
+		return 0, fmt.Errorf("read the template %s: %w", templateURL, err)
+	}
+	return len(out.ResourceTypes), nil
+}
+
 // Stack reads the status and the latest page of events. A page is enough between two
 // polls: the stack never logs that many events in a few seconds.
 func (i *Installer) Stack(ctx context.Context, stackID string) (StackState, error) {

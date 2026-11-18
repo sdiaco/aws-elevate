@@ -1,19 +1,17 @@
 package cli
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/release"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -23,12 +21,13 @@ type Installer interface {
 	Groups(ctx context.Context, identityStoreID string) ([]awsx.Group, error)
 	CreateStack(ctx context.Context, s awsx.NewStack) (string, error)
 	Stack(ctx context.Context, stackID string) (awsx.StackState, error)
+	TemplateResources(ctx context.Context, templateURL string) (int, error)
 }
 
 // stackPoll is how often the install reads the stack's progress.
 const stackPoll = 10 * time.Second
 
-const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>]"
+const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--yes]"
 
 // runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
@@ -39,6 +38,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	requesterGroup := f.String("requester-group", "", "name of the group that may request access (ElevateRequester)")
 	auditorGroup := f.String("auditor-group", "", "name of the optional auditor group")
 	email := f.String("email", "", "e-mail address for the alerts")
+	yes := f.Bool("yes", false, "answer yes to the confirmations, for scripts")
 	stackName := f.String("stack-name", "elevate", "stack name, for tests")
 	templateURL := f.String("template-url", "", "template URL, for tests (default: the release bucket of the region)")
 	codeBucket := f.String("code-bucket", "", "bucket of the Lambda package, for tests")
@@ -51,7 +51,8 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		return fmt.Errorf("unexpected argument %q: %w", rest[0], errUsage)
 	}
 	profile := f.awsProfileName(e)
-	in := bufio.NewReader(e.Stdin)
+	u := e.UI()
+	u.Header("aws-elevate install · v" + version.Client)
 
 	src, err := e.Profile(ctx, profile)
 	if err != nil {
@@ -68,14 +69,14 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		if *region == "" {
 			return errors.New("profile " + profile + " has no region: pass --region <Identity Center home region>")
 		}
-		fmt.Fprintf(e.Stdout, "Identity Center region (%s): %s\n", from, *region)
-		answer, err := ask(e, in, "Install there? [y/N] ")
+		ok, err := u.Confirm(fmt.Sprintf("Install in %s, the Identity Center region (%s)?", *region, from), *yes)
 		if err != nil {
 			return err
 		}
-		if !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
+		if !ok {
 			return errors.New("install stopped: run it again with --region <Identity Center home region>")
 		}
+		answered(u, *yes)
 	}
 
 	// Checked even with --template-url: the template refuses an unmapped region too.
@@ -83,8 +84,11 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	template := fmt.Sprintf("official v%s, bucket %s", version.Client, release.Bucket(*region))
 	if *templateURL == "" {
 		*templateURL = officialURL
+	} else {
+		template = "custom " + *templateURL
 	}
 
 	inst, err := e.Installer(ctx, profile, *region)
@@ -95,43 +99,16 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	groups, err := inst.Groups(ctx, where.IdentityStoreID)
-	if err != nil {
+	u.OK("Account", u.Bold(where.Account)+" (Identity Center delegated administrator)")
+	u.OK("Region", *region)
+	u.OK("Template", template)
+
+	stack := awsx.NewStack{Name: *stackName, TemplateURL: *templateURL, Parameters: map[string]string{}}
+	if err := chooseGroups(ctx, u, inst, where, stack.Parameters, *adminGroup, *requesterGroup, *auditorGroup); err != nil {
 		return err
 	}
-	slices.SortFunc(groups, func(a, b awsx.Group) int { return cmp.Compare(a.Name, b.Name) })
-	stack := awsx.NewStack{Name: *stackName, TemplateURL: *templateURL, Parameters: map[string]string{}}
-	picks := []struct {
-		param, label string
-		name         *string
-		optional     bool
-	}{
-		{"AdminGroupId", "Group of admins (ElevateAdmin)", adminGroup, false},
-		{"RequesterGroupId", "Group that may request access (ElevateRequester)", requesterGroup, false},
-		{"AuditorGroupId", "Auditor group, optional", auditorGroup, true},
-	}
-	// With the required groups given as flags the install is unattended: an optional
-	// group not given as a flag means none.
-	unattended := *adminGroup != "" && *requesterGroup != ""
-	listed := false
-	for _, p := range picks {
-		if *p.name == "" && p.optional && unattended {
-			continue
-		}
-		if *p.name == "" && !listed {
-			printGroups(e.Stdout, groups)
-			listed = true
-		}
-		id, err := pickGroup(e, in, groups, p.label, *p.name, p.optional)
-		if err != nil {
-			return err
-		}
-		if id != "" {
-			stack.Parameters[p.param] = id
-		}
-	}
 	if *email == "" {
-		if *email, err = ask(e, in, "E-mail address for the alerts: "); err != nil {
+		if *email, err = u.Ask("Alert e-mail", ""); err != nil {
 			return err
 		}
 	}
@@ -143,19 +120,39 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		stack.Parameters["CodeKey"] = *codeKey
 	}
 
-	fmt.Fprintf(e.Stdout, "Creating stack %s in account %s, %s. It takes a few minutes.\n", stack.Name, where.Account, *region)
+	w := u.Writer()
+	fmt.Fprintf(w, "\n  %s %s\n", u.Bold("Summary"), u.Dim(strings.Repeat("─", 39)))
+	fmt.Fprintf(w, "  Stack %q in %s · %s\n", stack.Name, where.Account, *region)
+	fmt.Fprintln(w, "  Creates: 3 permission sets, private API, Lambda functions, table, rules store")
+	fmt.Fprintln(w, "  Idle cost: 0 $ · remove it with aws-elevate uninstall")
+	ok, err := u.Confirm("Proceed?", *yes)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("install stopped: nothing was created")
+	}
+	fmt.Fprintln(w)
+
+	total, err := inst.TemplateResources(ctx, *templateURL)
+	if err != nil {
+		return err
+	}
 	id, err := inst.CreateStack(ctx, stack)
 	if err != nil {
 		return err
 	}
-	if err := waitStack(ctx, e, inst, id); err != nil {
+	p := u.Progress("Creating stack")
+	if err := waitStack(ctx, e, inst, id, stack.Name, total, p); err != nil {
 		return err
 	}
-	fmt.Fprintf(e.Stdout, "Stack created. Confirm the subscription in the e-mail sent to %s to receive the alerts.\n", *email)
+	p.Done("Stack created", "in "+p.Elapsed().String())
+	if *email != "" {
+		u.Warn("Confirm the subscription in the e-mail sent to " + *email + " to receive the alerts")
+	}
 
 	if src.SSOStartURL == "" {
-		fmt.Fprintln(e.Stdout, "Next: aws-elevate setup --profile <your SSO profile>")
-		return nil
+		return nextSetup(e, u)
 	}
 	if err := runSetup(ctx, e, []string{"--profile", profile, "--account", where.Account}); err != nil {
 		return fmt.Errorf("%w\nThe stack is installed: run aws-elevate setup --profile %s once your access to the new permission sets shows up", err, profile)
@@ -163,46 +160,58 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	return nil
 }
 
-func openInstaller(ctx context.Context, profile, region string) (Installer, error) {
-	return awsx.OpenInstaller(ctx, profile, region)
-}
-
-// ask prints a question and reads one line. A missing answer (end of input) is empty.
-func ask(e *Env, in *bufio.Reader, question string) (string, error) {
-	fmt.Fprint(e.Stdout, question)
-	line, err := in.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read the answer: %w", err)
+// answered separates a question someone typed an answer to from the next step.
+func answered(u *term.UI, yes bool) {
+	if !yes {
+		fmt.Fprintln(u.Writer())
 	}
-	return strings.TrimSpace(line), nil
 }
 
-func printGroups(w io.Writer, groups []awsx.Group) {
-	fmt.Fprintln(w, "Identity Center groups:")
+// chooseGroups fills the group parameters from the flags, else from a choice. With the
+// required groups given as flags the install is unattended: an optional group not given
+// as a flag means none.
+func chooseGroups(ctx context.Context, u *term.UI, inst Installer, where awsx.Installation, params map[string]string, admin, requester, auditor string) error {
+	groups, err := inst.Groups(ctx, where.IdentityStoreID)
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(groups, func(a, b awsx.Group) int { return cmp.Compare(a.Name, b.Name) })
+	items := make([]term.Item, len(groups))
 	for i, g := range groups {
-		fmt.Fprintf(w, "  %d) %s\n", i+1, g.Name)
+		items[i] = term.Item{Title: g.Name}
 	}
+	unattended := admin != "" && requester != ""
+	for _, p := range []struct {
+		param, label, name string
+		optional           bool
+	}{
+		{"AdminGroupId", "Admin group", admin, false},
+		{"RequesterGroupId", "Requester group", requester, false},
+		{"AuditorGroupId", "Auditor group", auditor, true},
+	} {
+		switch {
+		case p.name != "":
+			id, err := groupID(groups, p.name)
+			if err != nil {
+				return err
+			}
+			params[p.param] = id
+		case p.optional && unattended:
+		default:
+			i, err := u.Select(p.label, items, p.optional)
+			if err != nil {
+				return err
+			}
+			if i >= 0 {
+				params[p.param] = groups[i].ID
+			}
+		}
+	}
+	return nil
 }
 
-// pickGroup turns a group name, given as a flag or typed at the prompt as a name or a
-// number of the list, into its id: CloudFormation assigns permission sets by id.
-func pickGroup(e *Env, in *bufio.Reader, groups []awsx.Group, label, name string, optional bool) (string, error) {
-	if name == "" {
-		question := label + " (number or name): "
-		if optional {
-			question = label + " (number or name, empty for none): "
-		}
-		var err error
-		if name, err = ask(e, in, question); err != nil {
-			return "", err
-		}
-		if name == "" && optional {
-			return "", nil
-		}
-		if n, err := strconv.Atoi(name); err == nil && n >= 1 && n <= len(groups) {
-			return groups[n-1].ID, nil
-		}
-	}
+// groupID turns a group name into its id: CloudFormation assigns permission sets by id.
+func groupID(groups []awsx.Group, name string) (string, error) {
 	for _, g := range groups {
 		if g.Name == name {
 			return g.ID, nil
@@ -211,9 +220,28 @@ func pickGroup(e *Env, in *bufio.Reader, groups []awsx.Group, label, name string
 	return "", fmt.Errorf("no group named %q in Identity Center", name)
 }
 
-// waitStack prints each new stack event until the creation ends. On failure it shows the
-// first reason, which is the precheck's message when region or account are wrong.
-func waitStack(ctx context.Context, e *Env, inst Installer, id string) error {
+// nextSetup names the SSO profile to set up when the install ran with another kind of
+// profile, which cannot reach the service.
+func nextSetup(e *Env, u *term.UI) error {
+	names, err := awsx.SSOProfiles(e.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		u.Next("aws-elevate setup --profile <a profile with sso_session>")
+		return nil
+	}
+	u.Next("aws-elevate setup --profile " + names[0] + "   " + u.Dim("(SSO profiles found: "+strings.Join(names, ", ")+")"))
+	return nil
+}
+
+func openInstaller(ctx context.Context, profile, region string) (Installer, error) {
+	return awsx.OpenInstaller(ctx, profile, region)
+}
+
+// waitStack follows the creation on one progress line until it ends. On failure it shows
+// the first reason, which is the precheck's message when region or account are wrong.
+func waitStack(ctx context.Context, e *Env, inst Installer, id, name string, total int, p *term.Progress) error {
 	seen := map[string]bool{}
 	var all []awsx.StackEvent // every event, oldest first: one page may not reach the first failure
 	for {
@@ -222,23 +250,34 @@ func waitStack(ctx context.Context, e *Env, inst Installer, id string) error {
 			return err
 		}
 		for _, ev := range state.Events {
-			if seen[ev.ID] {
-				continue
+			if !seen[ev.ID] {
+				seen[ev.ID] = true
+				all = append(all, ev)
 			}
-			seen[ev.ID] = true
-			all = append(all, ev)
-			fmt.Fprintf(e.Stdout, "  %-40s %s\n", ev.Resource, ev.Status)
 		}
+		p.Update(stackDone(all, name), total)
 		switch state.Status {
 		case "CREATE_COMPLETE":
 			return nil
 		case "DELETE_COMPLETE", "DELETE_FAILED", "ROLLBACK_COMPLETE", "ROLLBACK_FAILED":
+			p.Fail("Stack not created", state.Status)
 			return fmt.Errorf("stack creation failed (%s): %s", state.Status, failureReason(all))
 		}
 		if err := e.Sleep(ctx, stackPoll); err != nil {
 			return err
 		}
 	}
+}
+
+// stackDone counts the resources created so far; the stack's own events are not one.
+func stackDone(events []awsx.StackEvent, stack string) int {
+	done := map[string]bool{}
+	for _, ev := range events {
+		if ev.Status == "CREATE_COMPLETE" && ev.Resource != stack {
+			done[ev.Resource] = true
+		}
+	}
+	return len(done)
 }
 
 func failureReason(events []awsx.StackEvent) string {
