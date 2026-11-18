@@ -118,8 +118,8 @@ def aws():
     ac, table, trail, events = FakeAppConfig(), FakeTable(), FakeTrail(), FakeEvents()
     clock = Clock()
 
-    def container():
-        return ConfigCache(ac, table, trail, events, clock=clock)
+    def container(listed=50):
+        return ConfigCache(ac, table, trail, events, versions_listed=listed, clock=clock)
 
     return ac, table, trail, events, clock, container
 
@@ -268,15 +268,15 @@ def test_versions_lists_versions_newest_first_with_their_record(aws):
     assert listed[1].author == AUTHOR
 
 
-def test_versions_lists_only_the_newest_50_and_reads_no_older_record(aws):
+def test_versions_lists_only_the_newest_ones_and_reads_no_older_record(aws):
     ac, table, _, _, _, container = aws
     ac.docs = {n: VALID for n in range(1, 61)}
-    cache = container()
+    cache = container(listed=20)
     cache.current()
     listed = cache.versions()
-    assert [v.number for v in listed] == list(range(60, 10, -1))
+    assert [v.number for v in listed] == list(range(60, 40, -1))
     # Older versions are never read or recorded: the list stays as fast with thousands.
-    assert all(n not in table.configs for n in range(1, 11))
+    assert all(n not in table.configs for n in range(1, 41))
 
 
 def test_versions_evaluates_a_version_never_seen_without_asking_cloudtrail(aws):

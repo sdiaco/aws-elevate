@@ -179,6 +179,7 @@ def _build_api() -> Api:
         table=table,
         trail=CloudTrail(boto3.client("cloudtrail"), app, profile),
         events=Events(boto3.client("events"), os.environ["EVENT_BUS_NAME"]),
+        versions_listed=int(os.environ["CONFIG_VERSIONS_LISTED"]),
     )
     identity = IdentityResolver(
         roles=IamRoles(boto3.client("iam")),

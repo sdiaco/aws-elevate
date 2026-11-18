@@ -13,7 +13,8 @@ A `null` value marks a field that can be empty; the other examples show it fille
 `cursor`, and at most one of `open=true` (grants not yet closed) or `closed=true` (closed
 grants only, the History view).
 
-`GET /v1/config/versions` lists the newest 50 versions, newest first; an older one is
+`GET /v1/config/versions` lists the newest versions, newest first, as many as the stack
+parameter `ConfigVersionsListed` says (default 50); an older one is
 still readable at `GET /v1/config/versions/{number}`.
 
 `GET /v1/rules?scope=requestable` also lists in `openGrants` the rule and account pairs

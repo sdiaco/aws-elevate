@@ -46,6 +46,13 @@ Parameters:
     Default: 5
     MinValue: 1
     Description: Maximum number of grants not yet closed per user (design §6.1).
+  ConfigVersionsListed:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    Description: >-
+      How many of the newest rules versions the Config versions list shows. Each one
+      listed costs a table read; an older version stays readable by its number.
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
@@ -1364,6 +1371,7 @@ Resources:
           AUDITOR_PS_NAME: ElevateAuditor
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
+          CONFIG_VERSIONS_LISTED: !Ref ConfigVersionsListed
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
           STACK_ID: !Ref AWS::StackId
           ALERTS_TOPIC_ARN: !Ref AlertsTopic
