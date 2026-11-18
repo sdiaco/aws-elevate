@@ -14,7 +14,7 @@ DOCKER_RUN = docker run --rm -i $(shell [ -t 0 ] && echo -t) \
 	$(IMAGE)
 
 .PHONY: help dev-image dev dev-run check check-service check-client test test-service test-client \
-	package build release-upload release-github e2e-up e2e e2e-down e2e-auto e2e-status e2e-pushed
+	package build release-upload release-github e2e-up e2e e2e-down e2e-auto e2e-status e2e-pushed e2e-session
 
 help:
 	@echo "make dev              open a shell in the development container"
@@ -100,16 +100,22 @@ release-github:
 # The approval by a second user is opt-in (manual login): E2E_APPROVAL=1 make e2e-up e2e.
 # Manual UI checks with one user per role (approver, requester, auditor): E2E_USERS=1 make e2e-up.
 # A new stack is installed with the client, built in the container (Go is only there).
-e2e-up: dev-image
+# Every e2e target starts with a live session: an expired token fails before anything is made.
+e2e-session:
+	@aws sts get-caller-identity --profile "$$PROFILE" >/dev/null 2>&1 || { echo "e2e: AWS session expired: aws sso login --profile $$PROFILE" >&2; exit 1; }
+
+e2e-up: e2e-session dev-image
 	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && uv run python tests/e2e/harness.py up
 
 # The CLI tests run the real executable, built in the container (Go is only there).
-e2e: dev-image
+e2e: e2e-session dev-image
 	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && ELEVATE_E2E=1 uv run pytest tests/e2e -v -s -p no:cacheprovider
 
-e2e-down:
+# The stack goes with aws-elevate uninstall, built in the container like for e2e-up.
+e2e-down: e2e-session dev-image
+	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && uv run python tests/e2e/harness.py down
 
 # The end-to-end outcome is a commit status named e2e on the pushed HEAD: the release
@@ -126,7 +132,7 @@ e2e-status: e2e-pushed
 
 # Unattended run for small changes and hotfixes: no second-user approval, no UI check.
 # The org is always torn down.
-e2e-auto: e2e-pushed
+e2e-auto: e2e-pushed e2e-session
 	@if $(MAKE) e2e-up e2e; then outcome=success; else outcome=failure; fi; \
 	$(MAKE) e2e-down || outcome=failure; \
 	$(MAKE) e2e-status STATE=$$outcome DESCRIPTION='make e2e-auto'; \
