@@ -39,10 +39,11 @@ cd "$root"
 (cd "$dir" && sha256sum --quiet -c checksums.txt) || fail "the build of $version does not match its checksums.txt"
 
 # The tested commit is the head of the release pull request; merging it into main makes a
-# new commit with the same tree.
-[ "$(git rev-parse "$tested^{tree}" 2>/dev/null)" = "$(git rev-parse 'HEAD^{tree}')" ] ||
-	fail "commit $tested does not have the tree of HEAD: the end-to-end run did not test this code"
+# new commit with the same tree. Its tree comes from GitHub: the pull request branch is
+# deleted on merge, so a fresh clone may not have the commit.
 repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+[ "$(gh api "repos/$repo/commits/$tested" --jq .commit.tree.sha 2>/dev/null)" = "$(git rev-parse 'HEAD^{tree}')" ] ||
+	fail "commit $tested does not have the tree of HEAD: the end-to-end run did not test this code"
 state=$(gh api "repos/$repo/commits/$tested/status" --jq '.statuses[] | select(.context == "e2e") | .state')
 [ "$state" = success ] ||
 	fail "commit $tested has no successful e2e status (${state:-none}): run make e2e-auto, or the manual checks and make e2e-status"

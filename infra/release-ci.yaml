@@ -7,9 +7,12 @@ Description: >-
 Parameters:
   Repository:
     Type: String
-    Default: sdiaco/aws-elevate
-    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-    Description: GitHub repository (owner/name) whose release workflow may publish.
+    Default: sdiaco@92918675/aws-elevate@1458711832
+    AllowedPattern: "^[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$"
+    Description: >-
+      GitHub repository whose release workflow may publish, as it appears in the OIDC
+      subject: owner@ownerId/name@repoId (GET /repos/{owner}/{repo}/actions/oidc/customization/sub).
+      The ids keep a repository created again under the same name out.
   BucketPrefix:
     Type: String
     Default: aws-elevate-releases-
