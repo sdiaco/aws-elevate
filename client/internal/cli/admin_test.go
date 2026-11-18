@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -351,6 +352,23 @@ func TestDoctorReportsAWSErrorsAndKeepsChecking(t *testing.T) {
 	}
 	if !strings.Contains(lineWith(out, "FAIL rules"), "no valid rules version yet") {
 		t.Fatalf("rules line:\n%s", out)
+	}
+}
+
+func TestDoctorSaysWhenTheAccountIsNoLongerTheDelegatedAdministrator(t *testing.T) {
+	h := adminHarness(t)
+	h.backend.admin.psErr = fmt.Errorf("list: %w", awsx.ErrNoInstance)
+	if code := h.run("admin", "doctor", "--profile", "work"); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	line := lineWith(squash(h.out.String()), "FAIL identity center")
+	for _, want := range []string{
+		"account 111111111111 is no longer the Identity Center delegated administrator",
+		"aws organizations register-delegated-administrator --account-id 111111111111 --service-principal sso.amazonaws.com",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("line misses %q:\n%s", want, h.out)
+		}
 	}
 }
 

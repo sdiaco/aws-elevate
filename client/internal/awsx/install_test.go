@@ -116,6 +116,18 @@ func TestInstallCheckRefusesWrongRegionAndAccount(t *testing.T) {
 	}
 }
 
+func TestInstallCheckSaysHowToRegisterTheDelegatedAdministrator(t *testing.T) {
+	register := "aws organizations register-delegated-administrator --account-id 111111111111 --service-principal sso.amazonaws.com"
+	for _, f := range []*fakeInstallAWS{{noInstance: true}, {notDelegate: true}} {
+		srv := f.serve(t)
+		_, err := installerFor(srv).Check(context.Background())
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), register) {
+			t.Errorf("err %v", err)
+		}
+	}
+}
+
 func TestInstallListsEveryGroup(t *testing.T) {
 	srv := (&fakeInstallAWS{}).serve(t)
 	defer srv.Close()

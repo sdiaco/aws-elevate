@@ -61,6 +61,13 @@ func OpenInstaller(ctx context.Context, profile, region string) (*Installer, err
 	return &Installer{cfg: cfg}, nil
 }
 
+// RegisterHint tells how to make account the Identity Center delegated administrator
+// (design §4), the only organization prerequisite.
+func RegisterHint(account string) string {
+	return "To make it the delegated administrator, run once from the management account: " +
+		"aws organizations register-delegated-administrator --account-id " + account + " --service-principal sso.amazonaws.com"
+}
+
 // Check makes the precheck of the stack before creating it, for a faster and clearer
 // answer: the region must hold the Identity Center instance and the account must be its
 // delegated administrator. The stack checks again on its own.
@@ -77,7 +84,7 @@ func (i *Installer) Check(ctx context.Context) (Installation, error) {
 	}
 	if len(inst.Instances) == 0 {
 		return Installation{}, fmt.Errorf("no IAM Identity Center instance visible in %s from account %s: "+
-			"use the Identity Center home region (--region) and its delegated administrator account", i.cfg.Region, account)
+			"use the Identity Center home region (--region) and its delegated administrator account. %s", i.cfg.Region, account, RegisterHint(account))
 	}
 	org, err := organizations.NewFromConfig(i.cfg).DescribeOrganization(ctx, &organizations.DescribeOrganizationInput{})
 	if err != nil {
@@ -88,7 +95,7 @@ func (i *Installer) Check(ctx context.Context) (Installation, error) {
 	}
 	_, err = sso.ListPermissionSets(ctx, &ssoadmin.ListPermissionSetsInput{InstanceArn: inst.Instances[0].InstanceArn, MaxResults: aws.Int32(1)})
 	if err != nil {
-		return Installation{}, fmt.Errorf("account %s is not the Identity Center delegated administrator, or the profile cannot administer Identity Center: %w", account, err)
+		return Installation{}, fmt.Errorf("account %s is not the Identity Center delegated administrator, or the profile cannot administer Identity Center (%w). %s", account, err, RegisterHint(account))
 	}
 	return Installation{Account: account, IdentityStoreID: aws.ToString(inst.Instances[0].IdentityStoreId)}, nil
 }

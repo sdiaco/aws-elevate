@@ -320,6 +320,14 @@ func checkStack(ctx context.Context, s *adminSession) finding {
 
 func checkServicePermissionSets(ctx context.Context, s *adminSession) finding {
 	names, err := s.aws.PermissionSetNames(ctx)
+	if errors.Is(err, awsx.ErrNoInstance) {
+		account := "<service account>"
+		if parts := strings.Split(s.inst.StackID, ":"); len(parts) == 6 {
+			account = parts[4]
+		}
+		return finding{checkFail, "identity center", "account " + account + " is no longer the Identity Center delegated administrator: " +
+			"nothing can be granted or revoked. " + awsx.RegisterHint(account)}
+	}
 	if err != nil {
 		return finding{checkFail, "permission sets", err.Error()}
 	}
