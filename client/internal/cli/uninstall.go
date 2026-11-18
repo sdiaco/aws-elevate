@@ -106,8 +106,7 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 }
 
 func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProfile, history, exportDir string) error {
-	// A stack being deleted, or whose deletion failed, has no service to ask any more.
-	live := left.Stack != nil && !strings.HasPrefix(left.Stack.Status, "DELETE_")
+	live := left.Stack != nil && serviceRuns(left.Stack.Status)
 	var svc Service
 	if live {
 		var err error
@@ -141,6 +140,11 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 		}
 	}
 	if left.Stack != nil {
+		if live {
+			if _, err := r.openGrantsCheck(ctx, elevateProfile); err != nil {
+				return err
+			}
+		}
 		if err := r.deleteStack(ctx, left.Stack); err != nil {
 			return err
 		}
@@ -152,8 +156,24 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	}
 	r.u.Warn("If you installed the SCP stack, it lives in the management account: run there",
 		"aws cloudformation delete-stack --stack-name elevate-guardrails")
-	if err := r.deleteOrphans(ctx, left.Orphans); err != nil {
+	// A grant opened while the questions were answered leaves its permission set behind.
+	now, err := r.un.Leftovers(ctx)
+	if err != nil {
 		return err
+	}
+	if err := r.deleteOrphans(ctx, now.Orphans); err != nil {
+		return err
+	}
+	if left.Empty() {
+		ok, err := r.u.Confirm(fmt.Sprintf("Nothing of stack %s found in %s: remove the local grant profiles and settings anyway?", r.stack, r.account), r.yes)
+		if err != nil {
+			return err
+		}
+		answered(r.u, r.yes)
+		if !ok {
+			r.u.Warn("Local files kept: check --stack-name, --region and --profile")
+			return nil
+		}
 	}
 	if err := r.removeLocalFiles(); err != nil {
 		return err
@@ -227,7 +247,7 @@ func (r *uninstallRun) chooseHistory(flag string, live bool) (string, error) {
 	if !live {
 		r.u.Warn("The stack is gone: the history can no longer be exported")
 		if flag == historyExport {
-			return "", errors.New("--history export needs the stack: keep or delete the history")
+			return "", errors.New("--history export needs the stack: if an earlier run exported it, check the folder and rerun with --history delete; otherwise use --history keep")
 		}
 	}
 	if flag != "" {
@@ -307,6 +327,16 @@ func (r *uninstallRun) deleteStack(ctx context.Context, info *awsx.StackInfo) er
 	}
 }
 
+// serviceRuns says whether the stack serves requests: not while it is deleted, and not
+// after a failed install, which rolled the API back.
+func serviceRuns(status string) bool {
+	switch status {
+	case "CREATE_FAILED", "ROLLBACK_IN_PROGRESS", "ROLLBACK_COMPLETE", "ROLLBACK_FAILED":
+		return false
+	}
+	return !strings.HasPrefix(status, "DELETE_")
+}
+
 // stackDeleted counts the resources gone so far; retained ones are skipped, not deleted.
 func stackDeleted(events []awsx.StackEvent, stack string) int {
 	done := map[string]bool{}
@@ -319,7 +349,7 @@ func stackDeleted(events []awsx.StackEvent, stack string) int {
 }
 
 func deleteFailure(events []awsx.StackEvent) string {
-	for _, ev := range events {
+	for _, ev := range slices.Backward(events) { // oldest first: the last failure is this attempt's
 		if ev.Status == "DELETE_FAILED" && ev.Reason != "" {
 			return ev.Resource + ": " + ev.Reason
 		}

@@ -442,3 +442,98 @@ func TestUninstallWithoutTerminalNeedsYes(t *testing.T) {
 		t.Errorf("changed %v", un.calls)
 	}
 }
+
+func TestUninstallAfterAFailedInstallDoesNotAskTheService(t *testing.T) {
+	for _, status := range []string{"ROLLBACK_COMPLETE", "ROLLBACK_FAILED", "CREATE_FAILED"} {
+		h := newHarness(t)
+		left := installedEverything()
+		left.Stack = &awsx.StackInfo{ID: "arn:stack/elevate/1", Status: status, Resources: 42}
+		un := &fakeUninstaller{left: left}
+		h.withUninstaller(un, "")
+		h.svc.err = errors.New("the service must not be asked")
+
+		if code := uninstall(h, "--history", "delete", "--yes"); code != 0 {
+			t.Fatalf("%s: exit %d: %s", status, code, h.errOut)
+		}
+		if !slices.Equal(un.calls, []string{"delete stack", "delete table", "delete rules app1"}) {
+			t.Errorf("%s: calls %v", status, un.calls)
+		}
+	}
+}
+
+func TestUninstallChecksOpenGrantsAgainBeforeDeletingTheStack(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	h.withUninstaller(un, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	h.svc.openNext = []api.Grant{grantFor("a000000002")} // opened while the questions were answered
+
+	if code := uninstall(h, "--history", "delete", "--yes"); code != 1 {
+		t.Fatalf("exit %d, want 1: %s", code, h.errOut)
+	}
+	if len(un.calls) != 0 {
+		t.Errorf("changed %v", un.calls)
+	}
+	if !strings.Contains(h.out.String()+h.errOut.String(), "a000000002") {
+		t.Errorf("out %s", h.out)
+	}
+}
+
+func TestUninstallStopsBeforeTheStackWhenTheExportFails(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	h.withUninstaller(un, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	h.svc.versions = &api.ConfigVersions{Versions: []api.VersionInfo{{Number: 1}}}
+	h.svc.docs = map[int]string{} // version 1 cannot be read
+	dir := filepath.Join(t.TempDir(), "history")
+
+	if code := uninstall(h, "--history", "export", "--export-dir", dir, "--yes"); code == 0 {
+		t.Fatal("exit 0 with a failed export")
+	}
+	if len(un.calls) != 0 {
+		t.Errorf("deleted after a failed export: %v", un.calls)
+	}
+}
+
+func TestUninstallAsksBeforeRemovingLocalFilesWhenNothingWasFound(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{}
+	h.withUninstaller(un, "n\n")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+
+	if code := uninstall(h, "--stack-name", "typo"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if _, err := os.Stat(h.env.SettingsPath); err != nil {
+		t.Errorf("settings removed without confirmation: %v", err)
+	}
+	if !strings.Contains(h.out.String(), "Nothing of stack typo found in 111111111111") {
+		t.Errorf("out %s", h.out)
+	}
+}
+
+func TestUninstallDeletesOrphansFoundAfterTheStack(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	un.onDeleteStack = func() { un.left.Orphans = everythingLeft.Orphans }
+	h.withUninstaller(un, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+
+	if code := uninstall(h, "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !slices.Equal(un.calls, []string{"delete stack", "delete JIT-abcde12345"}) {
+		t.Errorf("calls %v", un.calls)
+	}
+}
+
+func TestDeleteFailureNamesTheLastAttempt(t *testing.T) {
+	events := []awsx.StackEvent{ // oldest first
+		{Resource: "Api", Status: "DELETE_FAILED", Reason: "earlier attempt"},
+		{Resource: "Table", Status: "DELETE_FAILED", Reason: "this attempt"},
+	}
+	if got := deleteFailure(events); got != "Table: this attempt" {
+		t.Errorf("got %q", got)
+	}
+}

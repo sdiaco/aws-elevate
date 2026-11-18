@@ -18,6 +18,7 @@ import (
 type fakeUninstallAWS struct {
 	stack     bool
 	table     bool
+	deleting  bool // the table answers TableStatus DELETING
 	app       bool
 	versions  []int
 	permSets  map[string]string // arn → name
@@ -74,7 +75,11 @@ func (f *fakeUninstallAWS) serve(t *testing.T) *httptest.Server {
 				f.calls = append(f.calls, "table")
 				f.table = false
 			}
-			fmt.Fprint(w, `{"Table":{"TableName":"elevate-grants"}}`)
+			if f.deleting {
+				fmt.Fprint(w, `{"Table":{"TableName":"elevate-grants","TableStatus":"DELETING"}}`)
+				return
+			}
+			fmt.Fprint(w, `{"Table":{"TableName":"elevate-grants","TableStatus":"ACTIVE"}}`)
 		case r.Method == http.MethodGet && path == "/applications":
 			if f.app {
 				fmt.Fprint(w, `{"Items":[{"Id":"other","Name":"elevate-e2e"},{"Id":"app1","Name":"elevate"}]}`)
@@ -257,5 +262,18 @@ func TestDeleteStack(t *testing.T) {
 	defer srv.Close()
 	if err := uninstallerFor(srv).DeleteStack(context.Background()); err != nil || strings.Join(f.calls, ",") != "stack elevate" {
 		t.Errorf("%v %v", err, f.calls)
+	}
+}
+
+func TestLeftoversTreatsATableBeingDeletedAsGone(t *testing.T) {
+	f := &fakeUninstallAWS{table: true, deleting: true}
+	srv := f.serve(t)
+	defer srv.Close()
+	got, err := uninstallerFor(srv).Leftovers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Table {
+		t.Error("a table being deleted is listed as left")
 	}
 }

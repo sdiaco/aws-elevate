@@ -447,3 +447,18 @@ func TestRemoveSettingsDeletesTheFileAndItsEmptyFolder(t *testing.T) {
 		t.Errorf("second run removed %v, err %v", removed, err)
 	}
 }
+
+func TestRemoveManagedBlockIgnoresMarkersInsideOtherLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[default]\n# copied: " + blockBegin + "\nregion = eu-west-1\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveManagedBlock(path)
+	if err != nil || removed {
+		t.Errorf("removed %v, err %v", removed, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != doc {
+		t.Errorf("rewritten: %q", data)
+	}
+}

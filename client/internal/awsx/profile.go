@@ -205,9 +205,12 @@ func RemoveManagedBlock(path string) (bool, error) {
 	if !strings.Contains(doc, blockBegin) && !strings.Contains(doc, blockEnd) {
 		return false, nil
 	}
-	outside, _, err := splitBlock(doc)
+	outside, block, err := splitBlock(doc)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	if outside == doc && block == "" {
+		return false, nil // the markers appear only inside other lines
 	}
 	outside = strings.TrimRight(outside, "\n")
 	if outside != "" {

@@ -133,7 +133,7 @@ func (u *Uninstaller) stackInfo(ctx context.Context) (*StackInfo, error) {
 
 func (u *Uninstaller) tableExists(ctx context.Context) (bool, error) {
 	name := u.tableName()
-	_, err := dynamodb.NewFromConfig(u.cfg).DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &name})
+	out, err := dynamodb.NewFromConfig(u.cfg).DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &name})
 	var missing *ddbtypes.ResourceNotFoundException
 	if errors.As(err, &missing) {
 		return false, nil
@@ -141,7 +141,8 @@ func (u *Uninstaller) tableExists(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("read table %s: %w", name, err)
 	}
-	return true, nil
+	// DeleteTable returns while the table is still being deleted; it is gone for us.
+	return out.Table.TableStatus != ddbtypes.TableStatusDeleting, nil
 }
 
 func (u *Uninstaller) rulesApp(ctx context.Context) (string, error) {
