@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/release"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -77,6 +78,15 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		}
 	}
 
+	// Checked even with --template-url: the template refuses an unmapped region too.
+	officialURL, err := release.TemplateURL(*region, version.Client)
+	if err != nil {
+		return err
+	}
+	if *templateURL == "" {
+		*templateURL = officialURL
+	}
+
 	inst, err := e.Installer(ctx, profile, *region)
 	if err != nil {
 		return err
@@ -131,9 +141,6 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	}
 	if *codeKey != "" {
 		stack.Parameters["CodeKey"] = *codeKey
-	}
-	if stack.TemplateURL == "" {
-		stack.TemplateURL = fmt.Sprintf("https://elevate-releases-%s.s3.%s.amazonaws.com/v%s/elevate.yaml", *region, *region, version.Client)
 	}
 
 	fmt.Fprintf(e.Stdout, "Creating stack %s in account %s, %s. It takes a few minutes.\n", stack.Name, where.Account, *region)

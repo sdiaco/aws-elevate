@@ -19,7 +19,7 @@ Parameters:
     Default: ""
     Description: >-
       S3 bucket with the Lambda package. Empty means the official release bucket of this
-      region, elevate-releases-<region>.
+      region (ReleaseBuckets).
   CodeKey:
     Type: String
     Default: v0.0.1/lambda.zip
@@ -53,6 +53,17 @@ Parameters:
     Description: >-
       How many of the newest rules versions the Config versions list shows. Each one
       listed costs a table read; an older version stays readable by its number.
+
+# Regions where aws-elevate is published and their release buckets
+# (contract/release-buckets.json). The bucket is never derived from the region name: in a
+# region without a published release someone else could own that name. A region missing
+# here stops the stack before anything is created.
+Mappings:
+  ReleaseBuckets:
+    eu-west-1:
+      Bucket: elevate-releases-eu-west-1
+    us-east-1:
+      Bucket: elevate-releases-us-east-1
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
@@ -105,7 +116,7 @@ Resources:
       Role: !GetAtt PrecheckRole.Arn
       Timeout: 30
       Code:
-        S3Bucket: !If [OfficialCode, !Sub "elevate-releases-${AWS::Region}", !Ref CodeBucket]
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
         S3Key: !Ref CodeKey
       LoggingConfig:
         LogGroup: !Ref PrecheckLogs
@@ -356,7 +367,7 @@ Resources:
       Timeout: 300
       MemorySize: 256
       Code:
-        S3Bucket: !If [OfficialCode, !Sub "elevate-releases-${AWS::Region}", !Ref CodeBucket]
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
         S3Key: !Ref CodeKey
       LoggingConfig:
         LogGroup: !Ref EngineLogs
@@ -1354,7 +1365,7 @@ Resources:
       Timeout: 29
       MemorySize: 256
       Code:
-        S3Bucket: !If [OfficialCode, !Sub "elevate-releases-${AWS::Region}", !Ref CodeBucket]
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
         S3Key: !Ref CodeKey
       LoggingConfig:
         LogGroup: !Ref ApiLogs
@@ -1564,7 +1575,9 @@ Resources:
             Resource: !Ref AWS::StackId
             Condition:
               StringLike:
-                cloudformation:TemplateUrl: !Sub https://elevate-releases-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/*
+                cloudformation:TemplateUrl: !Sub
+                  - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/*
+                  - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
           # The preview passes only the parameters the new template declares. A summary
           # of a template URL names no stack, so it cannot be scoped to this stack's ARN.
           - Sid: ReadReleaseTemplateParameters
@@ -1573,11 +1586,15 @@ Resources:
             Resource: "*"
             Condition:
               StringLike:
-                cloudformation:TemplateUrl: !Sub https://elevate-releases-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/*
+                cloudformation:TemplateUrl: !Sub
+                  - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/*
+                  - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
           - Sid: ReadReleaseTemplates
             Effect: Allow
             Action: s3:GetObject
-            Resource: !Sub arn:${AWS::Partition}:s3:::elevate-releases-${AWS::Region}/*
+            Resource: !Sub
+              - arn:${AWS::Partition}:s3:::${Bucket}/*
+              - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
           - Sid: DoctorTopics
             Effect: Allow
             Action: sns:ListSubscriptionsByTopic

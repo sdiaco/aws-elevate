@@ -118,7 +118,10 @@ func previewInfra(ctx context.Context, aws AdminAWS, stackID, v string) (awsx.Pr
 	if err != nil {
 		return awsx.Preview{}, "", err
 	}
-	url := fmt.Sprintf("https://elevate-releases-%s.s3.%s.amazonaws.com/v%s/elevate.yaml", region, region, v)
+	url, err := release.TemplateURL(region, v)
+	if err != nil {
+		return awsx.Preview{}, "", err
+	}
 	p, err := aws.PreviewUpdate(ctx, stackID, url)
 	if err != nil {
 		return awsx.Preview{}, "", err
