@@ -1,7 +1,7 @@
 """Entry point of the `api` Lambda behind API Gateway (one proxy resource under /v1).
 
-Order of every call: client version (426 if too old), identity from the signature
-(design §8.1), then the route. Every answer carries the version headers, and every
+Order of every call: client version (426 if too old), identity from the signature,
+then the route. Every answer carries the version headers, and every
 error has the contract format {"error": <code>, "message": ...}."""
 
 import json

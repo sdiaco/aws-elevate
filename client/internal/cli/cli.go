@@ -1,4 +1,4 @@
-// Package cli is the command line of aws-elevate (design §10). It parses arguments,
+// Package cli is the command line of aws-elevate. It parses arguments,
 // calls the service and prints what comes back; every decision on grants and rules is
 // taken by the service.
 package cli

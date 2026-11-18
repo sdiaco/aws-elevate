@@ -1,4 +1,4 @@
-"""Who can do what on a grant (design §3.3, §11.2)."""
+"""Who can do what on a grant."""
 
 import pytest
 
@@ -72,7 +72,7 @@ def test_pending(identity, expected):
 @pytest.mark.parametrize("identity", [SELF, LEAD, ADMIN_IN_GROUP, AUDITOR])
 def test_pending_without_its_wait_token_is_starting_and_offers_no_decision(identity):
     # Approve, reject and cancel end the wait with its token: until the execution has
-    # stored it, a decision could only fail with not_ready (design §6.2).
+    # stored it, a decision could only fail with not_ready.
     assert actions(identity, grant(task_token=None)) == {"view"}
 
 

@@ -40,7 +40,7 @@ type App struct {
 	Me      api.Me
 	Service Service
 	// Ready waits until AWS accepts the grant's role, writes its CLI profile and returns
-	// the profile name (spike C12: the role works 7–9 s after activation).
+	// the profile name (measured: the role works 7–9 s after activation).
 	Ready func(ctx context.Context, g api.Grant) (string, error)
 	// Console is the address that opens the AWS console with the grant's role.
 	Console func(g api.Grant) string

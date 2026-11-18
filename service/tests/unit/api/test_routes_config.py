@@ -1,4 +1,4 @@
-"""Rules version routes (design §7.3, §11.2): list with date and author, and content of
+"""Rules version routes: list with date and author, and content of
 one version. Admin and auditor only, so the auditor sees the history without AWS access."""
 
 import pytest

@@ -13,7 +13,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/ui"
 )
 
-// uiIdle closes the interface left unused (design §8.6).
+// uiIdle closes the interface left unused.
 var uiIdle = 30 * time.Minute
 
 func runUI(ctx context.Context, e *Env, args []string) error {
@@ -39,7 +39,7 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 		return err
 	}
 	var admin ui.Admin
-	if me.Installation != nil { // only ElevateAdmin gets it (design §7.2)
+	if me.Installation != nil { // only ElevateAdmin gets it
 		aws, err := b.Admin(ctx, target)
 		if err != nil {
 			return err

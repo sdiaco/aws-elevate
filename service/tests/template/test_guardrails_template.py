@@ -1,10 +1,10 @@
-"""infra/elevate-guardrails.yaml, the optional SCP stack of the management account (design
-§8.4, spikes S16, S21). Only template tests: activating SCPs in the test organization is
+"""infra/elevate-guardrails.yaml, the optional SCP stack of the management account.
+Only template tests: activating SCPs in the test organization is
 the owner's call.
 
 Exemptions are exact role ARNs, or the deployer patterns the installer passes (reserved
 AWSReservedSSO_* names, which no one can create): a role named like a service role cannot
-bypass the policy (finding of the phase B2 review), and IAM on role/elevate/* is denied to
+bypass the policy, and IAM on role/elevate/* is denied to
 everyone else, so no one can make or change such a role."""
 
 import json
@@ -75,13 +75,13 @@ def test_task_tokens_are_left_only_to_the_api_role_and_the_deployers():
         "states:SendTaskFailure",
         "states:SendTaskHeartbeat",
     }
-    # SendTask* has no resource-level permissions (spike B2 tested Resource *).
+    # SendTask* has no resource-level permissions (measured with Resource *).
     assert s["Resource"] == "*"
     runtime_exempt_ok(s)
 
 
 def test_executions_of_elevate_only_are_left_to_the_api_role_and_the_deployers():
-    # Other teams share the account (design §8.4): their state machines stay untouched.
+    # Other teams share the account: their state machines stay untouched.
     s = statements()["ProtectExecutions"]
     assert actions(s) == {
         "states:StartExecution",

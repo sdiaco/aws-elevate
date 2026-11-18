@@ -63,7 +63,7 @@ class Engine:
     def snapshot(self, grant_id: str) -> dict:
         return {"grant": snapshot(self._get(grant_id))}
 
-    # ---------- waits (design §6.2) ----------
+    # ---------- waits ----------
 
     def store_token(self, grant_id: str, token: str) -> dict:
         """Save the token of the current wait (approval or active). A closed grant needs
@@ -93,7 +93,7 @@ class Engine:
             raise InvalidState(f"grant {grant_id} is {grant.state} after the approval wait")
         return {"grant": snapshot(grant), "decision": decision}
 
-    # ---------- activation (design §6.3) ----------
+    # ---------- activation ----------
 
     def activate(self, grant_id: str) -> dict:
         grant = self._get(grant_id)
@@ -125,7 +125,7 @@ class Engine:
         if errors:
             raise ActivationFailed("; ".join(errors))
         # A version published without the check must still not reach the management or the
-        # service account: a grant there could tamper with aws-elevate (design §7.5).
+        # service account: a grant there could tamper with aws-elevate.
         if grant.account in self._reserved_accounts:
             raise ActivationFailed(
                 f"account {grant.account} is reserved to aws-elevate (management or service "
@@ -186,7 +186,7 @@ class Engine:
         except StateConflict:
             pass  # the grant moved on; the revocation path closes it with its own state
 
-    # ---------- revocation (design §6.4) ----------
+    # ---------- revocation ----------
 
     def revoke(self, grant_id: str) -> dict:
         """End access and clean up: expiry, early revocation, failed activation and
@@ -195,7 +195,7 @@ class Engine:
         if grant.state == State.CLOSED:
             return self._closed(grant)
         # A redrive leaves revoke_failed only once the cleanup succeeds, so the record
-        # never hides a revocation that is still failing (design §6.5).
+        # never hides a revocation that is still failing.
         redrive = grant.state == State.REVOKE_FAILED
         if not redrive:
             grant = self._enter_revoking(grant)
@@ -252,7 +252,7 @@ class Engine:
         return {"grant": snapshot(grant), "closeReason": grant.close_reason.value}
 
     def mark_revoke_failed(self, grant_id: str) -> dict:
-        """Revocation kept failing: the grant needs an operator (design §6.5)."""
+        """Revocation kept failing: the grant needs an operator."""
         grant = self._get(grant_id)
         if grant.state == State.REVOKING:
             error = grant.error or "revocation failed after retries; see the execution history"

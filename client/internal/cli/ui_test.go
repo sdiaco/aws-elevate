@@ -83,7 +83,7 @@ func TestUINeedsSetup(t *testing.T) {
 }
 
 func TestUIAdminNeverOffersTheServiceAccount(t *testing.T) {
-	// A grant in the account running aws-elevate could tamper with it (design §7.5); the
+	// A grant in the account running aws-elevate could tamper with it; the
 	// service refuses it too, the form just does not list it.
 	h := newHarness(t)
 	adm := &fakeAdmin{accounts: []awsx.Named{{ID: "111111111111", Name: "shared-services"}, {ID: "222222222222", Name: "prod"}}}

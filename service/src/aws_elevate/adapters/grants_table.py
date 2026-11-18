@@ -23,7 +23,7 @@ from ..core.models import (
 )
 from ..core.times import iso, parse_iso
 
-RETENTION_MONTHS = 13  # design §11.3
+RETENTION_MONTHS = 13
 
 
 class Duplicate(Exception):
@@ -391,7 +391,7 @@ class GrantsTable:
             raise
         return True
 
-    # ---------- reads by index, newest first (design §11.3: never a Scan) ----------
+    # ---------- reads by index, newest first (never a Scan) ----------
 
     def by_user(self, user_id, start, end, limit, after, status=None):
         return self._page("byUser", "gsi1", f"USER#{user_id}", (start, end), limit, after, status)
@@ -466,7 +466,7 @@ class GrantsTable:
                 return rows
             params["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
-    # ---------- config versions (design §7.1, §7.3) ----------
+    # ---------- config versions ----------
 
     def get_config(self, version: int) -> ConfigVersion | None:
         resp = self._db.get_item(

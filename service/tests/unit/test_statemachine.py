@@ -62,7 +62,7 @@ def test_every_target_exists_and_every_state_is_reachable():
 
 
 def test_no_fail_state_and_no_catch_into_one():
-    # A Catch ending in a Fail state makes redrive accept and retry nothing (spike C8).
+    # A Catch ending in a Fail state makes redrive accept and retry nothing.
     assert all(s["Type"] != "Fail" for s in STATES.values())
 
 
@@ -189,7 +189,7 @@ def test_render_is_json():
     assert json.loads(render(ENGINE, BUS)) == SM
 
 
-# ---------- security boundary (design §4.3) ----------
+# ---------- security boundary ----------
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "aws_elevate"
 

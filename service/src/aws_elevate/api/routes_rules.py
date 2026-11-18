@@ -1,7 +1,7 @@
-"""Rule routes of api (design §5.4, §7.1, §7.5, §11.2).
+"""Rule routes of api.
 
 Only api reads the permission sets: ElevateRequester cannot read Identity Center, and the
-limits of §5.4 depend on the permission set content, so the check before publishing lives
+rule limits depend on the permission set content, so the check before publishing lives
 here, in one place, for both UI and CLI."""
 
 import re
@@ -61,7 +61,7 @@ def _rule_errors(rule: Rule, source: SourcePs | None) -> list[dict]:
             "Elevate* service sets): choose another one"
         )
         return [_entry(rule.id, "reserved", message)]
-    # Same check the engine runs at activation (design §5.4).
+    # Same check the engine runs at activation.
     limits = check_limits(
         build_inline(source.inline, _SAMPLE_EXPIRY),
         len(source.managed) + len(source.customer_managed),
@@ -81,7 +81,7 @@ def _content(source: SourcePs) -> dict:
 
 def _reserved_account_errors(rule: Rule, reserved: frozenset[str]) -> list[dict]:
     # A grant in the management or the service account could tamper with aws-elevate
-    # itself (design §7.5).
+    # itself.
     return [
         _entry(
             rule.id,
@@ -108,7 +108,7 @@ class RuleRoutes:
 
     def _open_grants(self, identity: Identity, rules: list[Rule]) -> list[dict]:
         """Rule and account pairs a new request would be refused on as duplicate: the
-        caller has an open grant there on the same permission set (design §11.2)."""
+        caller has an open grant there on the same permission set."""
         held = {(g.source_ps.arn, g.account): g for g in self._table.open_of(identity.user_id)}
         out = []
         for rule in rules:
@@ -127,7 +127,7 @@ class RuleRoutes:
 
     def list(self, identity: Identity, query: dict) -> dict:
         """Admins and auditors see every rule; scope=requestable keeps only what the caller
-        can request, for the Request view (design §11.2)."""
+        can request, for the Request view."""
         if query not in ({}, {"scope": "requestable"}):
             raise ApiError(400, "invalid_request", "the only query is scope=requestable")
         version, rules = self._config.current()
@@ -143,7 +143,7 @@ class RuleRoutes:
         rule = next((r for r in rules if r.id == rule_id), None)
         if rule is None:
             raise ApiError(404, "not_found", f"no rule {rule_id}")
-        # Approvers read what they grant even when they cannot request it (design §11.2).
+        # Approvers read what they grant even when they cannot request it.
         approver = rule.approver_group is not None and rule.approver_group.id in identity.group_ids
         if not approver and rule not in self._visible(identity, rules):
             raise forbidden(f"rule {rule_id} is not one you can request or approve")
@@ -159,8 +159,8 @@ class RuleRoutes:
         return _content(source)
 
     def ps_permissions(self, identity: Identity, query: dict) -> dict:
-        """What a permission set contains, for the Rules form before any rule uses it
-        (design §7.5). Same answer as a rule's permissions; administrators only."""
+        """What a permission set contains, for the Rules form before any rule uses it.
+        Same answer as a rule's permissions; administrators only."""
         if not identity.is_admin:
             raise forbidden("only an administrator can read a permission set by ARN")
         arn = query.get("arn", "")

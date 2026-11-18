@@ -45,7 +45,7 @@ Parameters:
     Type: Number
     Default: 5
     MinValue: 1
-    Description: Maximum number of grants not yet closed per user (design §6.1).
+    Description: Maximum number of grants not yet closed per user.
   ConfigVersionsListed:
     Type: Number
     Default: 50
@@ -72,7 +72,7 @@ Conditions:
 
 Resources:
   # ---------------------------------------------------------------------------
-  # Precheck: runs first, every other resource depends on it (design §12.1).
+  # Precheck: runs first, every other resource depends on it.
   # ---------------------------------------------------------------------------
   PrecheckRole:
     Type: AWS::IAM::Role
@@ -129,7 +129,7 @@ Resources:
       ServiceTimeout: 60
 
   # ---------------------------------------------------------------------------
-  # Grants table (design §4.3, §8.3, §11.3)
+  # Grants table
   # ---------------------------------------------------------------------------
   GrantsTable:
     Type: AWS::DynamoDB::Table
@@ -176,7 +176,7 @@ Resources:
         PolicyDocument:
           Version: "2012-10-17"
           Statement:
-            # Only the service roles, by exact ARN, read or write grant data (design §8.3).
+            # Only the service roles, by exact ARN, read or write grant data.
             # Wildcards would let anyone able to create a role with a matching name in.
             # Control-plane actions stay open so CloudFormation can update the table.
             - Sid: OnlyServiceRolesTouchData
@@ -207,7 +207,7 @@ Resources:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/elevate/${AWS::StackName}-api
 
   # ---------------------------------------------------------------------------
-  # Rules (design §7.1). Published by admins through ElevateAdmin, read by api and engine.
+  # Rules. Published by admins through ElevateAdmin, read by api and engine.
   # ---------------------------------------------------------------------------
   RulesApplication:
     Type: AWS::AppConfig::Application
@@ -227,14 +227,14 @@ Resources:
       LocationUri: hosted
       Type: AWS.Freeform
       # Same content as infra/rules.schema.json (a test keeps them equal). AppConfig
-      # applies it only through ValidateConfiguration, which api calls (spike C).
+      # applies it only through ValidateConfiguration, which api calls.
       Validators:
         - Type: JSON_SCHEMA
           Content: '{"$schema":"http://json-schema.org/draft-04/schema#","title":"aws-elevate rules","description":"Same constraints as the service parser, except default <= max, unique rule ids and unique accounts, which draft-04 cannot express.","type":"object","additionalProperties":false,"required":["schemaVersion","rules"],"properties":{"schemaVersion":{"enum":[1]},"rules":{"type":"array","items":{"$ref":"#/definitions/rule"}}},"definitions":{"text":{"type":"string","minLength":1},"ref":{"type":"object","additionalProperties":false,"required":["id","name"],"properties":{"id":{"$ref":"#/definitions/text"},"name":{"$ref":"#/definitions/text"}}},"seconds":{"type":"integer","minimum":300,"maximum":43200},"rule":{"type":"object","additionalProperties":false,"required":["id","group","permissionSet","accounts","duration","approval","approverGroup","privileged"],"properties":{"id":{"$ref":"#/definitions/text"},"group":{"$ref":"#/definitions/ref"},"permissionSet":{"type":"object","additionalProperties":false,"required":["arn","name"],"properties":{"arn":{"type":"string","pattern":"^arn:aws[a-z-]*:sso:::permissionSet/ssoins-[0-9a-f]+/ps-[0-9a-f]+$"},"name":{"$ref":"#/definitions/text"}}},"accounts":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["id","name"],"properties":{"id":{"type":"string","pattern":"^[0-9]{12}$"},"name":{"$ref":"#/definitions/text"}}}},"duration":{"type":"object","additionalProperties":false,"required":["defaultSeconds","maxSeconds"],"properties":{"defaultSeconds":{"$ref":"#/definitions/seconds"},"maxSeconds":{"$ref":"#/definitions/seconds"}}},"approval":{"enum":["auto","manual"]},"approverGroup":{},"privileged":{"type":"boolean"}},"oneOf":[{"properties":{"approval":{"enum":["auto"]},"approverGroup":{"type":"null"},"privileged":{"enum":[false]}}},{"properties":{"approval":{"enum":["manual"]},"approverGroup":{"$ref":"#/definitions/ref"}}}]}}}'
 
   # ---------------------------------------------------------------------------
   # Engine: the only component that writes to Identity Center, only on jit-tagged
-  # permission sets (design §8.2). It receives no external input.
+  # permission sets. It receives no external input.
   # ---------------------------------------------------------------------------
   EngineRole:
     Type: AWS::IAM::Role
@@ -252,7 +252,7 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Validated in spike C1 (policies/engine-v2.json), scoped to this instance.
+              # Scoped to this instance.
               - Sid: CreateOnlyJitTagged
                 Effect: Allow
                 Action: sso:CreatePermissionSet
@@ -381,7 +381,7 @@ Resources:
           SERVICE_ACCOUNT_ID: !Ref AWS::AccountId
 
   # ---------------------------------------------------------------------------
-  # Events and alerts (design §9)
+  # Events and alerts
   # ---------------------------------------------------------------------------
   EventBus:
     Type: AWS::Events::EventBus
@@ -392,7 +392,7 @@ Resources:
         - HasConsumers
         - Version: "2012-10-17"
           Statement:
-            # Consumers create their own rules on this bus (spike S19).
+            # Consumers create their own rules on this bus.
             - Sid: ConsumerAccountsManageTheirRules
               Effect: Allow
               Principal: {AWS: !Ref EventConsumerAccounts}
@@ -526,7 +526,7 @@ Resources:
               Approvers: group <group>. Approve with: aws elevate approve <grant>"
 
   # ---------------------------------------------------------------------------
-  # Grant lifecycle (design §6). Definition generated from
+  # Grant lifecycle. Definition generated from
   # service/src/aws_elevate/statemachine.py; a test keeps the two identical.
   # ---------------------------------------------------------------------------
   StateMachineRole:
@@ -1246,7 +1246,7 @@ Resources:
         }
 
   # ---------------------------------------------------------------------------
-  # API (design §8.1, §8.2): reads untrusted input, never writes to Identity Center.
+  # API: reads untrusted input, never writes to Identity Center.
   # ---------------------------------------------------------------------------
   ApiRole:
     Type: AWS::IAM::Role
@@ -1264,7 +1264,7 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Reads by key and by index only: no Scan (design §11.3).
+              # Reads by key and by index only: no Scan.
               - Sid: GrantsTable
                 Effect: Allow
                 Action:
@@ -1287,7 +1287,7 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}
                   - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}
-              # Author of a rules version (design §7.3). LookupEvents has no resource type.
+              # Author of a rules version. LookupEvents has no resource type.
               - Sid: VersionAuthor
                 Effect: Allow
                 Action: cloudtrail:LookupEvents
@@ -1315,8 +1315,8 @@ Resources:
                   - !Sub arn:${AWS::Partition}:identitystore::*:identitystore/${Precheck.IdentityStoreId}
                   - !Sub arn:${AWS::Partition}:identitystore:::user/*
                   - !Sub arn:${AWS::Partition}:identitystore:::membership/*
-              # Reads only: the limits checked before publishing (§5.4) and "what you
-              # will get" for requesters, who cannot read Identity Center (§7.5).
+              # Reads only: the limits checked before publishing and "what you
+              # will get" for requesters, who cannot read Identity Center.
               - Sid: ReadPermissionSets
                 Effect: Allow
                 Action:
@@ -1328,7 +1328,7 @@ Resources:
                 Resource:
                   - !GetAtt Precheck.InstanceArn
                   - !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
-              # The real RoleId of the service roles, to refuse look-alikes (§8.1).
+              # The real RoleId of the service roles, to refuse look-alikes.
               - Sid: CompareRoleId
                 Effect: Allow
                 Action: iam:GetRole
@@ -1411,7 +1411,7 @@ Resources:
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
                     - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
-          # In the same account an Allow alone refuses nobody (spike S5).
+          # In the same account an Allow alone refuses nobody.
           - Sid: DenyEveryoneElse
             Effect: Deny
             Principal: {AWS: "*"}
@@ -1468,7 +1468,7 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/v1/*
 
-  # Fixed name: aws-elevate setup finds the API here (design §10.1).
+  # Fixed name: aws-elevate setup finds the API here.
   ApiUrlParameter:
     Type: AWS::SSM::Parameter
     DependsOn: ApiDeployment7F48D219
@@ -1478,7 +1478,7 @@ Resources:
       Value: !Sub https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api
 
   # ---------------------------------------------------------------------------
-  # Service permission sets (design §8.1, §8.2). Not tagged jit: the engine cannot
+  # Service permission sets. Not tagged jit: the engine cannot
   # touch them.
   # ---------------------------------------------------------------------------
   RequesterPs:
@@ -1501,7 +1501,7 @@ Resources:
             Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
 
   # Same policy as ElevateRequester: the name only tells auditors what they are in the
-  # access portal. What they see through the API comes from their groups (design §3.3).
+  # access portal. What they see through the API comes from their groups.
   AuditorPs:
     Type: AWS::SSO::PermissionSet
     Condition: HasAuditors
@@ -1560,7 +1560,7 @@ Resources:
             Effect: Allow
             Action: [cloudtrail:LookupEvents, cloudtrail:DescribeTrails]
             Resource: "*"
-          # Update previews only (design §12.3, spike C10): change sets of this stack from
+          # Update previews only: change sets of this stack from
           # the official release bucket can be created and read, never applied.
           - Sid: ReadStackAndPreviews
             Effect: Allow
@@ -1623,7 +1623,7 @@ Resources:
       TargetId: !Ref AWS::AccountId
 
   # Auditors only read, but they still need a service permission set to call the API
-  # (design §3.3).
+  #.
   AuditorAssignment:
     Type: AWS::SSO::Assignment
     Condition: HasAuditors

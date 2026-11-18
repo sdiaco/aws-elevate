@@ -1,5 +1,5 @@
-"""Rules document (design §3.1, §7.1): parsing with every constraint, what a caller can
-request, and the coherence check the engine repeats before activating (design §6.3).
+"""Rules document: parsing with every constraint, what a caller can
+request, and the coherence check the engine repeats before activating.
 
 infra/rules.schema.json holds the same constraints for AppConfig, except the ones a
 draft-04 schema cannot express (default <= max, unique ids, unique accounts)."""
@@ -141,7 +141,7 @@ def _approval_errors(item: dict, where: str) -> list[str]:
 
 
 def requestable(rules: list[Rule], identity: Identity) -> list[Rule]:
-    """Rules whose requester group the caller belongs to (design §3.3)."""
+    """Rules whose requester group the caller belongs to."""
     return [r for r in rules if r.group.id in identity.group_ids]
 
 

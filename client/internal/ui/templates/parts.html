@@ -22,7 +22,7 @@
 {{define "profile-command"}}{{template "command" (print "--profile " .)}}{{end}}
 {{define "copy-button"}}<button type="button" class="icon-btn" data-copy="{{.}}" aria-label="Copy" title="Copy"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2"/></svg></button>{{end}}
 
-{{/* The request just sent, followed at the top of Requests (design §11.1). */}}
+{{/* The request just sent, followed at the top of Requests. */}}
 {{define "refresh-button"}}<button type="button" class="icon-btn small" data-refresh="{{.}}" aria-label="Refresh" title="Refresh"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>{{end}}
 
 {{define "dismiss-button"}}<button type="button" class="icon-btn small" data-dismiss aria-label="Dismiss" title="Dismiss"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>{{end}}

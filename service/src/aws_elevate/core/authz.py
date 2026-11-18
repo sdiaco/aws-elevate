@@ -1,6 +1,6 @@
-"""Who can do what on a grant (design §3.3, §11.2). Approver authority comes from the
+"""Who can do what on a grant. Approver authority comes from the
 approver group recorded on the grant, so it still holds after the rule changes; the
-approval itself then finds the request no longer conforming (design §6.2)."""
+approval itself then finds the request no longer conforming."""
 
 from .models import Grant, Identity, State
 
@@ -12,7 +12,7 @@ def decisions(identity: Identity, grant: Grant) -> set[str]:
     if identity.user_id == grant.requester.user_id:
         return {"cancel"}
     if grant.approver_group is not None and grant.approver_group.id in identity.group_ids:
-        return {"approve", "reject"}  # never one's own request, admin or not (design §3.3)
+        return {"approve", "reject"}  # never one's own request, admin or not
     return set()
 
 
@@ -29,7 +29,7 @@ def actions(identity: Identity, grant: Grant) -> set[str]:
         if own or approver or identity.is_admin:
             allowed.add("revoke")
     elif grant.state == State.REVOKE_FAILED and identity.is_admin:
-        allowed.add("redrive")  # Problems view is admin only (design §11.2)
+        allowed.add("redrive")  # Problems view is admin only
     return allowed
 
 

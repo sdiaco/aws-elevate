@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// The pages load nothing from elsewhere (design §8.6) and the CSP forbids inline code.
+// The pages load nothing from elsewhere and the CSP forbids inline code.
 func TestEmbeddedFilesLoadNothingFromOutsideAndHaveNoInlineCode(t *testing.T) {
 	outside := regexp.MustCompile(`https?://|(src|href|action)="//|url\(|@import`)
 	inline := regexp.MustCompile(`<script>|<script [^>]*>[^<]|<style|\sstyle=|\son[a-z]+=|javascript:`)

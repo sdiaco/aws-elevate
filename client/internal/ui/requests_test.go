@@ -118,7 +118,7 @@ func TestAnAdminAlsoFiltersFailedRevocations(t *testing.T) {
 }
 
 func TestAnAuditorSeesEveryOpenGrantWithoutActions(t *testing.T) {
-	// An auditor only reads (design §3.3): every open grant, and no action button.
+	// An auditor only reads: every open grant, and no action button.
 	h := requestsHarness("auditor")
 	out := h.get(t, "/requests")
 	contains(t, out, `<span class="counter">(5)</span>`, "ask2345678", "their23456", "fail234567")
@@ -281,7 +281,7 @@ func TestApproveRejectAndCancelGoBackWithTheOutcome(t *testing.T) {
 	lacks(t, out, "data-follow") // a rejection is final: nothing to follow
 
 	contains(t, h.get(t, "/requests/cancel?id=own2345678"), `action="/requests/cancel"`, "Cancel 1 request",
-		// The page is the fallback of a dialog (design §11.1): "Go back" leaves the view as it was.
+		// The page is the fallback of a dialog: "Go back" leaves the view as it was.
 		`data-close autofocus>Go back</a>`)
 	contains(t, h.get(t, "/requests?open=own2345678"), `href="/requests/cancel?id=own2345678" data-confirm>Cancel request…`)
 	h.do(t, "POST", "/requests/cancel", url.Values{"id": {"own2345678"}})
@@ -312,7 +312,7 @@ func TestRevokeAsksForReasonAndShowsEachOutcome(t *testing.T) {
 	}
 	contains(t, followed(t, h, w, "/requests"), `class="flash warning"`,
 		"1 request: revocation started. 1 failed.", "their23456: state_conflict: grant their23456 is closed",
-		// The page follows the started revocation and sums up its end (design §11.1).
+		// The page follows the started revocation and sums up its end.
 		`data-follow="mine234567"`, `data-follow-failed="1"`)
 }
 
@@ -507,7 +507,7 @@ func TestAnActiveRowReadsItselfOnceItEndsAndAClosedOneStaysGrey(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	h.svc.grants["mine234567"] = grant("mine234567", api.StateActive, me, "revoke")
 	out := h.get(t, "/requests/row/mine234567")
-	// No timer while it is active: one read when its countdown reaches zero (design §11.1).
+	// No timer while it is active: one read when its countdown reaches zero.
 	contains(t, out, `data-expire="/requests/row/mine234567"`, `<time data-until`)
 	lacks(t, out, "data-poll")
 	// With the selection column, the row read again keeps it.

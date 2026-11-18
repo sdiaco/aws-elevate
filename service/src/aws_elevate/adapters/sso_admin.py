@@ -171,7 +171,7 @@ class SsoAdmin:
 
     def rewrite_inline(self, ps_arn: str, account: str, inline: dict) -> None:
         """Replace the inline policy and reprovision, so open sessions see it at once
-        (without reprovisioning the rewrite does not reach them: spike C2)."""
+        (measured: without reprovisioning the rewrite does not reach them)."""
         try:
             self._retry(
                 lambda: self._sso.put_inline_policy_to_permission_set(

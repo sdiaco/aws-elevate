@@ -13,7 +13,7 @@ import (
 // and the user's choices.
 type Settings struct {
 	Profiles map[string]Target `json:"profiles"`
-	// CheckUpdates false stops every call to the public release list (design §12.3).
+	// CheckUpdates false stops every call to the public release list.
 	CheckUpdates *bool `json:"checkUpdates,omitempty"`
 }
 

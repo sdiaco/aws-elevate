@@ -66,7 +66,7 @@ def test_success_returns_instance_data_and_the_management_account():
         "InstanceArn": INSTANCE["InstanceArn"],
         "InstanceId": "ssoins-1111111111111111",
         "IdentityStoreId": "d-1111111111",
-        # api and engine refuse it as a grant target (design §7.5).
+        # api and engine refuse it as a grant target.
         "ManagementAccountId": "222222222222",
     }
 

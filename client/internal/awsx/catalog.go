@@ -41,7 +41,7 @@ func (a *Admin) instance(ctx context.Context) (ssotypes.InstanceMetadata, error)
 // account, it is no longer the delegated administrator.
 var ErrNoInstance = errors.New("no IAM Identity Center instance visible from this account")
 
-// PermissionSets are the permission sets of the Identity Center instance (design §7.5).
+// PermissionSets are the permission sets of the Identity Center instance.
 func (a *Admin) PermissionSets(ctx context.Context) ([]Named, error) {
 	inst, err := a.instance(ctx)
 	if err != nil {
@@ -67,7 +67,7 @@ func (a *Admin) PermissionSets(ctx context.Context) ([]Named, error) {
 }
 
 // Accounts are the active accounts of the organization except the management account,
-// which a rule never offers (design §3.1). The management account id is the account
+// which a rule never offers. The management account id is the account
 // field of every organizations ARN, so no other call is needed.
 func (a *Admin) Accounts(ctx context.Context) ([]Named, error) {
 	var out []Named

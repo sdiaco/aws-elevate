@@ -45,7 +45,7 @@ def assert_no_token(body):
 REQUEST = {"ruleId": "ssm-prod", "account": "222222222222", "durationSeconds": 3600, "reason": "x"}
 
 
-# ---------- POST /grants (design §6.1) ----------
+# ---------- POST /grants ----------
 
 
 def test_manual_request_is_recorded_pending_and_started(make, fx):
@@ -161,7 +161,7 @@ def test_failed_start_discards_the_grant_and_raises(make, fx):
     assert len(table.discarded) == 1
 
 
-# ---------- approve, reject, cancel (design §6.2) ----------
+# ---------- approve, reject, cancel ----------
 
 
 def test_approve_moves_to_activating_and_ends_the_wait(make, fx):
@@ -313,7 +313,7 @@ def test_approver_cannot_cancel(make, fx):
     assert error_of(lambda: routes.cancel(fx.LEAD, "abcde23456")).code == "forbidden"
 
 
-# ---------- revoke (design §6.4) ----------
+# ---------- revoke ----------
 
 ACTIVE = {
     "state": State.ACTIVE,
@@ -370,7 +370,7 @@ def test_auditor_cannot_revoke(make, fx):
     assert err.code == "forbidden"
 
 
-# ---------- redrive (design §6.5) ----------
+# ---------- redrive ----------
 
 
 def test_admin_redrives_a_failed_revocation(make, fx):
@@ -443,7 +443,7 @@ def test_a_pending_grant_says_when_its_approval_wait_ends(make, fx):
     assert routes.get(fx.LEAD, "bcdef34567")["grant"]["approvalExpiresAt"] is None
 
 
-# ---------- GET /grants (design §11.3: by key, paginated, never a Scan) ----------
+# ---------- GET /grants (by key, paginated, never a Scan) ----------
 
 
 def ids(body):
@@ -476,7 +476,7 @@ def test_mine_open_filters_closed(make, fx):
 
 
 def test_mine_closed_keeps_only_closed_grants(make, fx):
-    # History shows closed grants only, filtered here and not in the client (design §11.2).
+    # History shows closed grants only, filtered here and not in the client.
     routes, table, _ = make(
         g(fx, "aaaaa23456", "2026-11-15T09:00:00Z"),
         g(fx, "bbbbb23456", "2026-11-15T09:30:00Z", state=State.CLOSED),

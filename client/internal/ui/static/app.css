@@ -203,7 +203,7 @@ label { display: block; font-weight: 600; color: var(--text); }
 label .optional { font-style: italic; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 20px; }
 
-/* List: header (title, counter, actions), search, segmented filters, table (design §11.1). */
+/* List: header (title, counter, actions), search, segmented filters, table. */
 .list-head { position: sticky; top: 0; z-index: 1; background: var(--bg); display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 8px 0; margin: -8px 0 8px; }
 .list-head h1 { font-size: 20px; line-height: 24px; font-weight: 500; letter-spacing: -.015em; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }

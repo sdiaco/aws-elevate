@@ -1,4 +1,4 @@
-"""Grant routes of api (design §6.1, §6.2, §6.4, §6.5, §11.3).
+"""Grant routes of api.
 
 api writes only the transitions the contract gives it, each conditional on the source
 state. After a transition that ends a wait it sends the task token; if the wait is
@@ -31,8 +31,8 @@ from ..core.times import iso, parse_iso
 from .errors import ApiError, forbidden
 
 PAGE_SIZE = 50
-DEFAULT_PERIOD_DAYS = 30  # design §11.3
-# Keeps every grant event well under the 256 KB EventBridge limit (design §6.1, §6.4).
+DEFAULT_PERIOD_DAYS = 30
+# Keeps every grant event well under the 256 KB EventBridge limit.
 MAX_REASON_CHARS = 500
 _SCOPES = ("mine", "approvable", "all")
 
@@ -162,7 +162,7 @@ class GrantRoutes:
             raise forbidden()
         return grant
 
-    # ---------- POST /grants (design §6.1) ----------
+    # ---------- POST /grants ----------
 
     def create(self, identity: Identity, body) -> dict:
         if not isinstance(body, dict):
@@ -227,7 +227,7 @@ class GrantRoutes:
             created_at=iso(self._now()),
         )
 
-    # ---------- approve, reject, cancel (design §6.2) ----------
+    # ---------- approve, reject, cancel ----------
 
     def approve(self, identity: Identity, grant_id: str) -> dict:
         grant = self._pending(identity, "approve", grant_id)
@@ -296,7 +296,7 @@ class GrantRoutes:
         # decides what the execution does next, so there is nothing to report.
         self._sfn.send_success(grant.task_token, {"decision": decision})
 
-    # ---------- revoke (design §6.4) ----------
+    # ---------- revoke ----------
 
     def revoke(self, identity: Identity, grant_id: str, body) -> dict:
         reason = _reason(body if isinstance(body, dict) else {})
@@ -314,7 +314,7 @@ class GrantRoutes:
         )
         return self._reply(identity, grant_id)
 
-    # ---------- redrive (design §6.5) ----------
+    # ---------- redrive ----------
 
     def redrive(self, identity: Identity, grant_id: str) -> dict:
         grant = self._visible(identity, grant_id)
@@ -337,7 +337,7 @@ class GrantRoutes:
             "timeline": self._table.timeline(grant_id),
         }
 
-    # ---------- GET /grants (design §11.3) ----------
+    # ---------- GET /grants ----------
 
     def list(self, identity: Identity, query: dict) -> dict:
         scope = query.get("scope", "mine")

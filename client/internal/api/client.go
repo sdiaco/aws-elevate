@@ -1,5 +1,5 @@
-// Package api calls the aws-elevate service: SigV4-signed HTTPS requests to API Gateway
-// (design §8.1). It carries no business rule: decisions come back from the service.
+// Package api calls the aws-elevate service: SigV4-signed HTTPS requests to API Gateway.
+// It carries no business rule: decisions come back from the service.
 package api
 
 import (
@@ -25,7 +25,7 @@ import (
 // VersionHeader carries the client version; the service answers 426 below its minimum.
 const VersionHeader = "X-Elevate-Client-Version"
 
-// Every answer of the service carries these (design §12.2).
+// Every answer of the service carries these.
 const (
 	InfraVersionHeader = "X-Elevate-Infra-Version"
 	MinClientHeader    = "X-Elevate-Min-Client"
@@ -130,7 +130,7 @@ func (c *Client) Rules(ctx context.Context) (*RuleList, error) {
 }
 
 // RequestableRules are the rules the caller can request, also for admins and auditors who
-// see every rule with Rules (design §11.2).
+// see every rule with Rules.
 func (c *Client) RequestableRules(ctx context.Context) (*RuleList, error) {
 	var out RuleList
 	return &out, c.do(ctx, http.MethodGet, "/v1/rules", url.Values{"scope": {"requestable"}}, nil, &out)
@@ -142,7 +142,7 @@ func (c *Client) Permissions(ctx context.Context, ruleID string) (*Permissions, 
 }
 
 // PermissionSetPermissions is what a permission set contains, read by the service for an
-// administrator before any rule uses it (design §7.5).
+// administrator before any rule uses it.
 func (c *Client) PermissionSetPermissions(ctx context.Context, arn string) (*Permissions, error) {
 	var out Permissions
 	return &out, c.do(ctx, http.MethodGet, "/v1/permission-sets/permissions", url.Values{"arn": {arn}}, nil, &out)

@@ -1,9 +1,9 @@
-"""Custom resource run first by the stack (design §12.1): stops the install with a clear
+"""Custom resource run first by the stack: stops the install with a clear
 message when the region is not the Identity Center home region or the account is not the
 delegated administrator.
 
 It must answer CloudFormation on every path, exceptions included: a custom resource that
-never answers blocks the stack for up to an hour (it happened in spike C). The resource
+never answers blocks the stack for up to an hour (measured). The resource
 also has ServiceTimeout: 60 in the template."""
 
 import json

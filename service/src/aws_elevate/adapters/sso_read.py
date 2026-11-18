@@ -26,7 +26,7 @@ class SsoRead:
         return [entry for page in pages for entry in page[key]]
 
     def read_source(self, ps_arn: str) -> SourcePs:
-        """Everything the ephemeral copy needs (design §5.1)."""
+        """Everything the ephemeral copy needs."""
         kw = {"InstanceArn": self._instance, "PermissionSetArn": ps_arn}
         try:
             described = self._sso.describe_permission_set(**kw)["PermissionSet"]

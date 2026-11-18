@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-// APIURLParameter is written by the stack (design §10.1).
+// APIURLParameter is written by the stack.
 const APIURLParameter = "/elevate/api-url"
 
 // ConfigFile is the AWS CLI config file: $AWS_CONFIG_FILE, else ~/.aws/config.

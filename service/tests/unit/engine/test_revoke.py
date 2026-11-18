@@ -156,7 +156,7 @@ def test_redrive_from_revoke_failed(build, grant, const):
 
 
 def test_redrive_that_fails_again_stays_revoke_failed(build, grant, admin, const):
-    # While waiting for a redrive the record must say revoke_failed (design §6.5).
+    # While waiting for a redrive the record must say revoke_failed.
     admin.fail["unassign"] = SsoTimeout("unassignment still in progress")
     engine, table = build(active(grant, const, state=State.REVOKE_FAILED, error="timeout"))
     with pytest.raises(Retryable):

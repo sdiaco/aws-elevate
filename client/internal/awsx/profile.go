@@ -19,13 +19,13 @@ type SourceProfile struct {
 	Region      string
 }
 
-// ProfileName is stable from one grant to the next (design §10.3).
+// ProfileName is stable from one grant to the next.
 func ProfileName(sourcePs, account string) string {
 	return "jit-" + sourcePs + "-" + account
 }
 
 // The grant profiles live in one block at the end of the user's CLI config, between two
-// comment lines, so the rest of the file is never touched (design §10.3). The block stays
+// comment lines, so the rest of the file is never touched. The block stays
 // last: in the INI format a comment does not end a section, so lines written after the
 // block without a header would belong to its last profile.
 const (
@@ -186,7 +186,7 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// ConsoleLink opens the console on the grant's account and role (design §10.3, spike C12).
+// ConsoleLink opens the console on the grant's account and role.
 func ConsoleLink(startURL, account, role string) string {
 	return strings.TrimSuffix(startURL, "/") + "/#/console?account_id=" + account + "&role_name=" + role
 }

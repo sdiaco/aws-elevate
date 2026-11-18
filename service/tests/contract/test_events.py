@@ -1,6 +1,6 @@
 """Every event elevate publishes has an example in contract/events/ with the same detail
 keys: the grant events built by the state machine from the engine snapshot, and the
-config event emitted by api (design §9.1)."""
+config event emitted by api."""
 
 import dataclasses
 import json

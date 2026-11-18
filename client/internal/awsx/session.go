@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
-// Service permission sets (design §10.1). Admin wins over Requester, Requester over
+// Service permission sets. Admin wins over Requester, Requester over
 // Auditor: the service decides what each user may do from their groups.
 const (
 	RoleAdmin     = "ElevateAdmin"
@@ -23,7 +23,7 @@ const (
 )
 
 // ReadyTimeout bounds WaitReady. After SUCCEEDED the portal refuses the credentials for
-// 6–7 s and the first call can be denied for 1–2 s more (spike C12).
+// 6–7 s and the first call can be denied for 1–2 s more.
 const ReadyTimeout = 60 * time.Second
 
 // readyDelays is the client polling backoff: 2, 4, 8 s, then every 8 s.
@@ -68,7 +68,7 @@ type Target struct {
 	APIURL  string `json:"apiUrl"`
 }
 
-// Discover finds the account where the user has a service role (design §10.1) and reads
+// Discover finds the account where the user has a service role and reads
 // the api address there. account, if not empty, is an id or a name and narrows the search.
 func (s *Session) Discover(ctx context.Context, account string) (Target, error) {
 	accounts, err := s.Portal.ListAccounts(ctx)
@@ -132,7 +132,7 @@ func serviceRole(roles []string) string {
 }
 
 // WaitReady retries until the grant's role gives credentials that a real call accepts,
-// up to ReadyTimeout (design §6.3: only the client can tell, it holds the SSO token).
+// up to ReadyTimeout (only the client can tell: it holds the SSO token).
 func (s *Session) WaitReady(ctx context.Context, account, role string) (aws.Credentials, error) {
 	var waited time.Duration
 	for attempt := 0; ; attempt++ {

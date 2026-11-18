@@ -130,7 +130,7 @@ def test_admin_rules_save_export_and_refusal(org, set_up, tmp_path):
     version = int(re.search(r"Published rules version (\d+)", published).group(1))
     org.config_version = version
 
-    # The same file again: AppConfig creates no version (spike C4).
+    # The same file again: AppConfig creates no version.
     same = ok(cli(set_up, "admin", "rules", "save", str(exported))).stdout
     assert f"No change: version {version}" in same, same
 

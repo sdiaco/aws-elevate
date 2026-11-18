@@ -18,7 +18,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 )
 
-// files are the pages, styles and script, inside the executable (design §11.1).
+// files are the pages, styles and script, inside the executable.
 //
 //go:embed static templates
 var files embed.FS
@@ -153,7 +153,7 @@ var stateLabels = map[string]string{
 	"revoking":      "Revoking",
 	"revoke_failed": "Revoke failed",
 	"closed":        "Closed",
-	// Rules (design §11.2): a version the service has not read yet, or a missing set.
+	// Rules: a version the service has not read yet, or a missing set.
 	"publishing": "Publishing",
 	"deleting":   "Deleting",
 	"ps_missing": "PS not found",
@@ -221,7 +221,7 @@ var funcs = template.FuncMap{
 // policyName is the name of a managed policy from its ARN, without its path.
 func policyName(arn string) string { return arn[strings.LastIndex(arn, "/")+1:] }
 
-// policyDoc is the AWS reference page of an AWS managed policy (design §7.5: a link, its
+// policyDoc is the AWS reference page of an AWS managed policy (a link: its
 // content is not read).
 func policyDoc(arn string) string {
 	return "https://docs.aws.amazon.com/aws-managed-policy/latest/reference/" + policyName(arn) + ".html"

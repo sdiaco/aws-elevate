@@ -1,5 +1,5 @@
 // Package version holds the client version and the compatibility check between client
-// and infrastructure (design §12.2).
+// and infrastructure.
 package version
 
 import (

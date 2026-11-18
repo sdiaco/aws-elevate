@@ -1,9 +1,9 @@
-"""Release test (design §12.2): install the previous release, open a grant, update the
+"""Release test: install the previous release, open a grant, update the
 stack, check that the grant still expires and is cleaned up.
 
 `make e2e-up` installs a new stack at harness.PREVIOUS_INFRA with `aws-elevate install`;
 this test runs first and leaves the stack on the current code for the other tests. The
-execution started by the previous release finishes with the new engine code (spike C14)."""
+execution started by the previous release finishes with the new engine code."""
 
 import time
 

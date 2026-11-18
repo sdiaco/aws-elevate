@@ -1,4 +1,4 @@
-"""Grant lifecycle as an Amazon States Language definition (design §4.2, §6, §9.1).
+"""Grant lifecycle as an Amazon States Language definition.
 
 One execution per grant, named after the grant id; input {"grantId", "approval"}.
 The engine payload is always {action, grantId[, taskToken]}. After every wait the grant
@@ -191,7 +191,7 @@ def definition(engine_arn: str, bus_name: str) -> dict:
             errorCode="revoke_failed",
         ),  # fmt: skip
         # No Catch: the execution fails here, and a redrive resumes from this task
-        # without running the activation again (design §6.5, spike C8).
+        # without running the activation again.
         "RevokeAgain": _engine(e, "revoke", "EvClosed", **revoke_result),
         "EvClosed": _event(b, "$.rev.grant", "closed", "elevate.grant.closed", "Done"),
         "Done": {"Type": "Succeed"},

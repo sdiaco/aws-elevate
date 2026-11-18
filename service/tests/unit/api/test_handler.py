@@ -182,7 +182,7 @@ def test_unknown_route_is_not_found(api, method, proxy):
     assert grants.calls == []
 
 
-# ---------- versions (design §12.2) ----------
+# ---------- versions ----------
 
 
 def test_every_response_carries_the_version_headers(api):

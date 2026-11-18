@@ -1,4 +1,4 @@
-// Command aws-elevate is the client of aws-elevate (design §10).
+// Command aws-elevate is the client of aws-elevate.
 package main
 
 import (

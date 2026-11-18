@@ -1,4 +1,4 @@
-"""Grant identifiers and the names derived from them (design §5.1)."""
+"""Grant identifiers and the names derived from them."""
 
 import secrets
 

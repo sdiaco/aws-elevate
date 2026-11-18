@@ -18,7 +18,7 @@ import (
 )
 
 // Admin is what the Rules view reads and writes on AWS with the admin's own credentials
-// (design §7.2, §7.5).
+// .
 type Admin interface {
 	PermissionSets(ctx context.Context, refresh bool) ([]awsx.Named, error)
 	Accounts(ctx context.Context) ([]awsx.Named, error)
@@ -161,7 +161,7 @@ func (a *App) rulesBehind(ctx context.Context, b base) ([]api.Rule, error) {
 }
 
 // ruleState is the Status of a rule of the newest version: "publishing" while the
-// service still uses a version where it is absent or different (design §11.2).
+// service still uses a version where it is absent or different.
 func ruleState(rule api.Rule, inUse []api.Rule, sets []awsx.Named) string {
 	if inUse != nil {
 		i := slices.IndexFunc(inUse, func(r api.Rule) bool { return r.ID == rule.ID })
@@ -242,7 +242,7 @@ func (a *App) rulePanelPart(w http.ResponseWriter, r *http.Request) {
 	part(w, "panel", panelSlot{Rule: p})
 }
 
-// ruleForm is the one form of a rule (design §3.1), as typed.
+// ruleForm is the one form of a rule, as typed.
 type ruleForm struct {
 	Orig       string // the id before this edit; empty for a new rule
 	ID         string
@@ -357,7 +357,7 @@ func (a *App) readChoices(ctx context.Context, v *ruleView, refresh bool) error 
 }
 
 // psPermissions is "What it contains" of the permission set named in the form, read by the
-// service (design §7.5): the name comes from the cached list, the content never does.
+// service: the name comes from the cached list, the content never does.
 func (a *App) psPermissions(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("ps")
 	sets, err := a.Admin.PermissionSets(r.Context(), false)
@@ -507,7 +507,7 @@ func (a *App) importPage(w http.ResponseWriter, r *http.Request) {
 	a.show(w, http.StatusOK, "import", "Import rules", "/rules", nil)
 }
 
-// importSubmit takes a document exported from this or another installation (design §7.4).
+// importSubmit takes a document exported from this or another installation.
 func (a *App) importSubmit(w http.ResponseWriter, r *http.Request) {
 	back := func(alerts ...Alert) { a.show(w, http.StatusOK, "import", "Import rules", "/rules", nil, alerts...) }
 	file, _, err := r.FormFile("doc")

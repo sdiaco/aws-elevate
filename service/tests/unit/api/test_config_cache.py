@@ -1,4 +1,4 @@
-"""Rules in force for api (design §7.1, §7.3): latest valid version, 30 s cache, invalid
+"""Rules in force for api: latest valid version, 30 s cache, invalid
 versions recorded and reported once, author from CloudTrail when it is available."""
 
 import copy
@@ -253,7 +253,7 @@ def test_new_valid_version_replaces_the_cached_one(aws):
     assert (version, [r.id for r in rules]) == (2, ["other"])
 
 
-# ---------- version list and content (design §7.3, GET /config/versions) ----------
+# ---------- version list and content (GET /config/versions) ----------
 
 
 def test_versions_lists_versions_newest_first_with_their_record(aws):

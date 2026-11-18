@@ -1,5 +1,5 @@
-// Package release reads the releases of aws-elevate from the public repository (design
-// §12.3) and tells which ones are updates for this client and its infrastructure.
+// Package release reads the releases of aws-elevate from the public repository
+// and tells which ones are updates for this client and its infrastructure.
 package release
 
 import (

@@ -272,7 +272,7 @@ func TestCatalogListsPermissionSetsAccountsAndGroupsSortedByName(t *testing.T) {
 	if err != nil || len(ps) != 2 || ps[0] != (Named{ID: "arn:aws:sso:::permissionSet/ssoins-1/ps-1", Name: "ElevateAdmin"}) {
 		t.Errorf("permission sets %+v %v", ps, err)
 	}
-	// Active accounts only, never the management account (design §3.1).
+	// Active accounts only, never the management account.
 	accounts, err := a.Accounts(ctx)
 	if err != nil || fmt.Sprint(accounts) != "[{111111111111 dev} {222222222222 prod}]" {
 		t.Errorf("accounts %+v %v", accounts, err)

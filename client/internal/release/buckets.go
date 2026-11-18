@@ -8,7 +8,7 @@ import (
 )
 
 // buckets maps each region where aws-elevate is published to its release bucket
-// (contract/release-buckets.json, design §12.1). The bucket is never derived from the
+// (contract/release-buckets.json). The bucket is never derived from the
 // region name: in a region without a release someone else could own that name and serve
 // their own template and code.
 var buckets = map[string]string{

@@ -9,7 +9,7 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// newRequestView is the New request view (design §11.2), laid out like the console's
+// newRequestView is the New request view, laid out like the console's
 // launch pages: the rules to choose from and the details on the left, a summary with the
 // submit button on the right.
 type newRequestView struct {
@@ -213,7 +213,7 @@ func (a *App) flashOf(g api.Grant) flash {
 }
 
 // flashPart is the fresh flash; once the grant is active it waits for AWS to accept the
-// role and writes the profile (design §6.3) before offering the console.
+// role and writes the profile before offering the console.
 func (a *App) flashPart(w http.ResponseWriter, r *http.Request) {
 	d, err := a.Service.Grant(r.Context(), r.PathValue("id"))
 	if err != nil {
