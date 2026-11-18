@@ -530,6 +530,31 @@ function paginate(box) {
   show();
 }
 
+// Cards too many to show at once: <div data-limit="10"> shows at most that many [data-item]
+// cards, the chosen ones first, and the others only when the [data-filter] search finds
+// them; [data-more] says how many stay hidden. Hidden cards cost no layout, so a large
+// organization keeps the page fast. Without the script every card shows.
+function limit(box) {
+  const size = Number(box.dataset.limit);
+  const cards = [...box.querySelectorAll("[data-item]")];
+  const filter = box.querySelector("[data-filter]");
+  const none = box.querySelector("[data-no-match]");
+  const more = box.querySelector("[data-more]");
+  const chosen = (c) => c.querySelector("input:checked") !== null;
+  const show = () => {
+    const words = (filter ? filter.value : "").toLowerCase().trim().split(/\s+/);
+    const found = cards.filter((c) => words.every((w) => c.textContent.toLowerCase().includes(w)));
+    const shown = [...found.filter(chosen), ...found.filter((c) => !chosen(c))].slice(0, size);
+    cards.forEach((c) => { c.hidden = !shown.includes(c); });
+    none.hidden = found.length > 0;
+    const hidden = found.length - shown.length;
+    more.hidden = hidden === 0;
+    more.textContent = `${hidden} more ${hidden === 1 ? "account" : "accounts"}: search by name or id to find ${hidden === 1 ? "it" : "them"}.`;
+  };
+  filter?.addEventListener("input", show);
+  show();
+}
+
 // A form in steps: <form data-steps> shows one [data-step] section at a time, and Next
 // moves on only when the fields of the current one are valid. [data-step-current] is the
 // one to show first; [data-step-mark] items mark where the form is. A [data-step-review]
@@ -577,6 +602,7 @@ function steps(form) {
 function start(root) {
   root.querySelectorAll("form[data-steps]").forEach(steps);
   root.querySelectorAll("[data-paginate]").forEach(paginate);
+  root.querySelectorAll("[data-limit]").forEach(limit);
   root.querySelectorAll("[data-list]").forEach(updateSelection);
   root.querySelectorAll("[data-poll]").forEach((el) => poll(el, 0));
   tick();
