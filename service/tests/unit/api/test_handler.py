@@ -325,6 +325,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
         "SERVICE_ACCOUNT_ID": "888888888888",
         "AUDITOR_GROUP_ID": "",
         "MAX_OPEN_GRANTS_PER_USER": "5",
+        "CONFIG_VERSIONS_LISTED": "50",
         "SSO_INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
         "STACK_ID": INSTALLATION["stackId"],
         "ALERTS_TOPIC_ARN": INSTALLATION["alertsTopicArn"],

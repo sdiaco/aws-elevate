@@ -555,6 +555,7 @@ def test_api_function_gets_the_permission_set_names_and_parameters():
     assert env["ADMIN_PS_NAME"] == RESOURCES["AdminPs"]["Properties"]["Name"]
     assert env["AUDITOR_PS_NAME"] == RESOURCES["AuditorPs"]["Properties"]["Name"]
     assert env["MAX_OPEN_GRANTS_PER_USER"] == {"Ref": "MaxOpenGrantsPerUser"}
+    assert env["CONFIG_VERSIONS_LISTED"] == {"Ref": "ConfigVersionsListed"}
     assert env["AUDITOR_GROUP_ID"] == {"Ref": "AuditorGroupId"}
     assert env["SSO_INSTANCE_ARN"] == {"Fn::GetAtt": ["Precheck", "InstanceArn"]}
 
@@ -580,3 +581,5 @@ def test_install_parameters():
     assert {"AdminGroupId", "RequesterGroupId"} <= set(params)
     assert params["AuditorGroupId"]["Default"] == ""
     assert params["MaxOpenGrantsPerUser"]["Default"] == 5
+    assert params["ConfigVersionsListed"]["Default"] == 50
+    assert params["ConfigVersionsListed"]["MinValue"] == 1

@@ -23,20 +23,22 @@ REFRESH_SECONDS = 30  # design §6.6, §7.1
 log = logging.getLogger(__name__)
 
 
-# Versions only grow (one per publish) and each one listed costs a table read: the list
-# keeps the newest ones. An older version is still readable by its number.
-VERSIONS_LISTED = 50
-
-
 class ConfigUnavailable(Exception):
     """No valid rules version exists: api answers 503 config_unavailable."""
 
 
 class ConfigCache:
     def __init__(
-        self, appconfig, table, trail, events, clock: Callable[[], float] = time.monotonic
+        self,
+        appconfig,
+        table,
+        trail,
+        events,
+        versions_listed: int,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self._appconfig = appconfig
+        self._versions_listed = versions_listed
         self._table = table
         self._trail = trail
         self._events = events
@@ -53,10 +55,14 @@ class ConfigCache:
         return self._version.number, self._rules
 
     def versions(self) -> list[ConfigVersion]:
-        """The newest VERSIONS_LISTED versions, newest first, as recorded. A version never
-        seen is evaluated and recorded now. No CloudTrail lookup here: LookupEvents allows
-        2 calls per second, and the refresh fills the author of every new version anyway."""
-        return [self._record(n) for n in self._appconfig.list_versions()[:VERSIONS_LISTED]]
+        """The newest versions, newest first, as recorded. Versions only grow (one per
+        publish) and each one listed costs a table read, so the list keeps as many as the
+        stack parameter ConfigVersionsListed says; an older one is still readable by its
+        number. A version never seen is evaluated and recorded now. No CloudTrail lookup
+        here: LookupEvents allows 2 calls per second, and the refresh fills the author of
+        every new version anyway."""
+        newest = self._appconfig.list_versions()[: self._versions_listed]
+        return [self._record(n) for n in newest]
 
     def version(self, number: int) -> tuple[ConfigVersion, dict | None] | None:
         """Record and content of one version; content None if it is not JSON."""
