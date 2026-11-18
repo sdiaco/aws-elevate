@@ -537,3 +537,21 @@ func TestDeleteFailureNamesTheLastAttempt(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestUninstallSaysTheSecondOpenGrantsCheckIsARecheck(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	h.withUninstaller(un, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+
+	if code := uninstall(h, "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	out := h.out.String()
+	if got := strings.Count(out, "✓ No open grants"); got != 1 {
+		t.Errorf("first check printed %d times: %s", got, out)
+	}
+	if got := strings.Count(out, "✓ Still no open grants"); got != 1 {
+		t.Errorf("recheck printed %d times: %s", got, out)
+	}
+}
