@@ -292,8 +292,9 @@ class GrantRoutes:
             self._table.transition(grant.id, grant.state, dst, **attrs)
         except StateConflict as err:
             raise _conflict(f"grant {grant.id} changed meanwhile; reload it") from err
-        if not self._sfn.send_success(grant.task_token, {"decision": decision}):
-            log.info("wait of grant %s already over; the record decides", grant.id)
+        # False means the wait is already over (timed out): expected, and the record
+        # decides what the execution does next, so there is nothing to report.
+        self._sfn.send_success(grant.task_token, {"decision": decision})
 
     # ---------- revoke (design §6.4) ----------
 
