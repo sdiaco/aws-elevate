@@ -14,7 +14,7 @@ DOCKER_RUN = docker run --rm -i $(shell [ -t 0 ] && echo -t) \
 	$(IMAGE)
 
 .PHONY: help dev-image dev dev-run check check-service check-client test test-service test-client \
-	package e2e-up e2e e2e-down
+	package build release-upload release-github e2e-up e2e e2e-down e2e-auto
 
 help:
 	@echo "make dev              open a shell in the development container"
@@ -22,8 +22,12 @@ help:
 	@echo "make check            lint, template lint and tests with coverage thresholds"
 	@echo "make test             tests only"
 	@echo "make package          build/lambda.zip with the service code"
+	@echo "make build VERSION=x.y.z            release files in build/release/v<version>"
+	@echo "make release-upload VERSION=x.y.z RELEASE_PROFILE=...   templates and code to the release buckets"
+	@echo "make release-github VERSION=x.y.z TYPE=security|fix|feature   GitHub release with the executables"
 	@echo "make e2e-up / e2e / e2e-down   end-to-end tests in a real test organization"
 	@echo "                      (PROFILE, SERVICE_ACCOUNT, TARGET_ACCOUNT, TEST_USER)"
+	@echo "make e2e-auto         e2e-up, e2e and always e2e-down; the outcome goes to build/e2e/result"
 
 dev-image:
 	docker build --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) -t $(IMAGE) dev
@@ -78,6 +82,18 @@ package:
 		import harness, pathlib; pathlib.Path('../build/lambda.zip').write_bytes(harness.package())"
 	@echo "build/lambda.zip"
 
+# Release. The build runs in the container (Go); publishing runs on the host,
+# which has aws and gh, from a clean main whose tree passed make e2e-auto.
+build: dev-image
+	@test -n '$(VERSION)' || { echo 'usage: make build VERSION=x.y.z' >&2; exit 2; }
+	$(DOCKER_RUN) dev/build.sh '$(VERSION)' build/release
+
+release-upload:
+	dev/release.sh upload '$(VERSION)' '$(RELEASE_PROFILE)'
+
+release-github:
+	dev/release.sh github '$(VERSION)' '$(TYPE)'
+
 # End-to-end tests create only elevate-e2e* resources. Always finish with e2e-down.
 # The approval by a second user is opt-in (manual login): E2E_APPROVAL=1 make e2e-up e2e.
 # Manual UI checks with one user per role (approver, requester, auditor): E2E_USERS=1 make e2e-up.
@@ -93,3 +109,14 @@ e2e: dev-image
 
 e2e-down:
 	cd service && uv run python tests/e2e/harness.py down
+
+# Unattended run for small changes and hotfixes: no second-user approval, no UI check.
+# The org is always torn down. The result names the git tree, so the tree must be clean.
+e2e-auto:
+	@test -z "$$(git status --porcelain)" || { echo 'e2e-auto: commit or remove changes first: the result names the git tree' >&2; exit 1; }
+	@mkdir -p build/e2e
+	@tree=$$(git rev-parse 'HEAD^{tree}'); \
+	if $(MAKE) e2e-up e2e; then outcome=passed; else outcome=failed; fi; \
+	$(MAKE) e2e-down || outcome=failed; \
+	echo "$$tree $$outcome" > build/e2e/result; \
+	echo "e2e-auto: $$outcome"; [ $$outcome = passed ]
