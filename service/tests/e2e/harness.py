@@ -716,7 +716,8 @@ def cleanup_permission_sets(session: boto3.Session, failures: list) -> None:
             ]["Name"]
             if (
                 name.startswith(f"JIT-{GRANT_PREFIX}")
-                or name in (SOURCE_PS, CONSOLE_PS)
+                or name == CONSOLE_PS
+                or name.startswith("elevate-e2e-")  # SOURCE_PS and extra sources made by hand
                 or _e2e_api_grant(sso, instance, arn, name)
             ):
                 _remove_permission_set(sso, instance, arn, name, user_id, failures)
