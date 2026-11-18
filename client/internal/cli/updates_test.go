@@ -103,7 +103,7 @@ func TestPreviewShowsTheChangesAndTheCommandToApply(t *testing.T) {
 	if code := h.run("admin", "updates", "--profile", "work", "--preview", "0.2.0"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	wantURL := "https://elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.2.0/elevate.yaml"
+	wantURL := "https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.2.0/elevate.yaml"
 	if admin.previewed[0] != installation.StackID || admin.previewed[1] != wantURL {
 		t.Errorf("previewed %v", admin.previewed)
 	}

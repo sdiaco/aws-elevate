@@ -1,4 +1,4 @@
 {
-  "eu-west-1": "elevate-releases-eu-west-1",
-  "us-east-1": "elevate-releases-us-east-1"
+  "eu-west-1": "aws-elevate-releases-eu-west-1",
+  "us-east-1": "aws-elevate-releases-us-east-1"
 }

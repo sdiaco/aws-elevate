@@ -96,7 +96,7 @@ func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 	if s == nil {
 		t.Fatal("no stack created")
 	}
-	wantURL := "https://elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v" + version.Client + "/elevate.yaml"
+	wantURL := "https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v" + version.Client + "/elevate.yaml"
 	if s.Name != "elevate" || s.TemplateURL != wantURL {
 		t.Errorf("stack %q from %q", s.Name, s.TemplateURL)
 	}

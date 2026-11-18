@@ -61,9 +61,9 @@ Parameters:
 Mappings:
   ReleaseBuckets:
     eu-west-1:
-      Bucket: elevate-releases-eu-west-1
+      Bucket: aws-elevate-releases-eu-west-1
     us-east-1:
-      Bucket: elevate-releases-us-east-1
+      Bucket: aws-elevate-releases-us-east-1
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]

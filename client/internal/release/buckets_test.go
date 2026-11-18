@@ -24,7 +24,7 @@ func TestBucketsMatchTheContract(t *testing.T) {
 
 func TestTemplateURLUsesTheMappedBucket(t *testing.T) {
 	got, err := TemplateURL("us-east-1", "0.2.0")
-	if err != nil || got != "https://elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.2.0/elevate.yaml" {
+	if err != nil || got != "https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.2.0/elevate.yaml" {
 		t.Fatalf("%q %v", got, err)
 	}
 }

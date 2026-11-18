@@ -500,7 +500,7 @@ def test_release_buckets_come_from_the_contract_map_never_from_the_region_name()
     assert TEMPLATE["Mappings"]["ReleaseBuckets"] == {
         region: {"Bucket": bucket} for region, bucket in RELEASE_BUCKETS.items()
     }
-    assert "elevate-releases-${AWS::Region}" not in TEMPLATE_PATH.read_text()
+    assert "aws-elevate-releases-${AWS::Region}" not in TEMPLATE_PATH.read_text()
     for name, res in RESOURCES.items():
         if res["Type"] == "AWS::Lambda::Function":
             assert res["Properties"]["Code"]["S3Bucket"] == {
