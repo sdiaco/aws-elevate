@@ -59,25 +59,8 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *region == "" {
-		// The SSO region is the Identity Center home region; another profile can only
-		// suggest its own region.
-		from := "sso_region of profile " + profile
-		*region = src.SSORegion
-		if *region == "" {
-			from, *region = "region of profile "+profile, src.Region
-		}
-		if *region == "" {
-			return errors.New("profile " + profile + " has no region: pass --region <Identity Center home region>")
-		}
-		ok, err := u.Confirm(fmt.Sprintf("Install in %s, the Identity Center region (%s)?", *region, from), *yes)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("install stopped: run it again with --region <Identity Center home region>")
-		}
-		answered(u, *yes)
+	if *region, err = stackRegion(u, src, profile, *region, "Install", *yes); err != nil {
+		return err
 	}
 
 	// Checked even with --template-url: the template refuses an unmapped region too.
@@ -167,6 +150,33 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		return fmt.Errorf("%w\nThe stack is installed: run aws-elevate setup --profile %s once your access to the new permission sets shows up", err, profile)
 	}
 	return nil
+}
+
+// stackRegion is the region of the stack: the flag, or the Identity Center region of the
+// profile once confirmed. verb is the action, as in "Install in eu-west-1".
+func stackRegion(u *term.UI, src awsx.SourceProfile, profile, region, verb string, yes bool) (string, error) {
+	if region != "" {
+		return region, nil
+	}
+	// The SSO region is the Identity Center home region; another profile can only
+	// suggest its own region.
+	from := "sso_region of profile " + profile
+	region = src.SSORegion
+	if region == "" {
+		from, region = "region of profile "+profile, src.Region
+	}
+	if region == "" {
+		return "", errors.New("profile " + profile + " has no region: pass --region <Identity Center home region>")
+	}
+	ok, err := u.Confirm(fmt.Sprintf("%s in %s, the Identity Center region (%s)?", verb, region, from), yes)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("%s stopped: run it again with --region <Identity Center home region>", strings.ToLower(verb))
+	}
+	answered(u, yes)
+	return region, nil
 }
 
 // answered separates a question someone typed an answer to from the next step.
