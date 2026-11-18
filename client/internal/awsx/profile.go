@@ -190,3 +190,28 @@ func writeFileAtomic(path string, data []byte) error {
 func ConsoleLink(startURL, account, role string) string {
 	return strings.TrimSuffix(startURL, "/") + "/#/console?account_id=" + account + "&role_name=" + role
 }
+
+// RemoveManagedBlock takes the grant profiles out of the CLI config at path and keeps the
+// rest of the file. It reports whether there was a block to remove.
+func RemoveManagedBlock(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, blockBegin) && !strings.Contains(doc, blockEnd) {
+		return false, nil
+	}
+	outside, _, err := splitBlock(doc)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	outside = strings.TrimRight(outside, "\n")
+	if outside != "" {
+		outside += "\n"
+	}
+	return true, writeFileAtomic(path, []byte(outside))
+}

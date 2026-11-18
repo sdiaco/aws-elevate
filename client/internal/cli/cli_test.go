@@ -35,6 +35,7 @@ type fakeService struct {
 	checked      []string
 	versions     *api.ConfigVersions
 	docs         map[int]string
+	open         []api.Grant // when set, the answer to every query for open grants
 }
 
 func (f *fakeService) Me(context.Context) (*api.Me, error) {
@@ -106,6 +107,9 @@ func (f *fakeService) Grant(_ context.Context, id string) (*api.GrantDetail, err
 func (f *fakeService) Grants(_ context.Context, q api.ListQuery) (*api.GrantList, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if q.Open && f.open != nil {
+		return &api.GrantList{Items: f.open}, nil
 	}
 	return &api.GrantList{Items: f.lists[q.Scope]}, nil
 }

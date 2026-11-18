@@ -129,7 +129,7 @@ func init() {
 		"update":    {"Replace this executable with the newest version that works with your service", "update [--yes]", runUpdate},
 		"install":   {"Install the service in the delegated administrator account", installUsage, runInstall},
 		"admin":     {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
-		"uninstall": {"List what is left of an installation (account administrators)", uninstallUsage, runUninstall},
+		"uninstall": {"Remove an installation, or list what is left (account administrators)", uninstallUsage, runUninstall},
 	}
 }
 
