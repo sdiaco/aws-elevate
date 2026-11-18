@@ -488,9 +488,28 @@ def test_admin_cannot_write_permission_sets_iam_lambda_or_apply_stack_updates():
     assert forbidden == []
 
 
+RELEASE_BUCKETS_PATH = TEMPLATE_PATH.parents[1] / "contract" / "release-buckets.json"
+RELEASE_BUCKETS = json.loads(RELEASE_BUCKETS_PATH.read_text())
+RELEASE_BUCKET = {"Fn::FindInMap": ["ReleaseBuckets", {"Ref": "AWS::Region"}, "Bucket"]}
+
+
+def test_release_buckets_come_from_the_contract_map_never_from_the_region_name():
+    # A name derived from the region could be taken by someone else in a region where
+    # aws-elevate is not published (design §12.1): only mapped buckets are read, and a
+    # region without one fails the stack before anything is created.
+    assert TEMPLATE["Mappings"]["ReleaseBuckets"] == {
+        region: {"Bucket": bucket} for region, bucket in RELEASE_BUCKETS.items()
+    }
+    assert "elevate-releases-${AWS::Region}" not in TEMPLATE_PATH.read_text()
+    for name, res in RESOURCES.items():
+        if res["Type"] == "AWS::Lambda::Function":
+            assert res["Properties"]["Code"]["S3Bucket"] == {
+                "Fn::If": ["OfficialCode", RELEASE_BUCKET, {"Ref": "CodeBucket"}]
+            }, name
+
+
 def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket():
     # design §12.3, spike C10: create and read change sets, never apply them.
-    release_bucket = "elevate-releases-${AWS::Region}"
     statements = ps_statements("AdminPs")
     cfn = [
         s for s in statements if any(a.startswith("cloudformation:") for a in as_list(s["Action"]))
@@ -505,7 +524,10 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
     release_templates = {
         "StringLike": {
             "cloudformation:TemplateUrl": {
-                "Fn::Sub": f"https://{release_bucket}.s3.${{AWS::Region}}.amazonaws.com/*"
+                "Fn::Sub": [
+                    "https://${Bucket}.s3.${AWS::Region}.amazonaws.com/*",
+                    {"Bucket": RELEASE_BUCKET},
+                ]
             }
         }
     }
@@ -523,7 +545,9 @@ def test_admin_previews_updates_only_of_this_stack_and_from_the_release_bucket()
     assert create["Condition"] == release_templates
     (read,) = [s for s in statements if "s3:GetObject" in as_list(s["Action"])]
     assert as_list(read["Action"]) == ["s3:GetObject"]
-    assert read["Resource"] == {"Fn::Sub": f"arn:${{AWS::Partition}}:s3:::{release_bucket}/*"}
+    assert read["Resource"] == {
+        "Fn::Sub": ["arn:${AWS::Partition}:s3:::${Bucket}/*", {"Bucket": RELEASE_BUCKET}]
+    }
 
 
 def test_auditors_get_api_access_only_when_the_group_is_given():

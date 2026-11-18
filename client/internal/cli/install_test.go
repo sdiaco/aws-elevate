@@ -17,9 +17,11 @@ type fakeInstaller struct {
 	created  *awsx.NewStack
 	states   []awsx.StackState // returned one per call, the last one repeated
 	polls    int
+	checked  bool
 }
 
 func (f *fakeInstaller) Check(context.Context) (awsx.Installation, error) {
+	f.checked = true
 	if f.checkErr != nil {
 		return awsx.Installation{}, f.checkErr
 	}
@@ -128,14 +130,14 @@ func TestInstallWithFlagsAsksNothingAndPassesTheTestOverrides(t *testing.T) {
 	inst := &fakeInstaller{groups: installGroups, states: installed}
 	h.withInstaller(inst, "")
 
-	code := h.run("install", "--profile", "work", "--region", "eu-central-1",
+	code := h.run("install", "--profile", "work", "--region", "us-east-1",
 		"--admin-group", "admins", "--requester-group", "devs", "--auditor-group", "readers",
 		"--email", "ops@example.com", "--stack-name", "elevate-e2e",
 		"--template-url", "https://example.com/elevate.yaml", "--code-bucket", "b", "--code-key", "k.zip")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	if inst.region != "eu-central-1" {
+	if inst.region != "us-east-1" {
 		t.Errorf("region %q", inst.region)
 	}
 	s := inst.created
@@ -261,13 +263,13 @@ func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
 	h.withInstaller(inst, "y\n")
-	h.backend.source = awsx.SourceProfile{Name: "work", Region: "eu-central-1"}
+	h.backend.source = awsx.SourceProfile{Name: "work", Region: "us-east-1"}
 
 	code := h.run("install", "--profile", "work", "--admin-group", "admins", "--requester-group", "devs", "--email", "ops@example.com")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	if inst.region != "eu-central-1" || !strings.Contains(h.out.String(), "region of profile work") {
+	if inst.region != "us-east-1" || !strings.Contains(h.out.String(), "region of profile work") {
 		t.Errorf("region %q, out %s", inst.region, h.out)
 	}
 	if !strings.Contains(h.out.String(), "aws-elevate setup --profile <your SSO profile>") {
@@ -275,6 +277,19 @@ func TestInstallWithAProfileThatIsNotSSO(t *testing.T) {
 	}
 	if _, err := setUpTarget(h.env, "work"); err == nil {
 		t.Error("setup ran with a profile that is not SSO")
+	}
+}
+
+func TestInstallRefusesARegionWithoutRelease(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+
+	if code := h.run("install", "--profile", "work", "--region", "ap-south-1"); code != 1 || !strings.Contains(h.errOut.String(), "not published in ap-south-1") {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if inst.checked || inst.created != nil {
+		t.Errorf("checked %v, created %v", inst.checked, inst.created)
 	}
 }
 
