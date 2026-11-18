@@ -256,7 +256,7 @@ def test_new_valid_version_replaces_the_cached_one(aws):
 # ---------- version list and content (design §7.3, GET /config/versions) ----------
 
 
-def test_versions_lists_every_version_newest_first_with_its_record(aws):
+def test_versions_lists_versions_newest_first_with_their_record(aws):
     ac, table, trail, _, _, container = aws
     ac.docs = {1: VALID, 2: BROKEN}
     trail.authors[1] = (AUTHOR, "2026-11-15T10:00:00Z")
@@ -266,6 +266,17 @@ def test_versions_lists_every_version_newest_first_with_its_record(aws):
     assert [v.number for v in listed] == [2, 1]
     assert listed[0].valid is False
     assert listed[1].author == AUTHOR
+
+
+def test_versions_lists_only_the_newest_50_and_reads_no_older_record(aws):
+    ac, table, _, _, _, container = aws
+    ac.docs = {n: VALID for n in range(1, 61)}
+    cache = container()
+    cache.current()
+    listed = cache.versions()
+    assert [v.number for v in listed] == list(range(60, 10, -1))
+    # Older versions are never read or recorded: the list stays as fast with thousands.
+    assert all(n not in table.configs for n in range(1, 11))
 
 
 def test_versions_evaluates_a_version_never_seen_without_asking_cloudtrail(aws):
