@@ -1,0 +1,44 @@
+{{define "content"}}<div class="welcome">
+<div class="page-head"><div><span class="eyebrow">First activation</span><h1>Your first rule</h1>
+<p class="desc">aws-elevate has no rules yet. A rule says what can be requested, where, by whom and how. You can change it or add more in Rules.</p></div>
+<div class="actions"><form method="post" action="/welcome/skip"><button class="btn">Skip</button></form></div></div>
+<form method="post" action="/rules/edit" data-steps class="wizard">
+<ol class="wizard-steps">
+<li data-step-mark><span class="wizard-step-n">Step 1</span><span class="wizard-step-name">What</span></li>
+<li data-step-mark><span class="wizard-step-n">Step 2</span><span class="wizard-step-name">Where</span></li>
+<li data-step-mark><span class="wizard-step-n">Step 3</span><span class="wizard-step-name">Who</span></li>
+<li data-step-mark><span class="wizard-step-n">Step 4</span><span class="wizard-step-name">How</span></li>
+<li data-step-mark><span class="wizard-step-n">Step 5</span><span class="wizard-step-name">Review</span></li>
+</ol>
+<div class="box form-box wizard-body">
+<input type="hidden" name="welcome" value="1">
+<input type="hidden" name="orig" value="">
+<section data-step><h2>1. What</h2>
+<p class="desc">The permission set the rule gives.</p>
+{{template "rule-what" .}}</section>
+<section data-step><h2>2. Where</h2>
+{{template "rule-where" .}}</section>
+<section data-step><h2>3. Who</h2>
+<p class="desc">Who asks for it, and who approves.</p>
+{{template "rule-who" .}}</section>
+<section data-step><h2>4. How</h2>
+<p class="desc">How long it lasts.</p>
+{{template "rule-how" .}}</section>
+{{with .Review}}{{$r := .Rule}}<section data-step data-step-review data-step-current><h2>5. Review</h2>
+<p class="desc">The service checked the rule. Publish it, and it applies to new requests within about 30 seconds.</p>
+<div class="review-part"><div class="review-head"><h3>Step 1: What</h3><button type="button" class="btn" data-step-goto="0">Edit</button></div>
+<dl class="kv cols3"><div><dt>Name</dt><dd>{{$r.ID}}</dd></div><div><dt>Permission set</dt><dd>{{$r.PermissionSet.Name}}</dd></div><div><dt>Privileged</dt><dd>{{if $r.Privileged}}Yes{{else}}No{{end}}</dd></div></dl></div>
+<div class="review-part"><div class="review-head"><h3>Step 2: Where</h3><button type="button" class="btn" data-step-goto="1">Edit</button></div>
+<dl class="kv"><div><dt>Accounts</dt><dd>{{range $i, $a := $r.Accounts}}{{if $i}}, {{end}}{{$a.Name}} <span class="muted">{{$a.ID}}</span>{{end}}</dd></div></dl></div>
+<div class="review-part"><div class="review-head"><h3>Step 3: Who</h3><button type="button" class="btn" data-step-goto="2">Edit</button></div>
+<dl class="kv cols3"><div><dt>Who can request</dt><dd>{{$r.Group.Name}}</dd></div><div><dt>Approval</dt><dd>{{if eq $r.Approval "manual"}}Manual · {{with $r.ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div></dl></div>
+<div class="review-part"><div class="review-head"><h3>Step 4: How</h3><button type="button" class="btn" data-step-goto="3">Edit</button></div>
+<dl class="kv cols3"><div><dt>Proposed duration</dt><dd>{{short $r.Duration.DefaultSeconds}}</dd></div><div><dt>Maximum duration</dt><dd>{{short $r.Duration.MaxSeconds}}</dd></div></dl></div>
+<details class="expand"><summary>Show JSON</summary><pre>{{.JSON}}</pre></details>
+<input type="hidden" name="change" value="{{.Change}}">
+<input type="hidden" name="latest" value="{{.Latest}}">
+<div class="form-actions"><button type="button" class="btn link" data-step-goto="3">Back</button><button class="btn primary" formaction="/rules/publish">Publish</button></div>
+</section>{{end}}
+<div class="form-actions" data-step-buttons><button type="button" class="btn link" data-step-back hidden>Back</button><button type="button" class="btn primary" data-step-next hidden>Next</button><button class="btn primary" data-step-done>Next</button></div>
+</div>
+</form></div>{{end}}

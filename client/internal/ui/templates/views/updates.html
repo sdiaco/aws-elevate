@@ -1,0 +1,19 @@
+{{define "content"}}<div class="page-head"><div><h1>Updates</h1>
+<p class="desc">Client {{.Client}}, infrastructure {{.Infra}}.</p></div></div>
+{{if .Off}}<div class="alert info" role="status">The update check is turned off (checkUpdates: false in {{.SettingsPath}}).</div>{{else if not .None}}
+<section class="section"><div class="section-head"><h2>Client</h2>
+{{with .Clients}}<form method="post" action="/updates/client"><button class="btn primary">Update client to {{(index . 0).Version}}</button></form>{{end}}</div>
+{{if .Clients}}<p class="desc">Releases that work with infrastructure {{.Infra}}. The update checks the download's checksum and replaces this executable.</p>
+{{template "releases" .Clients}}{{else}}<p class="muted">This client is the newest that works with infrastructure {{.Infra}}.</p>{{end}}</section>
+<section class="section"><div class="section-head"><h2>Infrastructure</h2></div>
+{{if .Infras}}<p class="desc">The interface does not update the stack: preview what would change, then apply it with your own admin role of the account.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Version</th><th>Type</th><th>Release</th><th></th></tr></thead>
+<tbody>{{range .Infras}}<tr><td>{{.Version}}</td><td>{{with .TypeLabel}}<span class="tag">{{.}}</span>{{else}}<span class="muted">-</span>{{end}}</td><td><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Name}}</a>{{with .NeedClient}} <span class="muted">needs client {{.}}</span>{{end}}</td>
+<td><form method="post" action="/updates/preview"><input type="hidden" name="version" value="{{.Version}}"><button class="btn">Preview changes</button></form></td></tr>{{end}}</tbody>
+</table></div>{{else}}<p class="muted">The infrastructure is up to date.</p>{{end}}</section>{{end}}{{end}}
+
+{{define "releases"}}<div class="table-wrap"><table>
+<thead><tr><th>Version</th><th>Type</th><th>Release</th></tr></thead>
+<tbody>{{range .}}<tr><td>{{.Version}}</td><td>{{with .TypeLabel}}<span class="tag">{{.}}</span>{{else}}<span class="muted">-</span>{{end}}</td><td><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Name}}</a></td></tr>{{end}}</tbody>
+</table></div>{{end}}

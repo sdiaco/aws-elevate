@@ -1,0 +1,21 @@
+{
+  "method": "GET",
+  "path": "/v1/config/versions/3",
+  "query": null,
+  "request": null,
+  "status": 200,
+  "response": {
+    "version": {
+      "number": 3,
+      "valid": true,
+      "errors": [],
+      "author": "arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_x/user@example.com",
+      "createdAt": "2026-11-15T09:00:00Z",
+      "verified": true
+    },
+    "doc": {
+      "schemaVersion": 1,
+      "rules": []
+    }
+  }
+}

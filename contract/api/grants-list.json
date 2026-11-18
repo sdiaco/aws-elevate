@@ -1,0 +1,98 @@
+{
+  "method": "GET",
+  "path": "/v1/grants",
+  "query": {
+    "scope": "mine"
+  },
+  "request": null,
+  "status": 200,
+  "response": {
+    "items": [
+      {
+        "id": "bcdef34567",
+        "state": "closed",
+        "closeReason": "expired",
+        "ruleId": "ssm-prod",
+        "approval": "manual",
+        "configVersion": 3,
+        "requester": {
+          "userId": "u-1",
+          "userName": "user@example.com"
+        },
+        "approver": {
+          "userId": "u-2",
+          "userName": "lead@example.com"
+        },
+        "approverGroup": {
+          "id": "g-lead",
+          "name": "leads"
+        },
+        "sourcePs": {
+          "arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-1",
+          "name": "ssm-write"
+        },
+        "account": "222222222222",
+        "accountName": "prod",
+        "durationSeconds": 3600,
+        "reason": "incident 42",
+        "privileged": true,
+        "createdAt": "2026-11-15T09:59:30Z",
+        "activatedAt": "2026-11-15T10:01:00Z",
+        "expiresAt": "2026-11-15T11:01:00Z",
+        "closedAt": "2026-11-15T11:01:02Z",
+        "revokedBy": null,
+        "revokeReason": null,
+        "rejectReason": null,
+        "error": null,
+        "ruleRemoved": false,
+        "starting": false,
+        "actions": [],
+        "approvalExpiresAt": null
+      },
+      {
+        "id": "abcde23456",
+        "state": "active",
+        "closeReason": null,
+        "ruleId": "ssm-prod",
+        "approval": "manual",
+        "configVersion": 3,
+        "requester": {
+          "userId": "u-1",
+          "userName": "user@example.com"
+        },
+        "approver": {
+          "userId": "u-2",
+          "userName": "lead@example.com"
+        },
+        "approverGroup": {
+          "id": "g-lead",
+          "name": "leads"
+        },
+        "sourcePs": {
+          "arn": "arn:aws:sso:::permissionSet/ssoins-1/ps-1",
+          "name": "ssm-write"
+        },
+        "account": "222222222222",
+        "accountName": "prod",
+        "durationSeconds": 3600,
+        "reason": "incident 42",
+        "privileged": true,
+        "createdAt": "2026-11-15T09:59:00Z",
+        "activatedAt": "2026-11-15T10:01:00Z",
+        "expiresAt": "2026-11-15T11:01:00Z",
+        "closedAt": null,
+        "revokedBy": null,
+        "revokeReason": null,
+        "rejectReason": null,
+        "error": null,
+        "ruleRemoved": false,
+        "starting": false,
+        "actions": [
+          "revoke"
+        ],
+        "approvalExpiresAt": null
+      }
+    ],
+    "cursor": null
+  }
+}

@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  aws-elevate guardrails (optional): a service control policy, deployed from
+  the management account, that keeps the other principals of the service account away
+  from the runtime actions and the resources of aws-elevate.
+
+Parameters:
+  ServiceAccountId:
+    Type: String
+    AllowedPattern: "^[0-9]{12}$"
+    Description: Account where the elevate stack is installed (Identity Center delegated administrator).
+  StackName:
+    Type: String
+    Default: elevate
+    AllowedPattern: "^[A-Za-z][A-Za-z0-9-]*$"
+    Description: Name of the elevate stack; its resources and roles are named after it.
+  DeployerRoleArns:
+    Type: CommaDelimitedList
+    Description: >-
+      Roles that install and update the stack, as ARN patterns. Use the reserved
+      Identity Center roles, which no one can create by hand, for example
+      arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/*/AWSReservedSSO_AdministratorAccess_*
+
+Resources:
+  Guardrails:
+    Type: AWS::Organizations::Policy
+    Properties:
+      Name: !Sub ${StackName}-guardrails
+      Type: SERVICE_CONTROL_POLICY
+      Description: aws-elevate guardrails
+      TargetIds:
+        - !Ref ServiceAccountId
+      Content:
+        Version: "2012-10-17"
+        Statement:
+          # Approving or rejecting a request: only the api role (exact ARN) and
+          # the deployers. SendTask* has no resource-level permissions, so this also
+          # covers task tokens of other state machines of the account.
+          - Sid: ProtectTaskTokens
+            Effect: Deny
+            Action:
+              - states:SendTaskSuccess
+              - states:SendTaskFailure
+              - states:SendTaskHeartbeat
+            Resource: "*"
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Split
+                  - ","
+                  - !Join
+                    - ","
+                    - - !Sub arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/${StackName}-api
+                      - !Join [",", !Ref DeployerRoleArns]
+          # Starting or ending a grant; other state machines of the account stay free.
+          - Sid: ProtectExecutions
+            Effect: Deny
+            Action:
+              - states:StartExecution
+              - states:StopExecution
+              - states:RedriveExecution
+            Resource:
+              - !Sub arn:${AWS::Partition}:states:*:${ServiceAccountId}:stateMachine:${StackName}-*
+              - !Sub arn:${AWS::Partition}:states:*:${ServiceAccountId}:execution:${StackName}-*:*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Split
+                  - ","
+                  - !Join
+                    - ","
+                    - - !Sub arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/${StackName}-api
+                      - !Join [",", !Ref DeployerRoleArns]
+          - Sid: ProtectStateMachine
+            Effect: Deny
+            Action:
+              - states:UpdateStateMachine
+              - states:DeleteStateMachine
+            Resource: !Sub arn:${AWS::Partition}:states:*:${ServiceAccountId}:stateMachine:${StackName}-*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Ref DeployerRoleArns
+          - Sid: ProtectFunctions
+            Effect: Deny
+            Action:
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:DeleteFunction
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:PutFunctionConcurrency
+            Resource: !Sub arn:${AWS::Partition}:lambda:*:${ServiceAccountId}:function:${StackName}-*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Ref DeployerRoleArns
+          # No one else can create a role that looks like a service role, change the
+          # policies of the service roles or pass them.
+          - Sid: ProtectRoles
+            Effect: Deny
+            Action: iam:*
+            Resource: !Sub arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Ref DeployerRoleArns

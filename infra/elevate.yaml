@@ -1,0 +1,1654 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  aws-elevate: temporary elevated access for AWS IAM Identity Center. Deploy in the
+  Identity Center delegated administrator account, in the Identity Center home region.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: E-mail address subscribed to critical alerts (elevate-alerts topic).
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+$"
+  EventConsumerAccounts:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: >-
+      Optional. AWS account ids allowed to create rules on the event bus to consume
+      aws-elevate events.
+  CodeBucket:
+    Type: String
+    Default: ""
+    Description: >-
+      S3 bucket with the Lambda package. Empty means the official release bucket of this
+      region (ReleaseBuckets).
+  CodeKey:
+    Type: String
+    Default: v0.0.1/lambda.zip
+    Description: Object key of the Lambda package in CodeBucket.
+
+  AdminGroupId:
+    Type: String
+    MinLength: 1
+    Description: >-
+      Id of the Identity Center group of admins (ElevateAdmin). CloudFormation assigns
+      permission sets by group id, not name: aws identitystore get-group-id.
+  RequesterGroupId:
+    Type: String
+    MinLength: 1
+    Description: >-
+      Id of the Identity Center group that may call aws-elevate (ElevateRequester).
+      Approvers and auditors need it too, unless they are admins.
+  AuditorGroupId:
+    Type: String
+    Default: ""
+    Description: Optional. Id of the group that can read and export everything.
+  MaxOpenGrantsPerUser:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: Maximum number of grants not yet closed per user.
+  ConfigVersionsListed:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    Description: >-
+      How many of the newest rules versions the Config versions list shows. Each one
+      listed costs a table read; an older version stays readable by its number.
+
+# Regions where aws-elevate is published and their release buckets
+# (contract/release-buckets.json). The bucket is never derived from the region name: in a
+# region without a published release someone else could own that name. A region missing
+# here stops the stack before anything is created.
+Mappings:
+  ReleaseBuckets:
+    eu-west-1:
+      Bucket: aws-elevate-releases-eu-west-1
+    us-east-1:
+      Bucket: aws-elevate-releases-us-east-1
+
+Conditions:
+  OfficialCode: !Equals [!Ref CodeBucket, ""]
+  HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
+  HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Precheck: runs first, every other resource depends on it.
+  # ---------------------------------------------------------------------------
+  PrecheckRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /elevate/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: precheck
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadIdentityCenterAndOrganization
+                Effect: Allow
+                Action:
+                  - sso:ListInstances
+                  - sso:ListPermissionSets
+                  - organizations:DescribeOrganization
+                Resource: "*"
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt PrecheckLogs.Arn
+
+  PrecheckLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-precheck
+      RetentionInDays: 30
+
+  PrecheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-precheck
+      Runtime: python3.12
+      Handler: aws_elevate.precheck.handler.handler
+      Role: !GetAtt PrecheckRole.Arn
+      Timeout: 30
+      Code:
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
+        S3Key: !Ref CodeKey
+      LoggingConfig:
+        LogGroup: !Ref PrecheckLogs
+
+  Precheck:
+    Type: Custom::ElevatePrecheck
+    Properties:
+      ServiceToken: !GetAtt PrecheckFunction.Arn
+      # Without it, a precheck that never answers blocks the stack for up to an hour.
+      ServiceTimeout: 60
+
+  # ---------------------------------------------------------------------------
+  # Grants table
+  # ---------------------------------------------------------------------------
+  GrantsTable:
+    Type: AWS::DynamoDB::Table
+    DependsOn: Precheck
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-grants
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+        - {AttributeName: sk, AttributeType: S}
+        - {AttributeName: gsi1pk, AttributeType: S}
+        - {AttributeName: gsi1sk, AttributeType: S}
+        - {AttributeName: gsi2pk, AttributeType: S}
+        - {AttributeName: gsi2sk, AttributeType: S}
+        - {AttributeName: gsi3pk, AttributeType: S}
+        - {AttributeName: gsi3sk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+        - {AttributeName: sk, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: byUser
+          KeySchema:
+            - {AttributeName: gsi1pk, KeyType: HASH}
+            - {AttributeName: gsi1sk, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+        - IndexName: byMonth
+          KeySchema:
+            - {AttributeName: gsi2pk, KeyType: HASH}
+            - {AttributeName: gsi2sk, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+        - IndexName: open
+          KeySchema:
+            - {AttributeName: gsi3pk, KeyType: HASH}
+            - {AttributeName: gsi3sk, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      ResourcePolicy:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            # Only the service roles, by exact ARN, read or write grant data.
+            # Wildcards would let anyone able to create a role with a matching name in.
+            # Control-plane actions stay open so CloudFormation can update the table.
+            - Sid: OnlyServiceRolesTouchData
+              Effect: Deny
+              Principal: "*"
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:BatchGetItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:BatchWriteItem
+                - dynamodb:ConditionCheckItem
+                - dynamodb:PartiQLSelect
+                - dynamodb:PartiQLInsert
+                - dynamodb:PartiQLUpdate
+                - dynamodb:PartiQLDelete
+                - dynamodb:ExportTableToPointInTime
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants/index/*
+              Condition:
+                ArnNotEquals:
+                  aws:PrincipalArn:
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/elevate/${AWS::StackName}-engine
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/elevate/${AWS::StackName}-api
+
+  # ---------------------------------------------------------------------------
+  # Rules. Published by admins through ElevateAdmin, read by api and engine.
+  # ---------------------------------------------------------------------------
+  RulesApplication:
+    Type: AWS::AppConfig::Application
+    DependsOn: Precheck
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub ${AWS::StackName}
+
+  RulesProfile:
+    Type: AWS::AppConfig::ConfigurationProfile
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ApplicationId: !Ref RulesApplication
+      Name: rules
+      LocationUri: hosted
+      Type: AWS.Freeform
+      # Same content as infra/rules.schema.json (a test keeps them equal). AppConfig
+      # applies it only through ValidateConfiguration, which api calls.
+      Validators:
+        - Type: JSON_SCHEMA
+          Content: '{"$schema":"http://json-schema.org/draft-04/schema#","title":"aws-elevate rules","description":"Same constraints as the service parser, except default <= max, unique rule ids and unique accounts, which draft-04 cannot express.","type":"object","additionalProperties":false,"required":["schemaVersion","rules"],"properties":{"schemaVersion":{"enum":[1]},"rules":{"type":"array","items":{"$ref":"#/definitions/rule"}}},"definitions":{"text":{"type":"string","minLength":1},"ref":{"type":"object","additionalProperties":false,"required":["id","name"],"properties":{"id":{"$ref":"#/definitions/text"},"name":{"$ref":"#/definitions/text"}}},"seconds":{"type":"integer","minimum":300,"maximum":43200},"rule":{"type":"object","additionalProperties":false,"required":["id","group","permissionSet","accounts","duration","approval","approverGroup","privileged"],"properties":{"id":{"$ref":"#/definitions/text"},"group":{"$ref":"#/definitions/ref"},"permissionSet":{"type":"object","additionalProperties":false,"required":["arn","name"],"properties":{"arn":{"type":"string","pattern":"^arn:aws[a-z-]*:sso:::permissionSet/ssoins-[0-9a-f]+/ps-[0-9a-f]+$"},"name":{"$ref":"#/definitions/text"}}},"accounts":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["id","name"],"properties":{"id":{"type":"string","pattern":"^[0-9]{12}$"},"name":{"$ref":"#/definitions/text"}}}},"duration":{"type":"object","additionalProperties":false,"required":["defaultSeconds","maxSeconds"],"properties":{"defaultSeconds":{"$ref":"#/definitions/seconds"},"maxSeconds":{"$ref":"#/definitions/seconds"}}},"approval":{"enum":["auto","manual"]},"approverGroup":{},"privileged":{"type":"boolean"}},"oneOf":[{"properties":{"approval":{"enum":["auto"]},"approverGroup":{"type":"null"},"privileged":{"enum":[false]}}},{"properties":{"approval":{"enum":["manual"]},"approverGroup":{"$ref":"#/definitions/ref"}}}]}}}'
+
+  # ---------------------------------------------------------------------------
+  # Engine: the only component that writes to Identity Center, only on jit-tagged
+  # permission sets. It receives no external input.
+  # ---------------------------------------------------------------------------
+  EngineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-engine
+      Path: /elevate/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: engine
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Scoped to this instance.
+              - Sid: CreateOnlyJitTagged
+                Effect: Allow
+                Action: sso:CreatePermissionSet
+                Resource: !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
+                Condition:
+                  StringEquals: {aws:RequestTag/jit: "true"}
+              - Sid: InstanceAndAccountLevel
+                Effect: Allow
+                Action:
+                  - sso:CreatePermissionSet
+                  - sso:PutInlinePolicyToPermissionSet
+                  - sso:ProvisionPermissionSet
+                  - sso:CreateAccountAssignment
+                  - sso:DeleteAccountAssignment
+                  - sso:DeletePermissionSet
+                  - sso:DescribePermissionSet
+                  - sso:DescribeAccountAssignmentCreationStatus
+                  - sso:DescribeAccountAssignmentDeletionStatus
+                  - sso:DescribePermissionSetProvisioningStatus
+                  - sso:ListPermissionSets
+                  - sso:ListTagsForResource
+                  - sso:AttachManagedPolicyToPermissionSet
+                  - sso:AttachCustomerManagedPolicyReferenceToPermissionSet
+                  - sso:PutPermissionsBoundaryToPermissionSet
+                  - sso:GetInlinePolicyForPermissionSet
+                  - sso:ListManagedPoliciesInPermissionSet
+                  - sso:ListCustomerManagedPolicyReferencesInPermissionSet
+                  - sso:GetPermissionsBoundaryForPermissionSet
+                Resource:
+                  - !GetAtt Precheck.InstanceArn
+                  - !Sub arn:${AWS::Partition}:sso:::account/*
+              - Sid: WriteOnlyJitPermissionSets
+                Effect: Allow
+                Action:
+                  - sso:PutInlinePolicyToPermissionSet
+                  - sso:ProvisionPermissionSet
+                  - sso:CreateAccountAssignment
+                  - sso:DeleteAccountAssignment
+                  - sso:DeletePermissionSet
+                  - sso:AttachManagedPolicyToPermissionSet
+                  - sso:AttachCustomerManagedPolicyReferenceToPermissionSet
+                  - sso:PutPermissionsBoundaryToPermissionSet
+                Resource: !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
+                Condition:
+                  StringEquals: {aws:ResourceTag/jit: "true"}
+              - Sid: ReadAnyPermissionSet
+                Effect: Allow
+                Action:
+                  - sso:DescribePermissionSet
+                  - sso:ListTagsForResource
+                  - sso:GetInlinePolicyForPermissionSet
+                  - sso:ListManagedPoliciesInPermissionSet
+                  - sso:ListCustomerManagedPolicyReferencesInPermissionSet
+                  - sso:GetPermissionsBoundaryForPermissionSet
+                Resource: !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
+              - Sid: TagOnlyJitOnCreate
+                Effect: Allow
+                Action: sso:TagResource
+                Resource: !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/jit: "true"
+                    aws:RequestTag/jit: "true"
+                  ForAllValues:StringLike:
+                    aws:TagKeys: [jit, "jit:*"]
+              # Creating a tagged permission set also checks TagResource on the instance.
+              - Sid: TagInstanceLevel
+                Effect: Allow
+                Action: sso:TagResource
+                Resource: !GetAtt Precheck.InstanceArn
+              - Sid: NeverUntag
+                Effect: Deny
+                Action: sso:UntagResource
+                Resource: "*"
+              - Sid: GrantsTable
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:ConditionCheckItem
+                Resource: !GetAtt GrantsTable.Arn
+              # AppConfig checks this action against both the application and the
+              # profile ARN; a hosted version has no ARN of its own.
+              - Sid: ReadRules
+                Effect: Allow
+                Action: appconfig:GetHostedConfigurationVersion
+                Resource:
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt EngineLogs.Arn
+
+  EngineLogs:
+    Type: AWS::Logs::LogGroup
+    DependsOn: Precheck
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-engine
+      RetentionInDays: 90
+
+  EngineFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-engine
+      Runtime: python3.12
+      Handler: aws_elevate.engine.handler.handler
+      Role: !GetAtt EngineRole.Arn
+      # Each Identity Center step has a 120 s budget; Step Functions retries the task.
+      Timeout: 300
+      MemorySize: 256
+      Code:
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
+        S3Key: !Ref CodeKey
+      LoggingConfig:
+        LogGroup: !Ref EngineLogs
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref GrantsTable
+          INSTANCE_ARN: !GetAtt Precheck.InstanceArn
+          APPCONFIG_APPLICATION_ID: !Ref RulesApplication
+          APPCONFIG_PROFILE_ID: !GetAtt RulesProfile.ConfigurationProfileId
+          MANAGEMENT_ACCOUNT_ID: !GetAtt Precheck.ManagementAccountId
+          SERVICE_ACCOUNT_ID: !Ref AWS::AccountId
+
+  # ---------------------------------------------------------------------------
+  # Events and alerts
+  # ---------------------------------------------------------------------------
+  EventBus:
+    Type: AWS::Events::EventBus
+    DependsOn: Precheck
+    Properties:
+      Name: !Sub ${AWS::StackName}-events
+      Policy: !If
+        - HasConsumers
+        - Version: "2012-10-17"
+          Statement:
+            # Consumers create their own rules on this bus.
+            - Sid: ConsumerAccountsManageTheirRules
+              Effect: Allow
+              Principal: {AWS: !Ref EventConsumerAccounts}
+              Action:
+                - events:PutRule
+                - events:PutTargets
+                - events:DeleteRule
+                - events:RemoveTargets
+                - events:DisableRule
+                - events:EnableRule
+                - events:DescribeRule
+                - events:ListTargetsByRule
+              Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${AWS::StackName}-events/*
+              Condition:
+                StringEqualsIfExists:
+                  events:creatorAccount: "${aws:PrincipalAccount}"
+        - !Ref AWS::NoValue
+
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    DependsOn: Precheck
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  ApprovalsTopic:
+    Type: AWS::SNS::Topic
+    DependsOn: Precheck
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-approvals
+
+  AlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AlertRulesOfThisStack
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref AlertsTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: [!GetAtt GrantErrorRule.Arn, !GetAtt ConfigRejectedRule.Arn]
+
+  ApprovalsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref ApprovalsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ApprovalRuleOfThisStack
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref ApprovalsTopic
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt ManualRequestRule.Arn
+
+  GrantErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${AWS::StackName}-grant-error
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [elevate]
+        detail-type: [elevate.grant.error]
+      Targets:
+        - Id: alerts
+          Arn: !Ref AlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              grant: $.detail.grantId
+              code: $.detail.errorCode
+              error: $.detail.error
+              user: $.detail.requester.userName
+              account: $.detail.account
+              time: $.time
+            InputTemplate: >-
+              "aws-elevate: grant <grant> of <user> on account <account> needs attention
+              (<code>: <error>) at <time>. Open Problems: aws elevate ui"
+
+  ConfigRejectedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${AWS::StackName}-config-rejected
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [elevate]
+        detail-type: [elevate.config.rejected]
+      Targets:
+        - Id: alerts
+          Arn: !Ref AlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              version: $.detail.configVersion
+              time: $.time
+            InputTemplate: >-
+              "aws-elevate: rules version <version> is not valid and was ignored at <time>;
+              the previous valid version stays in force. See: aws elevate ui"
+
+  ManualRequestRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${AWS::StackName}-manual-request
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [elevate]
+        detail-type: [elevate.request.created]
+        detail:
+          approval: [manual]
+      Targets:
+        - Id: approvals
+          Arn: !Ref ApprovalsTopic
+          InputTransformer:
+            InputPathsMap:
+              grant: $.detail.grantId
+              user: $.detail.requester.userName
+              ps: $.detail.sourcePs.name
+              account: $.detail.account
+              group: $.detail.approverGroup.name
+              reason: $.detail.reason
+            InputTemplate: >-
+              "aws-elevate: <user> asks for <ps> on account <account> (reason: <reason>).
+              Approvers: group <group>. Approve with: aws elevate approve <grant>"
+
+  # ---------------------------------------------------------------------------
+  # Grant lifecycle. Definition generated from
+  # service/src/aws_elevate/statemachine.py; a test keeps the two identical.
+  # ---------------------------------------------------------------------------
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    DependsOn: Precheck
+    Properties:
+      Path: /elevate/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: states.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      Policies:
+        - PolicyName: grant-lifecycle
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: InvokeEngine
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt EngineFunction.Arn
+              - Sid: PublishEvents
+                Effect: Allow
+                Action: events:PutEvents
+                Resource: !GetAtt EventBus.Arn
+
+  GrantStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub ${AWS::StackName}-grant
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionSubstitutions:
+        EngineArn: !GetAtt EngineFunction.Arn
+        BusName: !Ref EventBus
+      # A string: CloudFormation rejects the null values the definition needs.
+      DefinitionString: |
+        {
+          "Comment": "aws-elevate grant lifecycle",
+          "StartAt": "Snapshot",
+          "States": {
+            "Snapshot": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "snapshot",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "EvCreated",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant"
+              },
+              "ResultPath": "$.snap"
+            },
+            "EvCreated": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:created', $.grantId)",
+                      "grantId.$": "$.snap.grant.grantId",
+                      "requester.$": "$.snap.grant.requester",
+                      "approver.$": "$.snap.grant.approver",
+                      "approverGroup.$": "$.snap.grant.approverGroup",
+                      "rule.$": "$.snap.grant.rule",
+                      "sourcePs.$": "$.snap.grant.sourcePs",
+                      "account.$": "$.snap.grant.account",
+                      "approval.$": "$.snap.grant.approval",
+                      "privileged.$": "$.snap.grant.privileged",
+                      "startsAt.$": "$.snap.grant.startsAt",
+                      "expiresAt.$": "$.snap.grant.expiresAt",
+                      "configVersion.$": "$.snap.grant.configVersion",
+                      "reason.$": "$.snap.grant.reason",
+                      "closeReason.$": "$.snap.grant.closeReason",
+                      "revokedBy.$": "$.snap.grant.revokedBy",
+                      "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
+                      "error.$": "$.snap.grant.error"
+                    },
+                    "DetailType": "elevate.request.created"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "NeedsApproval"
+                }
+              ],
+              "Next": "NeedsApproval"
+            },
+            "NeedsApproval": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.approval",
+                  "StringEquals": "manual",
+                  "Next": "WaitApproval"
+                }
+              ],
+              "Default": "Activate"
+            },
+            "WaitApproval": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "store_token",
+                  "grantId.$": "$.grantId",
+                  "taskToken.$": "$$.Task.Token"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "AfterWait",
+              "TimeoutSeconds": 1800,
+              "ResultPath": null,
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.waitError",
+                  "Next": "ResolveWait"
+                }
+              ]
+            },
+            "ResolveWait": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "resolve_wait",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "AfterWait",
+              "ResultPath": null
+            },
+            "AfterWait": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "snapshot",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Decision",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant"
+              },
+              "ResultPath": "$.snap"
+            },
+            "Decision": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.snap.grant.state",
+                  "StringEquals": "activating",
+                  "Next": "EvApproved"
+                },
+                {
+                  "Variable": "$.snap.grant.state",
+                  "StringEquals": "closed",
+                  "Next": "EvNotApproved"
+                }
+              ],
+              "Default": "ResolveWait"
+            },
+            "EvApproved": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:approved', $.grantId)",
+                      "grantId.$": "$.snap.grant.grantId",
+                      "requester.$": "$.snap.grant.requester",
+                      "approver.$": "$.snap.grant.approver",
+                      "approverGroup.$": "$.snap.grant.approverGroup",
+                      "rule.$": "$.snap.grant.rule",
+                      "sourcePs.$": "$.snap.grant.sourcePs",
+                      "account.$": "$.snap.grant.account",
+                      "approval.$": "$.snap.grant.approval",
+                      "privileged.$": "$.snap.grant.privileged",
+                      "startsAt.$": "$.snap.grant.startsAt",
+                      "expiresAt.$": "$.snap.grant.expiresAt",
+                      "configVersion.$": "$.snap.grant.configVersion",
+                      "reason.$": "$.snap.grant.reason",
+                      "closeReason.$": "$.snap.grant.closeReason",
+                      "revokedBy.$": "$.snap.grant.revokedBy",
+                      "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
+                      "error.$": "$.snap.grant.error"
+                    },
+                    "DetailType": "elevate.request.approved"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "Activate"
+                }
+              ],
+              "Next": "Activate"
+            },
+            "EvNotApproved": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:{}', $.grantId, $.snap.grant.closeReason)",
+                      "grantId.$": "$.snap.grant.grantId",
+                      "requester.$": "$.snap.grant.requester",
+                      "approver.$": "$.snap.grant.approver",
+                      "approverGroup.$": "$.snap.grant.approverGroup",
+                      "rule.$": "$.snap.grant.rule",
+                      "sourcePs.$": "$.snap.grant.sourcePs",
+                      "account.$": "$.snap.grant.account",
+                      "approval.$": "$.snap.grant.approval",
+                      "privileged.$": "$.snap.grant.privileged",
+                      "startsAt.$": "$.snap.grant.startsAt",
+                      "expiresAt.$": "$.snap.grant.expiresAt",
+                      "configVersion.$": "$.snap.grant.configVersion",
+                      "reason.$": "$.snap.grant.reason",
+                      "closeReason.$": "$.snap.grant.closeReason",
+                      "revokedBy.$": "$.snap.grant.revokedBy",
+                      "revokeReason.$": "$.snap.grant.revokeReason",
+                      "rejectReason.$": "$.snap.grant.rejectReason",
+                      "error.$": "$.snap.grant.error"
+                    },
+                    "DetailType.$": "States.Format('elevate.request.{}', $.snap.grant.closeReason)"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "Done"
+                }
+              ],
+              "Next": "Done"
+            },
+            "Activate": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "activate",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "EvActivated",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant",
+                "waitSeconds.$": "$.Payload.waitSeconds"
+              },
+              "ResultPath": "$.act",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.activateError",
+                  "Next": "Revoke"
+                }
+              ]
+            },
+            "EvActivated": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:activated', $.grantId)",
+                      "grantId.$": "$.act.grant.grantId",
+                      "requester.$": "$.act.grant.requester",
+                      "approver.$": "$.act.grant.approver",
+                      "approverGroup.$": "$.act.grant.approverGroup",
+                      "rule.$": "$.act.grant.rule",
+                      "sourcePs.$": "$.act.grant.sourcePs",
+                      "account.$": "$.act.grant.account",
+                      "approval.$": "$.act.grant.approval",
+                      "privileged.$": "$.act.grant.privileged",
+                      "startsAt.$": "$.act.grant.startsAt",
+                      "expiresAt.$": "$.act.grant.expiresAt",
+                      "configVersion.$": "$.act.grant.configVersion",
+                      "reason.$": "$.act.grant.reason",
+                      "closeReason.$": "$.act.grant.closeReason",
+                      "revokedBy.$": "$.act.grant.revokedBy",
+                      "revokeReason.$": "$.act.grant.revokeReason",
+                      "rejectReason.$": "$.act.grant.rejectReason",
+                      "error.$": "$.act.grant.error"
+                    },
+                    "DetailType": "elevate.grant.activated"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "Active"
+                }
+              ],
+              "Next": "Active"
+            },
+            "Active": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "store_token",
+                  "grantId.$": "$.grantId",
+                  "taskToken.$": "$$.Task.Token"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Revoke",
+              "TimeoutSecondsPath": "$.act.waitSeconds",
+              "ResultPath": null,
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.activeEnd",
+                  "Next": "Revoke"
+                }
+              ]
+            },
+            "Revoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "revoke",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "EvClosed",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant",
+                "closeReason.$": "$.Payload.closeReason"
+              },
+              "ResultPath": "$.rev",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.revokeError",
+                  "Next": "MarkRevokeFailed"
+                }
+              ]
+            },
+            "MarkRevokeFailed": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "mark_revoke_failed",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "EvError",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant"
+              },
+              "ResultPath": "$.rev"
+            },
+            "EvError": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:error', $.grantId)",
+                      "grantId.$": "$.rev.grant.grantId",
+                      "requester.$": "$.rev.grant.requester",
+                      "approver.$": "$.rev.grant.approver",
+                      "approverGroup.$": "$.rev.grant.approverGroup",
+                      "rule.$": "$.rev.grant.rule",
+                      "sourcePs.$": "$.rev.grant.sourcePs",
+                      "account.$": "$.rev.grant.account",
+                      "approval.$": "$.rev.grant.approval",
+                      "privileged.$": "$.rev.grant.privileged",
+                      "startsAt.$": "$.rev.grant.startsAt",
+                      "expiresAt.$": "$.rev.grant.expiresAt",
+                      "configVersion.$": "$.rev.grant.configVersion",
+                      "reason.$": "$.rev.grant.reason",
+                      "closeReason.$": "$.rev.grant.closeReason",
+                      "revokedBy.$": "$.rev.grant.revokedBy",
+                      "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
+                      "error.$": "$.rev.grant.error",
+                      "errorCode": "revoke_failed"
+                    },
+                    "DetailType": "elevate.grant.error"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "RevokeAgain"
+                }
+              ],
+              "Next": "RevokeAgain"
+            },
+            "RevokeAgain": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EngineArn}",
+                "Payload": {
+                  "action": "revoke",
+                  "grantId.$": "$.grantId"
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Retryable",
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "EvClosed",
+              "ResultSelector": {
+                "grant.$": "$.Payload.grant",
+                "closeReason.$": "$.Payload.closeReason"
+              },
+              "ResultPath": "$.rev"
+            },
+            "EvClosed": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::events:putEvents",
+              "Parameters": {
+                "Entries": [
+                  {
+                    "EventBusName": "${BusName}",
+                    "Source": "elevate",
+                    "Detail": {
+                      "schemaVersion": 1,
+                      "eventId.$": "States.Format('{}:closed', $.grantId)",
+                      "grantId.$": "$.rev.grant.grantId",
+                      "requester.$": "$.rev.grant.requester",
+                      "approver.$": "$.rev.grant.approver",
+                      "approverGroup.$": "$.rev.grant.approverGroup",
+                      "rule.$": "$.rev.grant.rule",
+                      "sourcePs.$": "$.rev.grant.sourcePs",
+                      "account.$": "$.rev.grant.account",
+                      "approval.$": "$.rev.grant.approval",
+                      "privileged.$": "$.rev.grant.privileged",
+                      "startsAt.$": "$.rev.grant.startsAt",
+                      "expiresAt.$": "$.rev.grant.expiresAt",
+                      "configVersion.$": "$.rev.grant.configVersion",
+                      "reason.$": "$.rev.grant.reason",
+                      "closeReason.$": "$.rev.grant.closeReason",
+                      "revokedBy.$": "$.rev.grant.revokedBy",
+                      "revokeReason.$": "$.rev.grant.revokeReason",
+                      "rejectReason.$": "$.rev.grant.rejectReason",
+                      "error.$": "$.rev.grant.error"
+                    },
+                    "DetailType": "elevate.grant.closed"
+                  }
+                ]
+              },
+              "ResultPath": null,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.eventError",
+                  "Next": "Done"
+                }
+              ],
+              "Next": "Done"
+            },
+            "Done": {
+              "Type": "Succeed"
+            }
+          }
+        }
+
+  # ---------------------------------------------------------------------------
+  # API: reads untrusted input, never writes to Identity Center.
+  # ---------------------------------------------------------------------------
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-api
+      Path: /elevate/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: api
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Reads by key and by index only: no Scan.
+              - Sid: GrantsTable
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:ConditionCheckItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt GrantsTable.Arn
+                  - !Sub ${GrantsTable.Arn}/index/*
+              # AppConfig checks these against both the application and the profile ARN.
+              - Sid: ReadRules
+                Effect: Allow
+                Action:
+                  - appconfig:GetHostedConfigurationVersion
+                  - appconfig:ListHostedConfigurationVersions
+                  - appconfig:ValidateConfiguration
+                Resource:
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}
+                  - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}
+              # Author of a rules version. LookupEvents has no resource type.
+              - Sid: VersionAuthor
+                Effect: Allow
+                Action: cloudtrail:LookupEvents
+                Resource: "*"
+              - Sid: StartGrant
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref GrantStateMachine
+              # SendTaskSuccess has no resource type; the token itself names the task.
+              - Sid: EndWait
+                Effect: Allow
+                Action: states:SendTaskSuccess
+                Resource: "*"
+              - Sid: RedriveGrant
+                Effect: Allow
+                Action: states:RedriveExecution
+                Resource: !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:${GrantStateMachine.Name}:*
+              - Sid: ReadUsersAndGroups
+                Effect: Allow
+                Action:
+                  - identitystore:GetUserId
+                  - identitystore:ListGroupMembershipsForMember
+                Resource:
+                  # The store ARN has the account owning the instance, not this one.
+                  - !Sub arn:${AWS::Partition}:identitystore::*:identitystore/${Precheck.IdentityStoreId}
+                  - !Sub arn:${AWS::Partition}:identitystore:::user/*
+                  - !Sub arn:${AWS::Partition}:identitystore:::membership/*
+              # Reads only: the limits checked before publishing and "what you
+              # will get" for requesters, who cannot read Identity Center.
+              - Sid: ReadPermissionSets
+                Effect: Allow
+                Action:
+                  - sso:DescribePermissionSet
+                  - sso:GetInlinePolicyForPermissionSet
+                  - sso:ListManagedPoliciesInPermissionSet
+                  - sso:ListCustomerManagedPolicyReferencesInPermissionSet
+                  - sso:GetPermissionsBoundaryForPermissionSet
+                Resource:
+                  - !GetAtt Precheck.InstanceArn
+                  - !Sub arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*
+              # The real RoleId of the service roles, to refuse look-alikes.
+              - Sid: CompareRoleId
+                Effect: Allow
+                Action: iam:GetRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*/AWSReservedSSO_*
+              - Sid: ConfigRejectedEvent
+                Effect: Allow
+                Action: events:PutEvents
+                Resource: !GetAtt EventBus.Arn
+                Condition:
+                  StringEquals:
+                    events:detail-type: elevate.config.rejected
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ApiLogs.Arn
+
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    DependsOn: Precheck
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-api
+      RetentionInDays: 90
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-api
+      Runtime: python3.12
+      Handler: aws_elevate.api.handler.handler
+      Role: !GetAtt ApiRole.Arn
+      # API Gateway gives up after 29 s.
+      Timeout: 29
+      MemorySize: 256
+      Code:
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
+        S3Key: !Ref CodeKey
+      LoggingConfig:
+        LogGroup: !Ref ApiLogs
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref GrantsTable
+          STATE_MACHINE_ARN: !Ref GrantStateMachine
+          APPCONFIG_APPLICATION_ID: !Ref RulesApplication
+          APPCONFIG_PROFILE_ID: !GetAtt RulesProfile.ConfigurationProfileId
+          EVENT_BUS_NAME: !Ref EventBus
+          IDENTITY_STORE_ID: !GetAtt Precheck.IdentityStoreId
+          REQUESTER_PS_NAME: ElevateRequester
+          ADMIN_PS_NAME: ElevateAdmin
+          AUDITOR_PS_NAME: ElevateAuditor
+          AUDITOR_GROUP_ID: !Ref AuditorGroupId
+          MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
+          CONFIG_VERSIONS_LISTED: !Ref ConfigVersionsListed
+          SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
+          STACK_ID: !Ref AWS::StackId
+          ALERTS_TOPIC_ARN: !Ref AlertsTopic
+          APPROVALS_TOPIC_ARN: !Ref ApprovalsTopic
+          MANAGEMENT_ACCOUNT_ID: !GetAtt Precheck.ManagementAccountId
+          SERVICE_ACCOUNT_ID: !Ref AWS::AccountId
+
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    DependsOn: Precheck
+    Properties:
+      Name: !Sub ${AWS::StackName}-api
+      EndpointConfiguration:
+        Types: [REGIONAL]
+      Policy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OnlyElevatePermissionSets
+            Effect: Allow
+            Principal: {AWS: "*"}
+            Action: execute-api:Invoke
+            Resource: execute-api:/*
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
+          # In the same account an Allow alone refuses nobody.
+          - Sid: DenyEveryoneElse
+            Effect: Deny
+            Principal: {AWS: "*"}
+            Action: execute-api:Invoke
+            Resource: execute-api:/*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn:
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateRequester_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAdmin_*
+                    - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_ElevateAuditor_*
+
+  ApiV1:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: v1
+
+  ApiProxy:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref ApiV1
+      PathPart: "{proxy+}"
+
+  # One method for every route: api does the routing, so the template stays short.
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ApiProxy
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
+
+  # The suffix is a fingerprint of the API: a stack update republishes the API only through
+  # a new deployment, so a test makes every change to the API rename this resource.
+  ApiDeployment7F48D219:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiMethod
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: api
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/v1/*
+
+  # Fixed name: aws-elevate setup finds the API here.
+  ApiUrlParameter:
+    Type: AWS::SSM::Parameter
+    DependsOn: ApiDeployment7F48D219
+    Properties:
+      Name: /elevate/api-url
+      Type: String
+      Value: !Sub https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/api
+
+  # ---------------------------------------------------------------------------
+  # Service permission sets. Not tagged jit: the engine cannot
+  # touch them.
+  # ---------------------------------------------------------------------------
+  RequesterPs:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      Name: ElevateRequester
+      Description: Call the aws-elevate API
+      SessionDuration: PT1H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CallApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*
+          - Sid: ReadApiAddress
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
+
+  # Same policy as ElevateRequester: the name only tells auditors what they are in the
+  # access portal. What they see through the API comes from their groups.
+  AuditorPs:
+    Type: AWS::SSO::PermissionSet
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      Name: ElevateAuditor
+      Description: Read aws-elevate
+      SessionDuration: PT1H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CallApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*
+          - Sid: ReadApiAddress
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
+
+  AdminPs:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      Name: ElevateAdmin
+      Description: Administer aws-elevate
+      SessionDuration: PT1H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CallApi
+            Effect: Allow
+            Action: execute-api:Invoke
+            Resource: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*
+          - Sid: ReadApiAddress
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/elevate/api-url
+          - Sid: PublishRules
+            Effect: Allow
+            Action: appconfig:CreateHostedConfigurationVersion
+            Resource:
+              - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}
+              - !Sub arn:${AWS::Partition}:appconfig:${AWS::Region}:${AWS::AccountId}:application/${RulesApplication}/configurationprofile/${RulesProfile.ConfigurationProfileId}
+          - Sid: ReadPermissionSetsAccountsGroups
+            Effect: Allow
+            Action:
+              - sso:ListInstances
+              - sso:ListPermissionSets
+              - sso:DescribePermissionSet
+              - organizations:ListAccounts
+              - identitystore:ListGroups
+              - identitystore:DescribeGroup
+            Resource: "*"
+          - Sid: ReadConfigHistory
+            Effect: Allow
+            Action: [cloudtrail:LookupEvents, cloudtrail:DescribeTrails]
+            Resource: "*"
+          # Update previews only: change sets of this stack from
+          # the official release bucket can be created and read, never applied.
+          - Sid: ReadStackAndPreviews
+            Effect: Allow
+            Action:
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ListChangeSets
+            Resource: !Ref AWS::StackId
+          - Sid: PreviewReleaseTemplates
+            Effect: Allow
+            Action: cloudformation:CreateChangeSet
+            Resource: !Ref AWS::StackId
+            Condition:
+              StringLike:
+                cloudformation:TemplateUrl: !Sub
+                  - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/*
+                  - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
+          # The preview passes only the parameters the new template declares. A summary
+          # of a template URL names no stack, so it cannot be scoped to this stack's ARN.
+          - Sid: ReadReleaseTemplateParameters
+            Effect: Allow
+            Action: cloudformation:GetTemplateSummary
+            Resource: "*"
+            Condition:
+              StringLike:
+                cloudformation:TemplateUrl: !Sub
+                  - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/*
+                  - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
+          - Sid: ReadReleaseTemplates
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub
+              - arn:${AWS::Partition}:s3:::${Bucket}/*
+              - Bucket: !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket]
+          - Sid: DoctorTopics
+            Effect: Allow
+            Action: sns:ListSubscriptionsByTopic
+            Resource:
+              - !Ref AlertsTopic
+              - !Ref ApprovalsTopic
+
+  RequesterAssignment:
+    Type: AWS::SSO::Assignment
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      PermissionSetArn: !GetAtt RequesterPs.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref RequesterGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref AWS::AccountId
+
+  AdminAssignment:
+    Type: AWS::SSO::Assignment
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      PermissionSetArn: !GetAtt AdminPs.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref AdminGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref AWS::AccountId
+
+  # Auditors only read, but they still need a service permission set to call the API
+  #.
+  AuditorAssignment:
+    Type: AWS::SSO::Assignment
+    Condition: HasAuditors
+    Properties:
+      InstanceArn: !GetAtt Precheck.InstanceArn
+      PermissionSetArn: !GetAtt AuditorPs.PermissionSetArn
+      PrincipalType: GROUP
+      PrincipalId: !Ref AuditorGroupId
+      TargetType: AWS_ACCOUNT
+      TargetId: !Ref AWS::AccountId
+
+Outputs:
+  InstanceArn:
+    Value: !GetAtt Precheck.InstanceArn
+  IdentityStoreId:
+    Value: !GetAtt Precheck.IdentityStoreId
+  GrantsTableName:
+    Value: !Ref GrantsTable
+  StateMachineArn:
+    Value: !Ref GrantStateMachine
+  EventBusArn:
+    Value: !GetAtt EventBus.Arn
+  RulesApplicationId:
+    Value: !Ref RulesApplication
+  RulesProfileId:
+    Value: !GetAtt RulesProfile.ConfigurationProfileId
+  ApiUrl:
+    Value: !GetAtt ApiUrlParameter.Value

@@ -1,0 +1,13 @@
+{{define "content"}}<div class="page-head"><div><h1>Infrastructure {{.Version}}</h1>
+<p class="desc">A CloudFormation change set: nothing was changed.</p></div>
+<div class="actions"><a class="btn" href="/updates">All updates</a></div></div>
+{{if .NoChanges}}<div class="alert info" role="status">No changes: the stack already matches this version.</div>{{else}}
+<div class="table-wrap"><table>
+<thead><tr><th>Action</th><th>Resource</th><th>Type</th><th>Replacement</th></tr></thead>
+<tbody>{{range .Changes}}<tr><td>{{.Action}}</td><td>{{.Resource}}</td><td>{{.Type}}</td><td>{{.Replacement}}</td></tr>{{end}}</tbody>
+</table></div>
+<section class="section"><h2>Apply</h2>
+<p class="desc">Run it with your own admin role of the account: ElevateAdmin cannot update the stack.</p>
+<pre><button type="button" class="copy" data-copy="{{.Command}}" title="Copy">{{.Command}}</button></pre></section>{{end}}
+<details class="expand"><summary>Show equivalent command</summary>
+<pre><button type="button" class="copy" data-copy="aws elevate admin updates --preview {{.Version}}" title="Copy">aws elevate admin updates --preview {{.Version}}</button></pre></details>{{end}}

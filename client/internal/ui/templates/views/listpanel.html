@@ -1,0 +1,3 @@
+{{define "content"}}{{with .Alert}}{{template "alert" .}}{{end}}{{with .Notice}}{{template "notice" .}}{{end}}{{with .Flash}}{{template "flash" .}}{{end}}
+{{template "list" .List}}
+{{template "panel" .Panel}}{{end}}

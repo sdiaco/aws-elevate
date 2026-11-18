@@ -1,0 +1,102 @@
+# Publish a release when a pull request merged into main brings a version that is not
+# published yet. The merge of the release pull request into main, done only by the
+# maintainer, is the approval; its label release:security|fix|feature gives the type.
+# The end-to-end tests run on real AWS outside this workflow: dev/release.sh publishes
+# only when the pull request head has a successful e2e commit status and main has its tree.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # tag and GitHub release
+      id-token: write # OIDC token for the AWS role
+      pull-requests: read
+      statuses: read
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the tested commit is the pull request head
+          persist-credentials: false
+
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: dev/release-plan.sh
+
+      # make check already passed on the tested commit (dev/release-plan.sh verifies it).
+      - if: steps.plan.outputs.version != ''
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: 0.13.8
+          python-version: 3.12.16
+          enable-cache: true
+          cache-python: true
+          cache-dependency-glob: service/uv.lock
+      - if: steps.plan.outputs.version != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+      - if: steps.plan.outputs.version != ''
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: dev/build.sh "$VERSION" build/release
+
+      - if: steps.plan.outputs.version != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.RELEASE_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - if: steps.plan.outputs.version != ''
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          TESTED: ${{ steps.plan.outputs.tested }}
+        run: make release-upload VERSION="$VERSION" TESTED="$TESTED"
+
+      - if: steps.plan.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          TESTED: ${{ steps.plan.outputs.tested }}
+          TYPE: ${{ steps.plan.outputs.type }}
+        run: make release-github VERSION="$VERSION" TESTED="$TESTED" TYPE="$TYPE"
+
+  # main changed: open the pull request that brings it back into develop (hotfixes, and
+  # the merge commit of a release).
+  sync-develop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main"
+          elif [ -n "$(gh pr list --base develop --head main --json number --jq '.[]')" ]; then
+            echo "a pull request from main to develop is already open"
+          else
+            gh pr create --base develop --head main --title "chore(dev): merge main back into develop" \
+              --body "main changed (release or hotfix). Merge with a merge commit, not squash."
+          fi

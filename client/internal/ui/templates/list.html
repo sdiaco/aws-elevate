@@ -1,0 +1,37 @@
+{{/* The one list of the interface: header with title, counter and
+     actions, search, quick filters, table. Actions stay disabled until rows are
+     selected and send the selected ids as id=… to their address. */}}
+{{define "list"}}<form class="list" data-list method="get"{{if .Reload}} data-reload{{end}}>
+<div class="list-head"><h1>{{.Title}} <span class="counter">({{len .Rows}}{{if .Next}}+{{end}})</span></h1>
+{{if or .Actions .Tools}}<div class="actions">{{if .Menu}}<div class="menu-wrap"><button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>
+<div class="menu" role="menu" hidden>{{range .Actions}}<button class="menu-item" role="menuitem" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}</div></div>
+{{- else}}{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
+</div>
+{{if or .Search .Filters}}<div class="list-tools">
+{{if .Search}}<input type="search" data-search placeholder="Search this page" aria-label="Search this page">{{end}}
+{{range .Filters}}<div class="segmented" role="group" aria-label="{{or .Label "Filter"}}">{{range .Items}}<a href="{{.Path}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+{{end}}</div>{{end}}
+<div class="table-wrap">
+<table>
+<thead><tr>{{if .Actions}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all"></th>{{end}}{{range .Columns}}<th>{{.}}</th>{{end}}</tr></thead>
+<tbody>
+{{range .Rows}}{{template "row" (row . (gt (len $.Actions) 0))}}
+{{else}}<tr><td class="empty" colspan="{{columns .}}">{{.Empty}}</td></tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{if or .First .Next}}<div class="pager">{{if .First}}<a class="btn" href="{{.First}}">Newest</a>{{end}}{{if .Next}}<a class="btn" href="{{.Next}}">Next page</a>{{end}}</div>{{end}}
+</form>{{end}}
+
+{{define "row"}}<tr data-row{{with .Row.Key}} data-grant="{{.}}"{{end}}{{if .Row.Open}} class="open"{{end}}{{if .Row.Poll}} data-poll="{{.Row.Poll}}"{{end}}{{with .Row.Expire}} data-expire="{{.}}"{{end}}{{with .Row.State}} data-state="{{.}}"{{end}}>{{if .Check}}<td class="check">{{if .Row.ID}}<input type="checkbox" name="id" value="{{.Row.ID}}" data-select{{with .Row.Actions}} data-actions="{{join . " "}}"{{end}} aria-label="Select {{.Row.ID}}">{{end}}</td>{{end}}{{range .Row.Cells}}<td>{{template "cell" .}}</td>{{end}}</tr>{{end}}
+
+{{define "cell"}}{{with .Outcome}}<span class="st {{outcomeClass .}}">{{outcomeLabel .}}</span>{{end}}{{if .State}}{{template "state" .State}}{{with .Refresh}} {{template "refresh-button" .}}{{end}}{{end}}
+{{- if .Href}}<a href="{{.Href}}"{{with .Panel}} data-panel="{{.}}"{{end}}{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}{{with .Title}} title="{{.}}"{{end}}>{{.Text}}</span>{{end}}
+{{- with .Sub}}<span class="cell-sub">{{.}}</span>{{end}}
+{{- range .Tags}} <span class="tag">{{.}}</span>{{end}}
+{{- if .Copy}}<button type="button" class="copy" data-copy="{{.Copy}}" title="Copy">{{.Copy}}</button>{{end}}
+{{- if not .Until.IsZero}}<time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>{{end}}
+{{- if not .At.IsZero}}<time datetime="{{iso .At}}" title="{{exact .At}}">{{ago .At}}</time>{{end}}{{end}}
+
+{{define "alert"}}<div class="alert {{.Kind}}" role="status">{{.Text}}{{if .Command}} <button type="button" class="copy" data-copy="{{.Command}}" title="Copy"><code>{{.Command}}</code></button>{{end}}</div>{{end}}

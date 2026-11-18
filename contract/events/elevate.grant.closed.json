@@ -1,0 +1,41 @@
+{
+  "source": "elevate",
+  "detailType": "elevate.grant.closed",
+  "detail": {
+    "schemaVersion": 1,
+    "eventId": "abcde23456:closed",
+    "grantId": "abcde23456",
+    "requester": {
+      "userId": "u-1",
+      "userName": "user@example.com"
+    },
+    "approver": {
+      "userId": "u-2",
+      "userName": "lead@example.com"
+    },
+    "approverGroup": {
+      "id": "g-lead",
+      "name": "leads"
+    },
+    "rule": "ssm-prod",
+    "sourcePs": {
+      "arn": "arn:aws:sso:::permissionSet/ssoins-1111111111111111/ps-1111111111111111",
+      "name": "ssm-write"
+    },
+    "account": "222222222222",
+    "approval": "manual",
+    "privileged": true,
+    "startsAt": "2026-11-15T10:01:00Z",
+    "expiresAt": "2026-11-15T11:01:00Z",
+    "configVersion": 3,
+    "reason": "incident 42",
+    "closeReason": "revoked",
+    "revokedBy": {
+      "userId": "u-3",
+      "userName": "admin@example.com"
+    },
+    "revokeReason": "incident closed",
+    "rejectReason": null,
+    "error": null
+  }
+}

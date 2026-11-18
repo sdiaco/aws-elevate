@@ -1,0 +1,30 @@
+{
+  "method": "GET",
+  "path": "/v1/config/versions",
+  "query": null,
+  "request": null,
+  "status": 200,
+  "response": {
+    "current": 3,
+    "versions": [
+      {
+        "number": 3,
+        "valid": true,
+        "errors": [],
+        "author": "arn:aws:sts::111111111111:assumed-role/AWSReservedSSO_ElevateAdmin_x/user@example.com",
+        "createdAt": "2026-11-15T09:00:00Z",
+        "verified": true
+      },
+      {
+        "number": 2,
+        "valid": false,
+        "errors": [
+          "schema: approval must be auto or manual"
+        ],
+        "author": null,
+        "createdAt": null,
+        "verified": false
+      }
+    ]
+  }
+}

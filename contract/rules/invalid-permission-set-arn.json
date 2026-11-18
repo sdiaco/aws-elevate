@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "id": "backend-ssm-prod",
+      "group": {
+        "id": "g-1111",
+        "name": "backend-devs"
+      },
+      "permissionSet": {
+        "arn": "arn:aws:iam::111111111111:role/x",
+        "name": "x"
+      },
+      "accounts": [
+        {
+          "id": "111111111111",
+          "name": "prod"
+        }
+      ],
+      "duration": {
+        "defaultSeconds": 3600,
+        "maxSeconds": 14400
+      },
+      "approval": "auto",
+      "approverGroup": null,
+      "privileged": false
+    }
+  ]
+}
