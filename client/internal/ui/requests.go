@@ -207,7 +207,7 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
 		{State: state, Refresh: refreshOf(state, g.ID)},
 		{Text: g.SourcePs.Name, Tags: tags(g)},
-		{Text: g.Account},
+		accountCell(g),
 		{Until: countdown(g)},
 	}}
 	if state == api.StatePending || state == "starting" {

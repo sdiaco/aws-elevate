@@ -28,6 +28,7 @@
 
 {{define "cell"}}{{with .Outcome}}<span class="st {{outcomeClass .}}">{{outcomeLabel .}}</span>{{end}}{{if .State}}{{template "state" .State}}{{with .Refresh}} {{template "refresh-button" .}}{{end}}{{end}}
 {{- if .Href}}<a href="{{.Href}}"{{with .Panel}} data-panel="{{.}}"{{end}}{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Text}}</a>{{else if .Text}}<span{{if .Muted}} class="muted"{{end}}{{with .Title}} title="{{.}}"{{end}}>{{.Text}}</span>{{end}}
+{{- with .Sub}}<span class="cell-sub">{{.}}</span>{{end}}
 {{- range .Tags}} <span class="tag">{{.}}</span>{{end}}
 {{- if .Copy}}<button type="button" class="copy" data-copy="{{.Copy}}" title="Copy">{{.Copy}}</button>{{end}}
 {{- if not .Until.IsZero}}<time data-until datetime="{{iso .Until}}" title="{{exact .Until}}">{{left .Until}}</time>{{end}}
