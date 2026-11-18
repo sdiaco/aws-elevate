@@ -70,7 +70,7 @@ def test_auto_request_profile_status_and_revoke(org, set_up):
     done = ok(cli(set_up, "request", RULE_ID, "--account", harness.env("TARGET_ACCOUNT"),
                   "--duration", "10m", "--reason", REASON))  # fmt: skip
     gid = grant_id(done.stderr)
-    profile = re.search(r"export AWS_PROFILE=(\S+)", done.stdout).group(1)
+    profile = re.search(r"^--profile (\S+)$", done.stdout, re.M).group(1)
 
     # The written profile works at once: the client waited until AWS accepted the role.
     who = subprocess.run(
