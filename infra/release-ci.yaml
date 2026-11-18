@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  aws-elevate release publisher: the role the GitHub release workflow assumes through
+  OIDC to upload a new version to the release buckets. Deployed once, in the account that
+  owns the release buckets. No long-lived keys.
+
+Parameters:
+  Repository:
+    Type: String
+    Default: sdiaco/aws-elevate
+    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    Description: GitHub repository (owner/name) whose release workflow may publish.
+  BucketPrefix:
+    Type: String
+    Default: aws-elevate-releases-
+    Description: Name prefix of the release buckets (contract/release-buckets.json).
+
+Resources:
+  GitHubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  ReleasePublisher:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aws-elevate-release-publisher
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Only workflow runs of this repository on main: a branch, a pull request or a
+          # fork gets a different subject and cannot assume the role.
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidc
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${Repository}:ref:refs/heads/main
+      Policies:
+        - PolicyName: publish-new-versions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Objects under v<version>/ only. The release script checks every target
+              # first and writes with If-None-Match, so a published version is never
+              # replaced; there is no delete permission.
+              - Sid: WriteVersionedObjects
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketPrefix}*/v*/*
+              # HeadObject needs GetObject; ListBucket turns a missing object into 404
+              # instead of 403, which is how the script tells "not published yet".
+              - Sid: ReadVersionedObjects
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketPrefix}*/v*/*
+              - Sid: ListReleaseBuckets
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketPrefix}*
+
+Outputs:
+  RoleArn:
+    Description: Role for the release workflow (repository variable RELEASE_ROLE_ARN).
+    Value: !GetAtt ReleasePublisher.Arn
