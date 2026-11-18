@@ -103,6 +103,7 @@ Always:
 - `make dev` opens a shell in the development container (Go, Python, uv, cfn-lint, AWS CLI). Nothing else needs to be installed.
 - `make check`: all local checks. `make test`: tests only.
 - `make e2e-up`, `make e2e`, `make e2e-down`: end-to-end tests against a real organization.
-- `make build`, `make release`, `make report`: artifacts, publication, quality report.
+- `make e2e-auto`: unattended end-to-end run (up, tests, always down), outcome in `build/e2e/result`.
+- `make build`, `make release-upload`, `make release-github`, `make report`: artifacts, publication, quality report.
 
 Detailed developer documentation will live in `docs/development.md`; this section will link to it once it exists.
