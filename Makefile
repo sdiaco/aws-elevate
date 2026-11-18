@@ -14,7 +14,7 @@ DOCKER_RUN = docker run --rm -i $(shell [ -t 0 ] && echo -t) \
 	$(IMAGE)
 
 .PHONY: help dev-image dev dev-run check check-service check-client test test-service test-client \
-	package build release-upload release-github e2e-up e2e e2e-down e2e-auto
+	package build release-upload release-github e2e-up e2e e2e-down e2e-auto e2e-status e2e-pushed
 
 help:
 	@echo "make dev              open a shell in the development container"
@@ -23,11 +23,12 @@ help:
 	@echo "make test             tests only"
 	@echo "make package          build/lambda.zip with the service code"
 	@echo "make build VERSION=x.y.z            release files in build/release/v<version>"
-	@echo "make release-upload VERSION=x.y.z RELEASE_PROFILE=...   templates and code to the release buckets"
-	@echo "make release-github VERSION=x.y.z TYPE=security|fix|feature   GitHub release with the executables"
+	@echo "make release-upload VERSION=x.y.z TESTED=<sha> [RELEASE_PROFILE=...]   templates and code to the release buckets"
+	@echo "make release-github VERSION=x.y.z TESTED=<sha> TYPE=security|fix|feature   GitHub release with the executables"
 	@echo "make e2e-up / e2e / e2e-down   end-to-end tests in a real test organization"
 	@echo "                      (PROFILE, SERVICE_ACCOUNT, TARGET_ACCOUNT, TEST_USER)"
-	@echo "make e2e-auto         e2e-up, e2e and always e2e-down; the outcome goes to build/e2e/result"
+	@echo "make e2e-auto         e2e-up, e2e and always e2e-down; posts the e2e status on the pushed HEAD"
+	@echo "make e2e-status STATE=success|failure   post the e2e status after the manual checks"
 
 dev-image:
 	docker build --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) -t $(IMAGE) dev
@@ -82,17 +83,18 @@ package:
 		import harness, pathlib; pathlib.Path('../build/lambda.zip').write_bytes(harness.package())"
 	@echo "build/lambda.zip"
 
-# Release. The build runs in the container (Go); publishing runs on the host,
-# which has aws and gh, from a clean main whose tree passed make e2e-auto.
+# Release. The build runs in the container (Go). Publishing runs in the release workflow
+# (.github/workflows/release.yml), or by hand on a host with aws and gh, from a clean main
+# whose tree has a successful e2e commit status (TESTED: the commit that carries it).
 build: dev-image
 	@test -n '$(VERSION)' || { echo 'usage: make build VERSION=x.y.z' >&2; exit 2; }
 	$(DOCKER_RUN) dev/build.sh '$(VERSION)' build/release
 
 release-upload:
-	dev/release.sh upload '$(VERSION)' '$(RELEASE_PROFILE)'
+	dev/release.sh upload '$(VERSION)' '$(TESTED)' $(if $(RELEASE_PROFILE),'$(RELEASE_PROFILE)')
 
 release-github:
-	dev/release.sh github '$(VERSION)' '$(TYPE)'
+	dev/release.sh github '$(VERSION)' '$(TESTED)' '$(TYPE)'
 
 # End-to-end tests create only elevate-e2e* resources. Always finish with e2e-down.
 # The approval by a second user is opt-in (manual login): E2E_APPROVAL=1 make e2e-up e2e.
@@ -110,13 +112,22 @@ e2e: dev-image
 e2e-down:
 	cd service && uv run python tests/e2e/harness.py down
 
+# The end-to-end outcome is a commit status named e2e on the pushed HEAD: the release
+# workflow publishes only a tree whose commit carries a successful one.
+e2e-pushed:
+	@test -z "$$(git status --porcelain)" || { echo 'e2e: commit or remove changes first: the status names the commit' >&2; exit 1; }
+	@test -n "$$(git branch -r --contains HEAD)" || { echo 'e2e: push HEAD first: GitHub keeps the status on the commit' >&2; exit 1; }
+
+e2e-status: e2e-pushed
+	@case '$(STATE)' in success|failure) ;; *) echo 'usage: make e2e-status STATE=success|failure' >&2; exit 2 ;; esac
+	gh api -X POST "repos/{owner}/{repo}/statuses/$$(git rev-parse HEAD)" -f state='$(STATE)' \
+		-f context=e2e -f description='$(or $(DESCRIPTION),end-to-end tests on real AWS)' >/dev/null
+	@echo "e2e status $(STATE) on $$(git rev-parse --short HEAD)"
+
 # Unattended run for small changes and hotfixes: no second-user approval, no UI check.
-# The org is always torn down. The result names the git tree, so the tree must be clean.
-e2e-auto:
-	@test -z "$$(git status --porcelain)" || { echo 'e2e-auto: commit or remove changes first: the result names the git tree' >&2; exit 1; }
-	@mkdir -p build/e2e
-	@tree=$$(git rev-parse 'HEAD^{tree}'); \
-	if $(MAKE) e2e-up e2e; then outcome=passed; else outcome=failed; fi; \
-	$(MAKE) e2e-down || outcome=failed; \
-	echo "$$tree $$outcome" > build/e2e/result; \
-	echo "e2e-auto: $$outcome"; [ $$outcome = passed ]
+# The org is always torn down.
+e2e-auto: e2e-pushed
+	@if $(MAKE) e2e-up e2e; then outcome=success; else outcome=failure; fi; \
+	$(MAKE) e2e-down || outcome=failure; \
+	$(MAKE) e2e-status STATE=$$outcome DESCRIPTION='make e2e-auto'; \
+	[ $$outcome = success ]
