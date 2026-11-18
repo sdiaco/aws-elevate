@@ -34,6 +34,7 @@ type Env struct {
 	Open         func(ctx context.Context, profile string) (Backend, error)
 	Profile      func(ctx context.Context, profile string) (awsx.SourceProfile, error)
 	Installer    func(ctx context.Context, profile, region string) (Installer, error)
+	Uninstaller  func(ctx context.Context, profile, region, stack string) (Uninstaller, error)
 	Releases     func(ctx context.Context) ([]release.Release, error)
 	Download     func(ctx context.Context, version, goos, goarch string) ([]byte, error)
 	Executable   func() (string, error)
@@ -81,6 +82,7 @@ func DefaultEnv() (*Env, error) {
 		Open:         Open,
 		Profile:      awsx.ReadProfile,
 		Installer:    openInstaller,
+		Uninstaller:  openUninstaller,
 		Releases:     release.New().List,
 		Download:     release.New().Download,
 		Executable:   executable,
@@ -117,16 +119,17 @@ var commands map[string]command
 
 func init() {
 	commands = map[string]command{
-		"setup":   {"Find the service and add the `aws elevate` alias", "setup [--account <id|name>]", runSetup},
-		"request": {"Request access; without arguments, list what you can request", "request [<rule> --account <id|name> [--duration 45m] --reason \"…\"]", runRequest},
-		"shell":   {"Open a shell with an active grant's profile", "shell [<id>]", runShell},
-		"status":  {"Your grants and requests, and requests you can approve", "status", runStatus},
-		"revoke":  {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\"", runRevoke},
-		"approve": {"Approve a request, or reject it with --reject", "approve <id> [--reject --reason \"why\"]", runApprove},
-		"ui":      {"Open the local web interface in your browser", "ui", runUI},
-		"update":  {"Replace this executable with the newest version that works with your service", "update", runUpdate},
-		"install": {"Install the service in the delegated administrator account", installUsage, runInstall},
-		"admin":   {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
+		"setup":     {"Find the service and add the `aws elevate` alias", "setup [--account <id|name>]", runSetup},
+		"request":   {"Request access; without arguments, list what you can request", "request [<rule> --account <id|name> [--duration 45m] --reason \"…\"]", runRequest},
+		"shell":     {"Open a shell with an active grant's profile", "shell [<id>]", runShell},
+		"status":    {"Your grants and requests, and requests you can approve", "status", runStatus},
+		"revoke":    {"End one or more grants early, or cancel a pending request", "revoke [<id> …] --reason \"…\" [--yes]", runRevoke},
+		"approve":   {"Approve a request, or reject it with --reject", "approve <id> [--reject --reason \"why\"] [--yes]", runApprove},
+		"ui":        {"Open the local web interface in your browser", "ui", runUI},
+		"update":    {"Replace this executable with the newest version that works with your service", "update [--yes]", runUpdate},
+		"install":   {"Install the service in the delegated administrator account", installUsage, runInstall},
+		"admin":     {"Rules, export and import, installation checks (administrators)", adminUsage, runAdmin},
+		"uninstall": {"List what is left of an installation (account administrators)", uninstallUsage, runUninstall},
 	}
 }
 
@@ -181,7 +184,7 @@ func printHelp(w io.Writer) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		fmt.Fprintf(w, "  %-8s %s\n", n, commands[n].summary)
+		fmt.Fprintf(w, "  %-10s %s\n", n, commands[n].summary)
 	}
 	fmt.Fprintln(w, "\nEvery command takes --profile and --help. aws-elevate --version prints the version.")
 }
