@@ -27,7 +27,7 @@ type Installer interface {
 // stackPoll is how often the install reads the stack's progress.
 const stackPoll = 10 * time.Second
 
-const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--yes]"
+const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--max-open-grants <n>] [--event-consumer-accounts <id,id>] [--config-versions-listed <n>] [--yes]"
 
 // runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
@@ -39,6 +39,9 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	auditorGroup := f.String("auditor-group", "", "name of the optional auditor group")
 	email := f.String("email", "", "e-mail address for the alerts")
 	organization := f.String("organization-name", "", "name of your organization, shown in the interface (optional)")
+	maxOpenGrants := f.String("max-open-grants", "", "open grants allowed per user (default: the template's)")
+	eventConsumers := f.String("event-consumer-accounts", "", "comma-separated account ids that may receive the events (default: none)")
+	versionsListed := f.String("config-versions-listed", "", "rules versions shown in the history (default: the template's)")
 	yes := f.Bool("yes", false, "answer yes to the confirmations, for scripts")
 	stackName := f.String("stack-name", "elevate", "stack name, for tests")
 	templateURL := f.String("template-url", "", "template URL, for tests (default: the release bucket of the region)")
@@ -105,6 +108,18 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if *organization != "" {
 		stack.Parameters["OrganizationName"] = *organization
 	}
+	// Passed through as typed: the template validates them.
+	var advanced []string
+	for _, p := range []struct{ param, value string }{
+		{"MaxOpenGrantsPerUser", *maxOpenGrants},
+		{"EventConsumerAccounts", *eventConsumers},
+		{"ConfigVersionsListed", *versionsListed},
+	} {
+		if p.value != "" {
+			stack.Parameters[p.param] = p.value
+			advanced = append(advanced, p.param+"="+p.value)
+		}
+	}
 	if *codeBucket != "" {
 		stack.Parameters["CodeBucket"] = *codeBucket
 	}
@@ -116,6 +131,11 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	fmt.Fprintf(w, "\n  %s %s\n", u.Bold("Summary"), u.Dim(strings.Repeat("─", 39)))
 	fmt.Fprintf(w, "  Stack %q in %s · %s\n", stack.Name, where.Account, *region)
 	fmt.Fprintln(w, "  Creates: 3 permission sets, private API, Lambda functions, table, rules store")
+	if len(advanced) == 0 {
+		fmt.Fprintln(w, "  Advanced settings: template defaults; change them with the install flags or in CloudFormation (Update, Use existing template)")
+	} else {
+		fmt.Fprintln(w, "  Advanced settings: "+strings.Join(advanced, ", "))
+	}
 	fmt.Fprintln(w, "  Idle cost: 0 $ · remove it with aws-elevate uninstall")
 	ok, err := u.Confirm("Proceed?", *yes)
 	if err != nil {
