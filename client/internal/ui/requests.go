@@ -400,6 +400,8 @@ type confirm struct {
 	Reason bool
 	Button string
 	Back   string
+	// ReasonChars is the service's limit on the reason; 0 when it does not say.
+	ReasonChars int
 }
 
 func count(n int, one, many string) string {
@@ -426,7 +428,7 @@ func (a *App) showConfirm(w http.ResponseWriter, r *http.Request, ids []string, 
 		http.Redirect(w, r, "/requests", http.StatusSeeOther)
 		return
 	}
-	c := confirm{Action: action, IDs: ids, Back: "/requests"}
+	c := confirm{Action: action, IDs: ids, Back: "/requests", ReasonChars: a.me().Limits.ReasonChars}
 	switch action {
 	case "/requests/revoke":
 		c.Title, c.Button, c.Reason = "Revoke "+count(len(ids), "grant", "grants"), "Revoke", true

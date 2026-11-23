@@ -17,6 +17,8 @@ type newRequestView struct {
 	Rule     *api.Rule
 	Accounts cards
 	Form     requestForm
+	// ReasonChars is the service's limit on the reason; 0 when it does not say.
+	ReasonChars int
 }
 
 // ruleChoice is a rule in the list. Open is set when the caller already has an open
@@ -74,7 +76,7 @@ func (a *App) newRequestView(r *http.Request, ruleID string, form requestForm) (
 	if err != nil {
 		return newRequestView{}, err
 	}
-	v := newRequestView{Form: form}
+	v := newRequestView{Form: form, ReasonChars: a.me().Limits.ReasonChars}
 	var covered []ruleChoice
 	for _, rule := range rules.Rules {
 		c := ruleChoice{Rule: rule, Open: coveredBy(rule, rules.OpenGrants)}
