@@ -66,10 +66,30 @@ Parameters:
 # here stops the stack before anything is created.
 Mappings:
   ReleaseBuckets:
+    ca-central-1:
+      Bucket: aws-elevate-releases-ca-central-1
+    eu-central-1:
+      Bucket: aws-elevate-releases-eu-central-1
+    eu-north-1:
+      Bucket: aws-elevate-releases-eu-north-1
+    eu-south-1:
+      Bucket: aws-elevate-releases-eu-south-1
     eu-west-1:
       Bucket: aws-elevate-releases-eu-west-1
+    eu-west-2:
+      Bucket: aws-elevate-releases-eu-west-2
+    eu-west-3:
+      Bucket: aws-elevate-releases-eu-west-3
+    sa-east-1:
+      Bucket: aws-elevate-releases-sa-east-1
     us-east-1:
       Bucket: aws-elevate-releases-us-east-1
+    us-east-2:
+      Bucket: aws-elevate-releases-us-east-2
+    us-west-1:
+      Bucket: aws-elevate-releases-us-west-1
+    us-west-2:
+      Bucket: aws-elevate-releases-us-west-2
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
