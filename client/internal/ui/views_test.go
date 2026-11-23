@@ -278,6 +278,46 @@ func TestARejectedGrantShowsWhoRejectedItAndWhy(t *testing.T) {
 	lacks(t, out, "Approved by")
 }
 
+func periodLabels(t *testing.T, h *harness) (out string) {
+	t.Helper()
+	return h.get(t, "/history")
+}
+
+func TestHistoryLongestPeriodUsesTheServiceMonths(t *testing.T) {
+	h := newHarness("requester")
+	h.app.Me.Limits.HistoryMonths = 24
+	out := periodLabels(t, h)
+	contains(t, out, "24 months")
+	contains(t, out, "period=all")
+	lacks(t, out, "13 months")
+	h.get(t, "/history?period=all")
+	got, err := time.Parse(time.RFC3339, h.svc.queries[len(h.svc.queries)-1].From)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Now().AddDate(0, -24, 0); got.Sub(want) > time.Minute || want.Sub(got) > time.Minute {
+		t.Errorf("from %s, want about %s", got, want)
+	}
+}
+
+func TestHistoryPeriodsFallBackToThirteenMonths(t *testing.T) {
+	h := newHarness("requester")
+	contains(t, periodLabels(t, h), "13 months")
+}
+
+func TestHistoryTakesAnOldBookmarkAsTheLongestPeriod(t *testing.T) {
+	h := newHarness("requester")
+	h.app.Me.Limits.HistoryMonths = 24
+	out := h.get(t, "/history?period=13m")
+	if !strings.Contains(out, "period=all") {
+		t.Errorf("no all period:\n%s", out)
+	}
+	got, _ := time.Parse(time.RFC3339, h.svc.queries[len(h.svc.queries)-1].From)
+	if time.Since(got) < 700*24*time.Hour {
+		t.Errorf("from %s", got)
+	}
+}
+
 func TestExportReadsEveryPageAndNeutralisesFormulas(t *testing.T) {
 	h := newHarness("requester")
 	h.svc.pages = 3

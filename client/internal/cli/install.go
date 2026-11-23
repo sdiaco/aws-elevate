@@ -28,7 +28,7 @@ type Installer interface {
 // stackPoll is how often the install reads the stack's progress.
 const stackPoll = 10 * time.Second
 
-const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--max-open-grants <n>] [--event-consumer-accounts <id,id>] [--config-versions-listed <n>] [--yes]"
+const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--max-open-grants <n>] [--event-consumer-accounts <id,id>] [--config-versions-listed <n>] [--retention-months <n>] [--yes]"
 
 // runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
@@ -43,6 +43,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	maxOpenGrants := f.String("max-open-grants", "", "open grants allowed per user (default: the template's)")
 	eventConsumers := f.String("event-consumer-accounts", "", "comma-separated account ids that may receive the events (default: none)")
 	versionsListed := f.String("config-versions-listed", "", "rules versions shown in the history (default: the template's)")
+	retentionMonths := f.String("retention-months", "", "months the grant history is kept (default: the template's)")
 	yes := f.Bool("yes", false, "answer yes to the confirmations, for scripts")
 	stackName := f.String("stack-name", "elevate", "stack name, for tests")
 	templateURL := f.String("template-url", "", "template URL, for tests (default: the release bucket of the region)")
@@ -115,6 +116,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		{"MaxOpenGrantsPerUser", *maxOpenGrants},
 		{"EventConsumerAccounts", *eventConsumers},
 		{"ConfigVersionsListed", *versionsListed},
+		{"HistoryRetentionMonths", *retentionMonths},
 	} {
 		if p.value != "" {
 			stack.Parameters[p.param] = p.value

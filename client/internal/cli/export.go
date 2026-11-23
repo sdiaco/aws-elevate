@@ -16,10 +16,6 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// historyMonths is how far back the service keeps grants: the export asks for all of it,
-// since without a period the service answers the last 30 days only.
-const historyMonths = 13
-
 // Manifest lists what an export holds; Files maps each file name to its SHA-256.
 type Manifest struct {
 	ExportedAt   time.Time         `json:"exportedAt"`
@@ -52,8 +48,14 @@ func exportHistory(ctx context.Context, svc Service, dir string, now time.Time) 
 		return nil
 	}
 
+	// The export asks for all the history the service keeps: without a period the service
+	// answers the last 30 days only.
+	me, err := svc.Me(ctx)
+	if err != nil {
+		return m, fmt.Errorf("read how long the history is kept: %w", err)
+	}
 	end := now.UTC()
-	start := time.Date(end.Year(), end.Month()-historyMonths, 1, 0, 0, 0, 0, time.UTC)
+	start := time.Date(end.Year(), end.Month()-time.Month(api.HistoryMonths(*me)), 1, 0, 0, 0, 0, time.UTC)
 	q := api.ListQuery{Scope: "all", Closed: true, From: start.Format(time.RFC3339), To: end.Format(time.RFC3339)}
 	var grants bytes.Buffer
 	for {
