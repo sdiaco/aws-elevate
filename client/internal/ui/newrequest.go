@@ -214,8 +214,10 @@ func (a *App) flashOf(g api.Grant) flash {
 	return f
 }
 
-// flashPart is the fresh flash; once the grant is active it waits for AWS to accept the
-// role and writes the profile before offering the console.
+// flashPart is the fresh flash. The first poll that finds the grant active answers at
+// once ("Preparing your access…") and points the next poll at ?ready=1, which waits for
+// AWS to accept the role (several seconds) and writes the profile before offering the
+// console: waiting in the first poll would leave the previous text on screen meanwhile.
 func (a *App) flashPart(w http.ResponseWriter, r *http.Request) {
 	d, err := a.Service.Grant(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -223,7 +225,9 @@ func (a *App) flashPart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := a.flashOf(d.Grant)
-	if d.Grant.State == api.StateActive {
+	if d.Grant.State == api.StateActive && r.URL.Query().Get("ready") != "1" {
+		f.Poll += "?ready=1"
+	} else if d.Grant.State == api.StateActive {
 		profile, err := a.Ready(r.Context(), d.Grant)
 		if err != nil {
 			f.Kind, f.Poll, f.Error = "error", "", err.Error()
