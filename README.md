@@ -112,6 +112,9 @@ Every flag is optional. What you leave out and the command needs, it asks for.
 | `--max-open-grants <n>` | `MaxOpenGrantsPerUser` | 5 | Grants not yet closed that one user may have |
 | `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Account ids allowed to receive the Elevate events |
 | `--config-versions-listed <n>` | `ConfigVersionsListed` | 50 | Newest rules versions shown in the history |
+| `--retention-months <n>` | `HistoryRetentionMonths` | 13 | Months the grant history is kept after a grant closes (1 to 120) |
+| `--pitr` | `PointInTimeRecovery` | `Disabled` | Sets it to `Enabled`: continuous backups of the grant history |
+| `--kms-key-arn <arn>` | `KmsKeyArn` | empty: keys owned by AWS | Customer KMS key, in the stack's region, for the history and the logs |
 | `--yes` | none | off | Answer yes to the questions, for scripts |
 
 Flags take group names; the stack takes their ids and `install` looks them up for you.
@@ -197,10 +200,60 @@ Elevate helps implement privileged-access controls required by NIS2, DORA and GD
 
 **What is stored and for how long**
 
-- The history of grants (who asked, which permission set, which account, the reason, who approved, when it started and ended, how it closed) is in a DynamoDB table in the Elevate account. Each grant is kept for 13 months after it closes, then deleted automatically. The rules versions stay in the Elevate account too.
+- The history of grants (who asked, which permission set, which account, the reason, who approved, when it started and ended, how it closed) is in a DynamoDB table in the Elevate account. Each grant is kept for 13 months by default after it closes (1 to 120, see below), then deleted automatically. The rules versions stay in the Elevate account too.
 - The logs of the Lambda functions are kept 90 days (`api`, `engine`) and 30 days (precheck).
 - When the service refuses a call, it logs the line `refused call from <userArn>` with the ARN of the caller and the reason. The ARN identifies a person, so it is personal data in those logs.
 - The reason of a request is free text. Tell users not to put personal data in it; the form says so.
+
+**History retention.** `--retention-months` (stack parameter `HistoryRetentionMonths`) sets how many months a grant is kept after it closes: 13 by default, from 1 to 120. A change applies to grants closed after it; grants already closed keep the retention they had.
+
+**Point-in-time recovery.** Optional, off by default. `--pitr` (`PointInTimeRecovery=Enabled`) keeps continuous backups of the grant history for 35 days, so the table can be restored to any second in that window. Turn it on where the history must be recoverable, for example under DORA. It has a small storage cost (see "Costs").
+
+To restore, with the table resource policy in place (an administrator of the Elevate account, not the Elevate roles):
+
+1. Widen the table resource policy so your administrator may restore. This is a deliberate change, recorded in CloudTrail.
+2. Restore the table to a new table, with `RestoreTableToPointInTime`.
+3. Point Elevate at the restored data, or copy the items you need back into the Elevate table.
+4. Put the resource policy back as it was.
+
+**Customer KMS key.** By default the history and the logs use keys owned by AWS. To use your own key, pass `--kms-key-arn` (`KmsKeyArn`). The key must be in the same region as the stack. Its key policy must keep the statement that enables IAM policies in the account, and must allow CloudWatch Logs of that region. Example for account `111111111111`, region `eu-west-1`, stack `elevate`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnableIAMPolicies",
+      "Effect": "Allow",
+      "Principal": {"AWS": "arn:aws:iam::111111111111:root"},
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowCloudWatchLogs",
+      "Effect": "Allow",
+      "Principal": {"Service": "logs.eu-west-1.amazonaws.com"},
+      "Action": [
+        "kms:Encrypt*",
+        "kms:Decrypt*",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:Describe*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnLike": {
+          "kms:EncryptionContext:aws:logs:arn": "arn:aws:logs:eu-west-1:111111111111:log-group:/aws/lambda/elevate-*"
+        }
+      }
+    }
+  ]
+}
+```
+
+The key covers the grant history table and the three log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`). It does not cover the rules (AppConfig), the execution history of the state machine (kept 90 days, it includes the user name and the reason), the events and the alert e-mails: these stay on keys owned by AWS.
+
+**What protects the history.** The resource policy of the table lets only the Elevate service roles read or write its data, and denies backups, point-in-time restores and exports to everyone else. The optional guardrails (below) also keep the table, its resource policy, its time-to-live, its point-in-time recovery and its backups to the deployers. They are the only block on AWS Backup jobs that use the advanced DynamoDB backup features, which the resource policy cannot stop. A backup plan of the organization that includes the table will therefore fail on it, by design: exclude the table from such plans.
 
 **Deleting a person's data.** You do not need to delete the grants of a person on request: the access register is kept to meet a legal obligation and to establish and defend legal claims, as GDPR article 17(3) allows. Keep it only for the period above.
 
@@ -213,11 +266,11 @@ Elevate helps implement privileged-access controls required by NIS2, DORA and GD
 - an alarm that tells you when it is used;
 - a test of the procedure at regular intervals.
 
-**Optional guardrails.** `infra/elevate-guardrails.yaml` is a service control policy, deployed from the management account, that keeps other principals of the Elevate account away from its functions and roles.
+**Optional guardrails.** `infra/elevate-guardrails.yaml` is a service control policy, deployed from the management account, that keeps other principals of the Elevate account away from its functions and roles, and the grants table, its resource policy and its backups to the deployers.
 
 ## Costs
 
-The services are pay per use. There is no instance and no fixed fee: an installation with no requests costs about nothing, and each request adds a few calls to Lambda, DynamoDB, Step Functions and EventBridge. Check the current prices of those services for your region. `aws-elevate install` prints the idle cost before it asks you to confirm.
+The services are pay per use. There is no instance and no fixed fee: an installation with no requests costs about nothing, and each request adds a few calls to Lambda, DynamoDB, Step Functions and EventBridge. Point-in-time recovery, if you turn it on, is billed per GB of table per month, which is tiny for this table. A customer KMS key costs about $1 per month plus requests. Check the current prices of those services for your region. `aws-elevate install` prints the idle cost before it asks you to confirm.
 
 ## Development
 
