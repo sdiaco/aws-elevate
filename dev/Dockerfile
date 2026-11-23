@@ -10,7 +10,7 @@ ARG UID=1000
 ARG GID=1000
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git make unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl gcc git libc6-dev make unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; \
