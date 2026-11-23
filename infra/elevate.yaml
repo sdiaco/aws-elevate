@@ -15,7 +15,7 @@ Metadata:
       - Label: {default: "Integrations (optional)"}
         Parameters: [EventConsumerAccounts]
       - Label: {default: "Audit and data protection (optional)"}
-        Parameters: [HistoryRetentionMonths]
+        Parameters: [HistoryRetentionMonths, PointInTimeRecovery]
       - Label: {default: "For testing only: leave as they are"}
         Parameters: [CodeBucket, CodeKey]
     ParameterLabels:
@@ -28,6 +28,7 @@ Metadata:
       ConfigVersionsListed: {default: "Rules versions listed"}
       EventConsumerAccounts: {default: "Event consumer accounts"}
       HistoryRetentionMonths: {default: "History kept (months)"}
+      PointInTimeRecovery: {default: "Point-in-time recovery"}
       CodeBucket: {default: "Lambda package bucket"}
       CodeKey: {default: "Lambda package key"}
 
@@ -98,6 +99,14 @@ Parameters:
       How many months the grant history is kept after a grant closes. A change applies
       to grants closed after it; grants already closed keep the retention they had.
 
+  PointInTimeRecovery:
+    Type: String
+    Default: Disabled
+    AllowedValues: [Disabled, Enabled]
+    Description: >-
+      Enabled keeps continuous backups of the grant history for 35 days (restore to any
+      second), at a small storage cost; recommended where the history must be recoverable.
+
 # Regions where aws-elevate is published and their release buckets
 # (contract/release-buckets.json). The bucket is never derived from the region name: in a
 # region without a published release someone else could own that name. A region missing
@@ -133,6 +142,7 @@ Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
   HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
   HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
+  PitrEnabled: !Equals [!Ref PointInTimeRecovery, Enabled]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -235,7 +245,7 @@ Resources:
         AttributeName: ttl
         Enabled: true
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
+        PointInTimeRecoveryEnabled: !If [PitrEnabled, true, false]
       ResourcePolicy:
         PolicyDocument:
           Version: "2012-10-17"

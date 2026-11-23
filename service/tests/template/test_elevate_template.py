@@ -619,7 +619,29 @@ def test_history_retention_parameter():
         INTERFACE["ParameterLabels"]["HistoryRetentionMonths"]["default"] == "History kept (months)"
     )
     groups = {g["Label"]["default"]: g["Parameters"] for g in INTERFACE["ParameterGroups"]}
-    assert groups["Audit and data protection (optional)"] == ["HistoryRetentionMonths"]
+    assert groups["Audit and data protection (optional)"][0] == "HistoryRetentionMonths"
+
+
+def test_pitr_parameter():
+    param = TEMPLATE["Parameters"]["PointInTimeRecovery"]
+    assert param["Type"] == "String"
+    assert param["Default"] == "Disabled"
+    assert param["AllowedValues"] == ["Disabled", "Enabled"]
+    label = INTERFACE["ParameterLabels"]["PointInTimeRecovery"]["default"]
+    assert label == "Point-in-time recovery"
+    groups = {g["Label"]["default"]: g["Parameters"] for g in INTERFACE["ParameterGroups"]}
+    assert groups["Audit and data protection (optional)"] == [
+        "HistoryRetentionMonths",
+        "PointInTimeRecovery",
+    ]
+
+
+def test_table_pitr_follows_the_parameter():
+    assert TEMPLATE["Conditions"]["PitrEnabled"] == {
+        "Fn::Equals": [{"Ref": "PointInTimeRecovery"}, "Enabled"]
+    }
+    spec = RESOURCES["GrantsTable"]["Properties"]["PointInTimeRecoverySpecification"]
+    assert spec["PointInTimeRecoveryEnabled"] == {"Fn::If": ["PitrEnabled", True, False]}
 
 
 @pytest.mark.parametrize("function", ["ApiFunction", "EngineFunction"])
