@@ -90,6 +90,7 @@ def respond(fx, name: str, example: dict) -> tuple[int, dict]:
         sfn=fx.FakeSfn(),
         store=fx.FakeStore({"u-1": frozenset({"g-req"}), "u-2": frozenset({"g-lead"})}),
         max_open=5,
+        history_months=13,
         clock=lambda: fx.NOW,
     )
     api = Api(
@@ -110,6 +111,7 @@ def respond(fx, name: str, example: dict) -> tuple[int, dict]:
             "alertsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-alerts",
             "approvalsTopicArn": "arn:aws:sns:eu-west-1:111111111111:elevate-approvals",
         },
+        history_months=13,
         organization_name="Example Corp",
     )
     request = example["request"]

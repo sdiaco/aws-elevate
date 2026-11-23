@@ -14,6 +14,8 @@ Metadata:
         Parameters: [MaxOpenGrantsPerUser, ConfigVersionsListed]
       - Label: {default: "Integrations (optional)"}
         Parameters: [EventConsumerAccounts]
+      - Label: {default: "Audit and data protection (optional)"}
+        Parameters: [HistoryRetentionMonths]
       - Label: {default: "For testing only: leave as they are"}
         Parameters: [CodeBucket, CodeKey]
     ParameterLabels:
@@ -25,6 +27,7 @@ Metadata:
       MaxOpenGrantsPerUser: {default: "Open grants per user"}
       ConfigVersionsListed: {default: "Rules versions listed"}
       EventConsumerAccounts: {default: "Event consumer accounts"}
+      HistoryRetentionMonths: {default: "History kept (months)"}
       CodeBucket: {default: "Lambda package bucket"}
       CodeKey: {default: "Lambda package key"}
 
@@ -85,6 +88,15 @@ Parameters:
     MaxLength: 64
     AllowedPattern: "^[^<>]*$"
     Description: Optional. Name of your organization, shown at the top of the interface.
+
+  HistoryRetentionMonths:
+    Type: Number
+    Default: 13
+    MinValue: 1
+    MaxValue: 120
+    Description: >-
+      How many months the grant history is kept after a grant closes. A change applies
+      to grants closed after it; grants already closed keep the retention they had.
 
 # Regions where aws-elevate is published and their release buckets
 # (contract/release-buckets.json). The bucket is never derived from the region name: in a
@@ -430,6 +442,7 @@ Resources:
           APPCONFIG_APPLICATION_ID: !Ref RulesApplication
           APPCONFIG_PROFILE_ID: !GetAtt RulesProfile.ConfigurationProfileId
           MANAGEMENT_ACCOUNT_ID: !GetAtt Precheck.ManagementAccountId
+          HISTORY_RETENTION_MONTHS: !Ref HistoryRetentionMonths
           SERVICE_ACCOUNT_ID: !Ref AWS::AccountId
 
   # ---------------------------------------------------------------------------
@@ -1435,6 +1448,7 @@ Resources:
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
           CONFIG_VERSIONS_LISTED: !Ref ConfigVersionsListed
+          HISTORY_RETENTION_MONTHS: !Ref HistoryRetentionMonths
           ORGANIZATION_NAME: !Ref OrganizationName
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
           STACK_ID: !Ref AWS::StackId

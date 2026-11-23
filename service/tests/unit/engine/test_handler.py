@@ -54,6 +54,7 @@ def test_handler_wires_the_engine_once_from_the_environment(monkeypatch):
         "AWS_DEFAULT_REGION": "eu-west-1",
         "INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1111111111111111",
         "TABLE_NAME": "elevate-grants",
+        "HISTORY_RETENTION_MONTHS": "13",
         "APPCONFIG_APPLICATION_ID": "app1234",
         "APPCONFIG_PROFILE_ID": "prof123",
         "MANAGEMENT_ACCOUNT_ID": "999999999999",
