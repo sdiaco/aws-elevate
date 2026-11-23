@@ -78,7 +78,7 @@ func runUI(ctx context.Context, e *Env, args []string) error {
 	}
 	url := s.StartURL()
 	if err := e.OpenBrowser(url); err != nil {
-		fmt.Fprintf(e.Stdout, "Open this address in your browser (it works once): %s\n", url)
+		fmt.Fprintf(e.Stdout, "Could not open a browser: open this URL yourself (it works once): %s\n", url)
 	} else {
 		fmt.Fprintf(e.Stdout, "Opened %s in your browser.\n", url)
 	}
@@ -107,7 +107,11 @@ func uiUpdates(e *Env) (*ui.Updates, error) {
 	}, nil
 }
 
-// openBrowser asks the desktop to open url and does not wait for the browser.
+// openerGrace is how long the opener may take to fail. A desktop opener that hands the
+// page to a running browser exits at once; one that stays running has started it.
+const openerGrace = 2 * time.Second
+
+// openBrowser asks the desktop to open url.
 func openBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -118,10 +122,24 @@ func openBrowser(url string) error {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
+	return runOpener(cmd, openerGrace)
+}
+
+// runOpener starts cmd and waits up to grace for it to exit. A failure within that time
+// is an error (for example $BROWSER pointing to a path that does not run); an opener
+// still running afterwards counts as opened, since some stay alive with the browser.
+func runOpener(cmd *exec.Cmd, grace time.Duration) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("open the browser: %w", err)
 	}
-	// Reap the opener; its exit status says nothing about the page.
-	go cmd.Wait()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }() // also reaps the process when it outlives the grace
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("open the browser: %w", err)
+		}
+	case <-time.After(grace):
+	}
 	return nil
 }

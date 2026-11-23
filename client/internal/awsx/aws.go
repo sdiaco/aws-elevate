@@ -220,7 +220,8 @@ func (p params) APIURL(ctx context.Context, creds aws.Credentials) (string, erro
 }
 
 // SSOProfiles lists the profiles of the AWS CLI config file that sign in through IAM
-// Identity Center, in the order of the file. A missing file has none.
+// Identity Center, in the order of the file. The profiles in the aws-elevate managed
+// block are grants, not the user's, and are left out. A missing file has none.
 func SSOProfiles(configFile string) ([]string, error) {
 	data, err := os.ReadFile(configFile)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -229,9 +230,13 @@ func SSOProfiles(configFile string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", configFile, err)
 	}
+	outside, _, err := splitBlock(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", configFile, err)
+	}
 	var names []string
 	current := ""
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(outside, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):

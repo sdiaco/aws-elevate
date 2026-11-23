@@ -223,6 +223,9 @@ func newHarness(t *testing.T) *harness {
 			h.shell = append([]string{shell}, env...)
 			return 0, nil
 		},
+		Profile: func(_ context.Context, profile string) (awsx.SourceProfile, error) {
+			return awsx.SourceProfile{Name: profile, SSOStartURL: "https://example.awsapps.com/start"}, nil
+		},
 		SettingsPath: filepath.Join(dir, "settings.json"),
 		ConfigFile:   filepath.Join(dir, "config"),
 		AliasFile:    filepath.Join(dir, "alias"),
@@ -341,10 +344,10 @@ func TestSetupRemembersTheServiceAndAddsTheAlias(t *testing.T) {
 	}
 }
 
-func TestSetupSuggestsWhatTheRoleCanDo(t *testing.T) {
+func TestSetupNextIsAlwaysTheInterface(t *testing.T) {
 	for roles, want := range map[string]string{
-		"requester":          "Next: aws elevate request",
-		"approver,requester": "Next: aws elevate request",
+		"requester":          "Next: aws elevate ui",
+		"approver,requester": "Next: aws elevate ui",
 		"auditor":            "Next: aws elevate ui",
 		"approver":           "Next: aws elevate ui",
 	} {
@@ -856,12 +859,12 @@ func TestSetupSavesTheProfileAsDefault(t *testing.T) {
 	if strings.Contains(h.out.String(), "not on your PATH") {
 		t.Errorf("warned while on the PATH: %q", h.out.String())
 	}
-	if !strings.HasSuffix(h.out.String(), "  Next: aws elevate request\n") {
+	if !strings.HasSuffix(h.out.String(), "  Next: aws elevate ui\n") {
 		t.Errorf("last line: %q", h.out.String())
 	}
 }
 
-func TestSetupWarnsWhenNotOnPath(t *testing.T) {
+func TestSetupPathWarningNamesTheScriptURL(t *testing.T) {
 	h := newHarness(t)
 	h.env.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	if got := h.run("setup", "--profile", "work"); got != 0 {
@@ -869,11 +872,67 @@ func TestSetupWarnsWhenNotOnPath(t *testing.T) {
 	}
 	for _, want := range []string{
 		`! aws-elevate is not on your PATH: the alias "aws elevate" cannot find it`,
-		"Fix: move it to ~/.local/bin, or run install.sh",
+		"Fix: move it to ~/.local/bin, or install it again with: curl -fsSL https://raw.githubusercontent.com/sdiaco/aws-elevate/main/install.sh | sh",
 	} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("missing %q in %q", want, h.out.String())
 		}
+	}
+}
+
+// ssoConfig is a CLI config with two SSO profiles and one that is not.
+const ssoConfig = "[profile admin]\nrole_arn = x\n[profile a]\nsso_session = s\n[profile b]\nsso_start_url = https://example.awsapps.com/start\n"
+
+// withNonSSODefault makes the profile setup would use by default not an SSO one.
+func (h *harness) withNonSSODefault(t *testing.T, config string) *string {
+	t.Helper()
+	if err := os.WriteFile(h.env.ConfigFile, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.env.Profile = func(_ context.Context, profile string) (awsx.SourceProfile, error) {
+		return awsx.SourceProfile{Name: profile}, nil
+	}
+	opened := new(string)
+	h.env.Open = func(_ context.Context, profile string) (Backend, error) {
+		*opened = profile
+		return h.backend, nil
+	}
+	return opened
+}
+
+func TestSetupOffersTheSSOProfilesWhenTheDefaultIsNotSSO(t *testing.T) {
+	h := newHarness(t)
+	opened := h.withNonSSODefault(t, ssoConfig)
+	h.typing("2\n")
+	if got := h.run("setup"); got != 0 {
+		t.Fatalf("exit %d: %s", got, h.errOut.String())
+	}
+	if *opened != "b" {
+		t.Errorf("opened profile %q, want b", *opened)
+	}
+	if out := h.out.String(); !strings.Contains(out, "1) a") || !strings.Contains(out, "2) b") || strings.Contains(out, "admin") {
+		t.Errorf("output %q", out)
+	}
+	if s, err := awsx.LoadSettings(h.env.SettingsPath); err != nil || s.Default != "b" {
+		t.Errorf("default %q, %v", s.Default, err)
+	}
+}
+
+func TestSetupWithoutAnySSOProfile(t *testing.T) {
+	h := newHarness(t)
+	h.withNonSSODefault(t, "[profile admin]\nrole_arn = x\n")
+	h.typing("")
+	want := "no SSO profile in " + h.env.ConfigFile + ": create one with aws configure sso, then run aws-elevate setup --profile <name>"
+	if got := h.run("setup"); got != 1 || !strings.Contains(h.errOut.String(), want) {
+		t.Errorf("exit %d, %q, want %q", got, h.errOut.String(), want)
+	}
+}
+
+func TestSetupWithoutTerminalAsksForTheProfile(t *testing.T) {
+	h := newHarness(t)
+	h.withNonSSODefault(t, ssoConfig)
+	if got := h.run("setup"); got != 1 || !strings.Contains(h.errOut.String(), "aws-elevate setup --profile <name>") || !strings.Contains(h.errOut.String(), "a, b") {
+		t.Errorf("exit %d, %q", got, h.errOut.String())
 	}
 }
 
