@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/aws/smithy-go"
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/term"
@@ -23,12 +25,16 @@ type fakeUninstaller struct {
 	states        []awsx.StackState // successive answers of Stack; deleted when empty
 	calls         []string
 	onDeleteStack func()
+	checkErr      error // answer of Check
+	leftoversErr  error // answer of Leftovers
 }
 
 func (f *fakeUninstaller) Check(context.Context) (awsx.Installation, error) {
-	return awsx.Installation{Account: "111111111111", IdentityStoreID: "d-1"}, nil
+	return awsx.Installation{Account: "111111111111", IdentityStoreID: "d-1"}, f.checkErr
 }
-func (f *fakeUninstaller) Leftovers(context.Context) (awsx.Leftovers, error) { return f.left, nil }
+func (f *fakeUninstaller) Leftovers(context.Context) (awsx.Leftovers, error) {
+	return f.left, f.leftoversErr
+}
 func (f *fakeUninstaller) DeleteStack(context.Context) error {
 	f.calls = append(f.calls, "delete stack")
 	if f.onDeleteStack != nil {
@@ -80,14 +86,14 @@ var everythingLeft = awsx.Leftovers{
 	RulesApp:  "app1",
 	ServicePS: []string{"ElevateRequester", "ElevateAdmin"},
 	Orphans: []awsx.OrphanPS{{ARN: "arn:ps", Name: "JIT-abcde12345",
-		Assignments: []awsx.Assignment{{Account: "222222222222", PrincipalType: "USER", PrincipalID: "u-1"}}}},
+		Assignments: []awsx.Assignment{{Account: "222222222222", PrincipalType: "USER", PrincipalID: "u-1", PrincipalName: "user@example.com"}}}},
 }
 
 func TestUninstallCheckListsWhatIsLeftAndChangesNothing(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{left: everythingLeft}
 	h.withUninstaller(un, "")
-	if code := h.run("uninstall", "--check", "--profile", "work"); code != 0 {
+	if code := h.run("uninstall", "infra", "--check", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
 	if un.region != "eu-west-1" || un.stack != "elevate" {
@@ -100,7 +106,7 @@ func TestUninstallCheckListsWhatIsLeftAndChangesNothing(t *testing.T) {
 		"Table elevate-grants",
 		"AppConfig application elevate",
 		"Permission sets ElevateRequester, ElevateAdmin",
-		"JIT-abcde12345   assigned to user u-1 in 222222222222",
+		"JIT-abcde12345   assigned to user user@example.com in 222222222222",
 		keptOnUninstall,
 	} {
 		if !strings.Contains(out, want) {
@@ -115,7 +121,7 @@ func TestUninstallCheckListsWhatIsLeftAndChangesNothing(t *testing.T) {
 func TestUninstallCheckWhenNothingIsLeft(t *testing.T) {
 	h := newHarness(t)
 	h.withUninstaller(&fakeUninstaller{}, "")
-	if code := h.run("uninstall", "--check", "--stack-name", "elevate-e2e", "--region", "us-east-1", "--profile", "work"); code != 0 {
+	if code := h.run("uninstall", "infra", "--check", "--stack-name", "elevate-e2e", "--region", "us-east-1", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
 	out := h.out.String()
@@ -146,7 +152,7 @@ func installedEverything() awsx.Leftovers {
 }
 
 func uninstall(h *harness, args ...string) int {
-	return h.run(append([]string{"uninstall", "--profile", "work", "--region", "eu-west-1"}, args...)...)
+	return h.run(append([]string{"uninstall", "infra", "--profile", "work", "--region", "eu-west-1"}, args...)...)
 }
 
 func TestUninstallStopsOnOpenGrants(t *testing.T) {
@@ -259,7 +265,7 @@ func TestUninstallNeedsTheStackNameTyped(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{left: installedEverything()}
 	// Keep the history, then a wrong name.
-	h.withUninstaller(un, "1\nelevat\n")
+	h.withUninstaller(un, "y\n1\nelevat\n")
 	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
 
 	if code := uninstall(h); code == 0 {
@@ -277,7 +283,7 @@ func TestUninstallTypedNameDeletes(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{left: installedEverything()}
 	// Delete the history, then the right name.
-	h.withUninstaller(un, "3\nelevate\n")
+	h.withUninstaller(un, "y\n3\nelevate\n")
 	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
 
 	if code := uninstall(h); code != 0 {
@@ -292,7 +298,7 @@ func TestUninstallAfterTheStackIsGoneOffersOnlyKeepOrDelete(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{left: awsx.Leftovers{Table: true, RulesApp: "app1"}}
 	// The second choice is Delete, then the name.
-	h.withUninstaller(un, "2\nelevate\n")
+	h.withUninstaller(un, "y\n2\nelevate\n")
 
 	if code := uninstall(h); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
@@ -372,7 +378,7 @@ func TestUninstallDeletesOrphansOnlyAfterConfirmation(t *testing.T) {
 	h := newHarness(t)
 	orphans := awsx.Leftovers{Orphans: everythingLeft.Orphans}
 	un := &fakeUninstaller{left: orphans}
-	h.withUninstaller(un, "n\n")
+	h.withUninstaller(un, "y\nn\n")
 	if code := uninstall(h); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
@@ -385,7 +391,7 @@ func TestUninstallDeletesOrphansOnlyAfterConfirmation(t *testing.T) {
 
 	h = newHarness(t)
 	un = &fakeUninstaller{left: orphans}
-	h.withUninstaller(un, "y\n")
+	h.withUninstaller(un, "y\ny\n")
 	if code := uninstall(h); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
@@ -418,7 +424,7 @@ func TestUninstallRemovesLocalFiles(t *testing.T) {
 		t.Errorf("settings still there: %v", err)
 	}
 	out := h.out.String()
-	for _, want := range []string{"Nothing of Elevate left in 111111111111", "not touched"} {
+	for _, want := range []string{"Nothing of Elevate left in 111111111111", clientStep} {
 		if !strings.Contains(out, want) {
 			t.Errorf("misses %q:\n%s", want, out)
 		}
@@ -499,7 +505,7 @@ func TestUninstallStopsBeforeTheStackWhenTheExportFails(t *testing.T) {
 func TestUninstallAsksBeforeRemovingLocalFilesWhenNothingWasFound(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{}
-	h.withUninstaller(un, "n\n")
+	h.withUninstaller(un, "y\nn\n")
 	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
 
 	if code := uninstall(h, "--stack-name", "typo"); code != 0 {
@@ -553,5 +559,184 @@ func TestUninstallSaysTheSecondOpenGrantsCheckIsARecheck(t *testing.T) {
 	}
 	if got := strings.Count(out, "✓ Still no open grants"); got != 1 {
 		t.Errorf("recheck printed %d times: %s", got, out)
+	}
+}
+
+func TestUninstallAsksWhichOneWithoutAnArgument(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{}, "2\n")
+	if code := h.run("uninstall"); code != 1 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	for _, want := range []string{"Elevate from AWS, for the whole organization (admins only)", "aws-elevate from this computer"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("misses %q:\n%s", want, h.out)
+		}
+	}
+	if !strings.Contains(h.errOut.String(), errUninstallClientPending.Error()) {
+		t.Errorf("the client was not chosen: %s", h.errOut)
+	}
+}
+
+func TestUninstallNeedsAnArgumentWithYes(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{}, "")
+	if code := h.run("uninstall", "--yes"); code != 2 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.errOut.String(), "uninstall --yes needs infra or client") {
+		t.Errorf("stderr %s", h.errOut)
+	}
+}
+
+func TestUninstallCheckAsksWhichOneToo(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{}
+	h.withUninstaller(un, "1\n")
+	if code := h.run("uninstall", "--check", "--profile", "work", "--region", "eu-west-1"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "Nothing of Elevate left in 111111111111") {
+		t.Errorf("out %s", h.out)
+	}
+}
+
+func TestUninstallInfraStartsWithAConfirmation(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	h.withUninstaller(un, "y\nn\n") // the region, then the organization
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+
+	if code := h.run("uninstall", "infra", "--profile", "work"); code != 1 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	out := h.out.String()
+	region := strings.Index(out, "Uninstall in eu-west-1")
+	org := strings.Index(out, "Uninstall Elevate from AWS, for the whole organization? [y/N]")
+	if region < 0 || org < region {
+		t.Errorf("the organization is not asked right after the region:\n%s", out)
+	}
+	if !strings.Contains(h.errOut.String(), "uninstall stopped: nothing was deleted") {
+		t.Errorf("stderr %s", h.errOut)
+	}
+	if len(un.calls) != 0 || strings.Contains(out, "To delete") {
+		t.Errorf("went on: %v\n%s", un.calls, out)
+	}
+}
+
+func TestUninstallInfraStopsBeforeDeletingWithoutAdminRights(t *testing.T) {
+	denied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "not authorized"}
+	for name, un := range map[string]*fakeUninstaller{
+		"check":     {left: installedEverything(), checkErr: fmt.Errorf("list: %w", denied)},
+		"leftovers": {left: installedEverything(), leftoversErr: fmt.Errorf("read stack: %w", denied)},
+	} {
+		h := newHarness(t)
+		h.withUninstaller(un, "")
+		h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+		cfg := "# >>> aws-elevate: managed block, rewritten automatically, do not edit >>>\n[profile jit]\n# <<< aws-elevate <<<\n"
+		if err := os.WriteFile(h.env.ConfigFile, []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if code := uninstall(h, "--history", "delete", "--yes"); code != 1 {
+			t.Fatalf("%s: exit %d: %s", name, code, h.errOut)
+		}
+		if !strings.Contains(h.errOut.String(), "you need the account administrator role of 111111111111 to uninstall Elevate") {
+			t.Errorf("%s: stderr %s", name, h.errOut)
+		}
+		if len(un.calls) != 0 {
+			t.Errorf("%s: changed %v", name, un.calls)
+		}
+		if data, err := os.ReadFile(h.env.ConfigFile); err != nil || string(data) != cfg {
+			t.Errorf("%s: config touched: %q %v", name, data, err)
+		}
+		if _, err := os.Stat(h.env.SettingsPath); err != nil {
+			t.Errorf("%s: settings removed: %v", name, err)
+		}
+	}
+}
+
+func TestUninstallInfraKeepsOtherErrorsAsTheyAre(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{checkErr: errors.New("network down")}, "")
+	if code := uninstall(h, "--yes"); code != 1 || !strings.Contains(h.errOut.String(), "network down") {
+		t.Errorf("exit %d: %s", code, h.errOut)
+	}
+}
+
+func TestUninstallInfraHighlightsTheStackName(t *testing.T) {
+	h := newHarness(t)
+	un := &fakeUninstaller{left: installedEverything()}
+	h.withUninstaller(un, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	ui := term.Colored(strings.NewReader("y\n1\nelevate\n"), h.out, true)
+	h.env.ui = ui
+
+	if code := uninstall(h); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	out := h.out.String()
+	for _, want := range []string{"Type " + ui.Bold("elevate") + " to delete it", "To delete: stack " + ui.Bold("elevate")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("misses %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestUninstallInfraLinksTheStackConsole(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{left: installedEverything()}, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	if code := uninstall(h, "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	want := "Follow it in the console (account 111111111111): " + stackConsoleURL("eu-west-1", "arn:stack/elevate/1")
+	if !strings.Contains(h.out.String(), want) {
+		t.Errorf("misses %q:\n%s", want, h.out)
+	}
+}
+
+func TestUninstallInfraSCPStepIsNotAFix(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{left: installedEverything()}, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	if code := uninstall(h, "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	out := h.out.String()
+	want := "SCP stack, if you installed it (management account):\n    aws cloudformation delete-stack --stack-name elevate-guardrails --profile <management admin>"
+	if !strings.Contains(out, want) {
+		t.Errorf("misses %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "Fix:") {
+		t.Errorf("the step is not a fix:\n%s", out)
+	}
+}
+
+func TestUninstallInfraEndsWithTheClientStep(t *testing.T) {
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{left: installedEverything()}, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+	if code := uninstall(h, "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(h.out.String()), "\n")
+	if got := strings.TrimSpace(lines[len(lines)-1]); got != clientStep {
+		t.Errorf("last line %q", got)
+	}
+	if strings.Contains(h.out.String(), "not touched") {
+		t.Errorf("out %s", h.out)
+	}
+}
+
+func TestLeftoversNameThePrincipals(t *testing.T) {
+	o := awsx.OrphanPS{Assignments: []awsx.Assignment{
+		{Account: "111111111111", PrincipalType: "USER", PrincipalID: "u-1", PrincipalName: "user@example.com"},
+		{Account: "111111111111", PrincipalType: "GROUP", PrincipalID: "g-1", PrincipalName: "platform"},
+		{Account: "222222222222", PrincipalType: "USER", PrincipalID: "u-2"},
+	}}
+	want := "assigned to user user@example.com in 111111111111, group platform in 111111111111, user u-2 in 222222222222"
+	if got := assignedTo(o); got != want {
+		t.Errorf("got %q", got)
 	}
 }

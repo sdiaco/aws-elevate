@@ -132,7 +132,7 @@ func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 		"✓ Region   eu-west-1",
 		"✓ Template   official v" + version.Client + ", bucket aws-elevate-releases-eu-west-1",
 		`Stack "elevate" in 111111111111 · eu-west-1`,
-		"Idle cost: 0 $ · remove it with aws-elevate uninstall",
+		"Idle cost: 0 $ · remove it with aws-elevate uninstall infra",
 		"✓ Stack created   in ",
 	} {
 		if !strings.Contains(out, want) {

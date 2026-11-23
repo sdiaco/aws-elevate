@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	ssotypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go"
@@ -46,7 +47,9 @@ type OrphanPS struct {
 	Assignments []Assignment
 }
 
-type Assignment struct{ Account, PrincipalType, PrincipalID string }
+// Assignment is one account a permission set is assigned in, to a user or a group.
+// PrincipalName is the user name or the group name, empty when it could not be read.
+type Assignment struct{ Account, PrincipalType, PrincipalID, PrincipalName string }
 
 // servicePermissionSets are the permission sets the stack creates, by their fixed names.
 var servicePermissionSets = []string{RoleRequester, RoleAdmin, RoleAuditor}
@@ -161,23 +164,29 @@ func (u *Uninstaller) rulesApp(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-func (u *Uninstaller) instanceARN(ctx context.Context) (string, error) {
+func (u *Uninstaller) instance(ctx context.Context) (arn, identityStoreID string, err error) {
 	out, err := ssoadmin.NewFromConfig(u.cfg).ListInstances(ctx, &ssoadmin.ListInstancesInput{})
 	if err != nil {
-		return "", fmt.Errorf("list Identity Center instances: %w", err)
+		return "", "", fmt.Errorf("list Identity Center instances: %w", err)
 	}
 	if len(out.Instances) == 0 {
-		return "", fmt.Errorf("no IAM Identity Center instance visible in %s", u.cfg.Region)
+		return "", "", fmt.Errorf("no IAM Identity Center instance visible in %s", u.cfg.Region)
 	}
-	return aws.ToString(out.Instances[0].InstanceArn), nil
+	return aws.ToString(out.Instances[0].InstanceArn), aws.ToString(out.Instances[0].IdentityStoreId), nil
+}
+
+func (u *Uninstaller) instanceARN(ctx context.Context) (string, error) {
+	arn, _, err := u.instance(ctx)
+	return arn, err
 }
 
 func (u *Uninstaller) permissionSets(ctx context.Context) ([]string, []OrphanPS, error) {
-	instance, err := u.instanceARN(ctx)
+	instance, store, err := u.instance(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	sso := ssoadmin.NewFromConfig(u.cfg)
+	names := principalNames{client: identitystore.NewFromConfig(u.cfg), store: store, known: map[string]string{}}
 	var service []string
 	var orphans []OrphanPS
 	pages := ssoadmin.NewListPermissionSetsPaginator(sso, &ssoadmin.ListPermissionSetsInput{InstanceArn: &instance})
@@ -201,12 +210,41 @@ func (u *Uninstaller) permissionSets(ctx context.Context) ([]string, []OrphanPS,
 					return nil, nil, err
 				}
 				if ok {
+					for i, a := range o.Assignments {
+						o.Assignments[i].PrincipalName = names.name(ctx, a.PrincipalType, a.PrincipalID)
+					}
 					orphans = append(orphans, o)
 				}
 			}
 		}
 	}
 	return service, orphans, nil
+}
+
+// principalNames reads the name of users and groups once each.
+type principalNames struct {
+	client *identitystore.Client
+	store  string
+	known  map[string]string
+}
+
+// name is the user name or the group name; empty when it cannot be read, because it only
+// makes the list easier to read and the id is shown instead.
+func (p principalNames) name(ctx context.Context, principalType, id string) string {
+	key := principalType + "/" + id
+	if name, ok := p.known[key]; ok {
+		return name
+	}
+	var name string
+	if principalType == string(ssotypes.PrincipalTypeGroup) {
+		if out, err := p.client.DescribeGroup(ctx, &identitystore.DescribeGroupInput{IdentityStoreId: &p.store, GroupId: &id}); err == nil {
+			name = aws.ToString(out.DisplayName)
+		}
+	} else if out, err := p.client.DescribeUser(ctx, &identitystore.DescribeUserInput{IdentityStoreId: &p.store, UserId: &id}); err == nil {
+		name = aws.ToString(out.UserName)
+	}
+	p.known[key] = name
+	return name
 }
 
 // orphan reads a JIT-* permission set; ok is false when it lacks the jit=true tag the
@@ -315,6 +353,20 @@ func (u *Uninstaller) deleteProfile(ctx context.Context, client *appconfig.Clien
 		return fmt.Errorf("delete the rules profile %s: %w", profileID, err)
 	}
 	return nil
+}
+
+// IsAccessDenied says whether err is the AWS answer for a caller without the permission,
+// whichever service gave it.
+func IsAccessDenied(err error) bool {
+	var api smithy.APIError
+	if !errors.As(err, &api) {
+		return false
+	}
+	switch api.ErrorCode() {
+	case "AccessDenied", "AccessDeniedException", "UnauthorizedOperation":
+		return true
+	}
+	return false
 }
 
 // gone says whether err is a ResourceNotFoundException, of any service.

@@ -81,7 +81,7 @@ def test_up_goes_on_when_the_installation_is_the_e2e_stack():
 def test_down_runs_uninstall_with_the_test_flags():
     cmd = harness.uninstall_command("eu-west-1", "diaco-test")
     assert cmd == [
-        str(harness.CLI), "uninstall", "--profile", "elevate-e2e-install",
+        str(harness.CLI), "uninstall", "infra", "--profile", "elevate-e2e-install",
         "--elevate-profile", "diaco-test", "--region", "eu-west-1",
         "--stack-name", "elevate-e2e", "--history", "delete", "--yes",
     ]  # fmt: skip

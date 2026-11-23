@@ -70,7 +70,8 @@ func RegisterHint(account string) string {
 
 // Check makes the precheck of the stack before creating it, for a faster and clearer
 // answer: the region must hold the Identity Center instance and the account must be its
-// delegated administrator. The stack checks again on its own.
+// delegated administrator. The stack checks again on its own. When a check fails the
+// answer still carries the account, which is known by then.
 func (i *Installer) Check(ctx context.Context) (Installation, error) {
 	id, err := sts.NewFromConfig(i.cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
@@ -80,22 +81,22 @@ func (i *Installer) Check(ctx context.Context) (Installation, error) {
 	sso := ssoadmin.NewFromConfig(i.cfg)
 	inst, err := sso.ListInstances(ctx, &ssoadmin.ListInstancesInput{})
 	if err != nil {
-		return Installation{}, fmt.Errorf("list Identity Center instances in %s: %w", i.cfg.Region, err)
+		return Installation{Account: account}, fmt.Errorf("list Identity Center instances in %s: %w", i.cfg.Region, err)
 	}
 	if len(inst.Instances) == 0 {
-		return Installation{}, fmt.Errorf("no IAM Identity Center instance visible in %s from account %s: "+
+		return Installation{Account: account}, fmt.Errorf("no IAM Identity Center instance visible in %s from account %s: "+
 			"use the Identity Center home region (--region) and its delegated administrator account. %s", i.cfg.Region, account, RegisterHint(account))
 	}
 	org, err := organizations.NewFromConfig(i.cfg).DescribeOrganization(ctx, &organizations.DescribeOrganizationInput{})
 	if err != nil {
-		return Installation{}, fmt.Errorf("read the organization: %w", err)
+		return Installation{Account: account}, fmt.Errorf("read the organization: %w", err)
 	}
 	if aws.ToString(org.Organization.MasterAccountId) == account {
-		return Installation{}, fmt.Errorf("account %s is the management account: install in the Identity Center delegated administrator account", account)
+		return Installation{Account: account}, fmt.Errorf("account %s is the management account: install in the Identity Center delegated administrator account", account)
 	}
 	_, err = sso.ListPermissionSets(ctx, &ssoadmin.ListPermissionSetsInput{InstanceArn: inst.Instances[0].InstanceArn, MaxResults: aws.Int32(1)})
 	if err != nil {
-		return Installation{}, fmt.Errorf("account %s is not the Identity Center delegated administrator, or the profile cannot administer Identity Center (%w). %s", account, err, RegisterHint(account))
+		return Installation{Account: account}, fmt.Errorf("account %s is not the Identity Center delegated administrator, or the profile cannot administer Identity Center (%w). %s", account, err, RegisterHint(account))
 	}
 	return Installation{Account: account, IdentityStoreID: aws.ToString(inst.Instances[0].IdentityStoreId)}, nil
 }

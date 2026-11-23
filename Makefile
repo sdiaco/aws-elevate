@@ -113,7 +113,7 @@ e2e: e2e-session dev-image
 	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && ELEVATE_E2E=1 uv run pytest tests/e2e -v -s -p no:cacheprovider
 
-# The stack goes with aws-elevate uninstall, built in the container like for e2e-up.
+# The stack goes with aws-elevate uninstall infra, built in the container like for e2e-up.
 e2e-down: e2e-session dev-image
 	$(DOCKER_RUN) bash -c 'cd client && CGO_ENABLED=0 go build -o ../build/aws-elevate ./cmd/aws-elevate'
 	cd service && uv run python tests/e2e/harness.py down
