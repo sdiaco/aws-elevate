@@ -470,3 +470,24 @@ func TestEditingKeepsTheNamesOfUnchangedAccountsAndGroups(t *testing.T) {
 		}
 	}
 }
+
+// Before the first version is in use the service has no rules at all, so none of the
+// newest version's rules can be in use yet.
+func TestFirstRulesArePublishingUntilTheServiceUsesThem(t *testing.T) {
+	h, _ := rulesHarness()
+	h.svc.versions = &api.ConfigVersions{Versions: []api.VersionInfo{{Number: 3, Valid: true}}}
+	out := h.get(t, "/rules")
+	if strings.Count(out, `<span class="st st-publishing">Publishing</span>`) != 2 {
+		t.Errorf("both rules are publishing:\n%s", out)
+	}
+	contains(t, out, "data-reload")
+	lacks(t, out, `class="st st-active"`)
+}
+
+func TestRulesListSaysWhenRulesTakeEffect(t *testing.T) {
+	h, _ := rulesHarness()
+	lacks(t, h.get(t, "/rules"), "Rules take effect in about 30 seconds")
+
+	h.svc.versions = &api.ConfigVersions{Versions: []api.VersionInfo{{Number: 3, Valid: true}}}
+	contains(t, h.get(t, "/rules"), "Rules take effect in about 30 seconds")
+}

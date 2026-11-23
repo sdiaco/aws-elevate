@@ -81,6 +81,7 @@ type List struct {
 	Empty   string
 	First   string // address of the first page, when this is not it
 	Next    string // address of the next page
+	Hint    string // a sentence under the header
 	Reload  bool   // the list reads itself again while some rows change by themselves
 }
 

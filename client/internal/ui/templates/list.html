@@ -7,7 +7,8 @@
 <div class="menu" role="menu" hidden>{{range .Actions}}<button class="menu-item" role="menuitem" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}</div></div>
 {{- else}}{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
 </div>
-{{if or .Search .Filters}}<div class="list-tools">
+{{with .Hint}}<p class="muted">{{.}}</p>
+{{end}}{{if or .Search .Filters}}<div class="list-tools">
 {{if .Search}}<input type="search" data-search placeholder="Search this page" aria-label="Search this page">{{end}}
 {{range .Filters}}<div class="segmented" role="group" aria-label="{{or .Label "Filter"}}">{{range .Items}}<a href="{{.Path}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
 {{end}}</div>{{end}}

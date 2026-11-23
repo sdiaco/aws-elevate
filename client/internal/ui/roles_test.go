@@ -82,3 +82,30 @@ func TestExpiredSessionSaysWhatToRun(t *testing.T) {
 	h.svc.rulesErr = expired
 	contains(t, h.do(t, "GET", "/requests/new", nil).Body.String(), want...)
 }
+
+// A role comes from the published rules: once the service uses them, the menu must show
+// it without waiting for rolesTTL.
+func TestRolesAreReadAgainOnceTheRulesAreInUse(t *testing.T) {
+	h, _ := rulesHarness()
+	h.svc.versions = &api.ConfigVersions{Versions: []api.VersionInfo{{Number: 3, Valid: true}}}
+	contains(t, h.get(t, "/rules"), "data-reload")
+	h.svc.me = &api.Me{User: me, Roles: []string{"admin", "requester"}}
+
+	three := 3
+	h.svc.versions = &api.ConfigVersions{Current: &three, Versions: []api.VersionInfo{{Number: 3, Valid: true}}}
+	lacks(t, h.get(t, "/rules"), "data-reload")
+	if n := countCalls(h.svc.calls, "me"); n != 0 {
+		t.Fatalf("me read %d times before the next page", n)
+	}
+
+	contains(t, h.get(t, "/requests"), `href="/requests/new"`)
+	if n := countCalls(h.svc.calls, "me"); n != 1 {
+		t.Fatalf("me read %d times, want 1", n)
+	}
+	// Only the change from publishing to in use expires the roles.
+	h.get(t, "/rules")
+	h.get(t, "/requests")
+	if n := countCalls(h.svc.calls, "me"); n != 1 {
+		t.Fatalf("me read %d times, want still 1", n)
+	}
+}

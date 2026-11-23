@@ -57,6 +57,8 @@ type App struct {
 	rolesMu   sync.Mutex
 	rolesRead time.Time // zero until the first request: the Me given at start is fresh
 	rolesErr  error     // the last refresh failed; the page says so
+
+	rulesChanging bool // the last Rules list had rows the service had not caught up with
 }
 
 // rolesTTL bounds how often the interface reads GET /me again. The service sees a newly
@@ -93,6 +95,26 @@ func (a *App) refreshRoles(ctx context.Context) {
 	}
 	a.rolesErr = nil
 	a.Me = *m
+}
+
+// expireRoles makes the next refreshRoles read GET /me at once.
+func (a *App) expireRoles() {
+	a.rolesMu.Lock()
+	defer a.rolesMu.Unlock()
+	a.rolesRead = time.Now().Add(-rolesTTL)
+}
+
+// rulesSettling records whether the Rules list still waits for the service. The first
+// list without such rows after one with them means the service uses the published rules,
+// and the roles derived from them are read again.
+func (a *App) rulesSettling(changing bool) {
+	a.rolesMu.Lock()
+	was := a.rulesChanging
+	a.rulesChanging = changing
+	a.rolesMu.Unlock()
+	if was && !changing {
+		a.expireRoles()
+	}
 }
 
 func (a *App) rolesAlert() []Alert {
