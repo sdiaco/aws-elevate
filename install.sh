@@ -60,4 +60,5 @@ case ":$PATH:" in
 *":$prefix:"*) ;;
 *) echo "Add $prefix to your PATH to run it." ;;
 esac
-echo "Next: aws-elevate setup"
+echo "Next, first install in your organization: aws-elevate install --profile <admin profile>"
+echo "Next, Elevate already installed: aws-elevate setup"

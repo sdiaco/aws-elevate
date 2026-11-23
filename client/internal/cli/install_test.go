@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -366,7 +367,7 @@ func TestInstallWithFlagsAndYesAsksNothing(t *testing.T) {
 	if code != 0 || inst.created == nil {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	if strings.Contains(h.out.String(), "?") {
+	if strings.Contains(h.out.String(), "? ") {
 		t.Errorf("asked something:\n%s", h.out)
 	}
 }
@@ -511,5 +512,45 @@ func TestInstallSummaryListsTheAdvancedSettingsGiven(t *testing.T) {
 	}
 	if strings.Contains(out, "template defaults") {
 		t.Errorf("claims template defaults:\n%s", out)
+	}
+}
+
+func TestStackRegionDefaultsToYes(t *testing.T) {
+	var out strings.Builder
+	u := term.Plain(strings.NewReader("\n"), &out, true)
+	src := awsx.SourceProfile{SSORegion: "eu-west-1"}
+	got, err := stackRegion(u, src, "work", "", "Install", false)
+	if err != nil || got != "eu-west-1" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if !strings.Contains(out.String(), "[Y/n]") {
+		t.Errorf("prompt: %q", out.String())
+	}
+}
+
+func TestStackConsoleURL(t *testing.T) {
+	got := stackConsoleURL("eu-west-1", "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/0a1b")
+	want := "https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/stackinfo?stackId=arn%3Aaws%3Acloudformation%3Aeu-west-1%3A111111111111%3Astack%2Felevate%2F0a1b"
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestInstallPrintsTheStackConsoleLink(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed, total: 2}
+	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\n\ny\n")
+
+	if code := h.run("install", "--profile", "work"); code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	out := h.out.String()
+	line := "Follow it in the console (account 111111111111): " + stackConsoleURL("eu-west-1", "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1")
+	at := strings.Index(out, line)
+	if at < 0 {
+		t.Fatalf("missing %q in:\n%s", line, out)
+	}
+	if at > strings.Index(out, "Stack created") {
+		t.Errorf("link printed after the progress:\n%s", out)
 	}
 }
