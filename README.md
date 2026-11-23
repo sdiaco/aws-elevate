@@ -46,8 +46,6 @@ You need:
 | **Requesters** | everyone who uses Elevate | ask for access |
 | **Auditors** (optional) | security, compliance | read and export everything, change nothing |
 
-> **Approvers are not a fourth group of Elevate.** Each rule that needs approval names its own approver group, any group of Identity Center (for example `prod-approvers`). Approvers must also be in one of the three groups above, to reach Elevate. An admin approves only if they are in the approver group of that rule: add them to it when they need to.
-
 ---
 
 ## Install
