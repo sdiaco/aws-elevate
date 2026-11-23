@@ -56,7 +56,7 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 			return runUninstallClient(ctx, e, args[1:])
 		}
 	}
-	if slices.Contains(args, "--yes") || slices.Contains(args, "-yes") {
+	if slices.ContainsFunc(args, isYesFlag) {
 		return fmt.Errorf("uninstall --yes needs infra or client: %w", errUsage)
 	}
 	items := []term.Item{
@@ -72,6 +72,11 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 		return runUninstallInfra(ctx, e, args)
 	}
 	return runUninstallClient(ctx, e, args)
+}
+
+// isYesFlag matches --yes and -yes, with or without a value.
+func isYesFlag(a string) bool {
+	return a == "--yes" || a == "-yes" || strings.HasPrefix(a, "--yes=") || strings.HasPrefix(a, "-yes=")
 }
 
 // uninstallRun is one uninstall: every step reads what is left and skips what is done.
@@ -147,7 +152,7 @@ func runUninstallInfra(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return needAdminRights(err, where.Account)
 	}
-	u.Header(fmt.Sprintf("aws-elevate uninstall · stack %s in %s · %s", *stackName, where.Account, *region))
+	u.Header(fmt.Sprintf("aws-elevate uninstall infra · stack %s in %s · %s", *stackName, where.Account, *region))
 	if *check {
 		printLeftovers(u, *stackName, where.Account, left)
 		return nil
@@ -197,12 +202,12 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 			}
 		}
 		if err := r.deleteStack(ctx, left.Stack); err != nil {
-			return err
+			return needAdminRights(err, r.account)
 		}
 	}
 	if deleteHistory {
 		if err := r.deleteHistory(ctx, left); err != nil {
-			return err
+			return needAdminRights(err, r.account)
 		}
 	}
 	fmt.Fprintf(r.u.Writer(), "  SCP stack, if you installed it (management account):\n    %s\n\n",
@@ -210,10 +215,10 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	// A grant opened while the questions were answered leaves its permission set behind.
 	now, err := r.un.Leftovers(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	if err := r.deleteOrphans(ctx, now.Orphans); err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	if left.Empty() {
 		ok, err := r.u.Confirm(fmt.Sprintf("Nothing of stack %s found in %s: remove the local grant profiles and settings anyway?", r.stack, r.account), r.yes)
@@ -231,7 +236,7 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	}
 	final, err := r.un.Leftovers(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	printLeftovers(r.u, r.stack, r.account, final)
 	fmt.Fprintf(r.u.Writer(), "  %s\n", clientStep)

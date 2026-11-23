@@ -14,7 +14,8 @@ import (
 
 // clientLeftovers is what aws-elevate left on this computer; an empty field is not there.
 type clientLeftovers struct {
-	profiles []string // grant profiles in the AWS CLI config
+	block    bool     // the aws-elevate block is in the AWS CLI config, even empty
+	profiles []string // grant profiles in the block
 	settings string
 	cache    string
 	alias    string
@@ -23,13 +24,16 @@ type clientLeftovers struct {
 }
 
 func (l clientLeftovers) empty() bool {
-	return len(l.profiles) == 0 && l.settings == "" && l.cache == "" && l.alias == "" && l.exe == ""
+	return !l.block && len(l.profiles) == 0 && l.settings == "" && l.cache == "" && l.alias == "" && l.exe == ""
 }
 
 // findClientLeftovers looks at the places aws-elevate writes to and keeps what exists.
 func findClientLeftovers(e *Env) (clientLeftovers, error) {
 	var l clientLeftovers
 	var err error
+	if l.block, err = awsx.HasManagedBlock(e.ConfigFile); err != nil {
+		return l, err
+	}
 	if l.profiles, err = awsx.GrantProfiles(e.ConfigFile); err != nil {
 		return l, err
 	}
@@ -110,8 +114,8 @@ func printClientLeftovers(e *Env, l clientLeftovers) {
 	w := e.UI().Writer()
 	item := func(path, what string) { fmt.Fprintf(w, "  • %s   %s\n", path, e.UI().Dim(what)) }
 	fmt.Fprintln(w, "  On this computer:")
-	if len(l.profiles) > 0 {
-		item(e.ConfigFile, "the grant profiles of the aws-elevate block")
+	if l.block {
+		item(e.ConfigFile, "the aws-elevate block")
 	}
 	if l.settings != "" {
 		item(l.settings, "settings")
@@ -133,7 +137,7 @@ func printClientLeftovers(e *Env, l clientLeftovers) {
 // still there to run again.
 func removeClient(e *Env, l clientLeftovers) error {
 	u := e.UI()
-	if len(l.profiles) > 0 {
+	if l.block {
 		if _, err := awsx.RemoveManagedBlock(e.ConfigFile); err != nil {
 			return err
 		}

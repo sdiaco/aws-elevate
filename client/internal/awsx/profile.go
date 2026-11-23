@@ -219,6 +219,22 @@ func RemoveManagedBlock(path string) (bool, error) {
 	return true, writeFileAtomic(path, []byte(outside))
 }
 
+// HasManagedBlock says whether the CLI config at path has the managed block, even empty.
+func HasManagedBlock(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	outside, block, err := splitBlock(string(data))
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	return outside != string(data) || block != "", nil
+}
+
 // GrantProfiles lists the profiles in the managed block of the CLI config at path.
 func GrantProfiles(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
