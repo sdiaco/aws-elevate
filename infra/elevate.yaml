@@ -15,7 +15,7 @@ Metadata:
       - Label: {default: "Integrations (optional)"}
         Parameters: [EventConsumerAccounts]
       - Label: {default: "Audit and data protection (optional)"}
-        Parameters: [HistoryRetentionMonths, PointInTimeRecovery]
+        Parameters: [HistoryRetentionMonths, PointInTimeRecovery, KmsKeyArn]
       - Label: {default: "For testing only: leave as they are"}
         Parameters: [CodeBucket, CodeKey]
     ParameterLabels:
@@ -29,6 +29,7 @@ Metadata:
       EventConsumerAccounts: {default: "Event consumer accounts"}
       HistoryRetentionMonths: {default: "History kept (months)"}
       PointInTimeRecovery: {default: "Point-in-time recovery"}
+      KmsKeyArn: {default: "Customer KMS key ARN"}
       CodeBucket: {default: "Lambda package bucket"}
       CodeKey: {default: "Lambda package key"}
 
@@ -107,6 +108,15 @@ Parameters:
       Enabled keeps continuous backups of the grant history for 35 days (restore to any
       second), at a small storage cost; recommended where the history must be recoverable.
 
+  KmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional. ARN of a KMS key in this region that encrypts the grant history and the
+      logs; empty uses keys owned by AWS. The key policy must allow CloudWatch Logs of
+      this region (see the README).
+
 # Regions where aws-elevate is published and their release buckets
 # (contract/release-buckets.json). The bucket is never derived from the region name: in a
 # region without a published release someone else could own that name. A region missing
@@ -143,6 +153,7 @@ Conditions:
   HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
   HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
   PitrEnabled: !Equals [!Ref PointInTimeRecovery, Enabled]
+  HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, ""]]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -180,6 +191,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-precheck
       RetentionInDays: 30
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   PrecheckFunction:
     Type: AWS::Lambda::Function
@@ -246,6 +258,10 @@ Resources:
         Enabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [PitrEnabled, true, false]
+      SSESpecification: !If
+        - HasKmsKey
+        - {SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !Ref KmsKeyArn}
+        - !Ref AWS::NoValue
       ResourcePolicy:
         PolicyDocument:
           Version: "2012-10-17"
@@ -326,6 +342,16 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              - !If
+                - HasKmsKey
+                - Sid: DecryptGrantsWithCustomerKey
+                  Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref KmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
+                - !Ref AWS::NoValue
               # Scoped to this instance.
               - Sid: CreateOnlyJitTagged
                 Effect: Allow
@@ -429,6 +455,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-engine
       RetentionInDays: 90
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   EngineFunction:
     Type: AWS::Lambda::Function
@@ -1339,6 +1366,16 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              - !If
+                - HasKmsKey
+                - Sid: DecryptGrantsWithCustomerKey
+                  Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref KmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
+                - !Ref AWS::NoValue
               # Reads by key and by index only: no Scan.
               - Sid: GrantsTable
                 Effect: Allow
@@ -1428,6 +1465,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-api
       RetentionInDays: 90
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   ApiFunction:
     Type: AWS::Lambda::Function

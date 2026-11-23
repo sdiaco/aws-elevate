@@ -28,7 +28,7 @@ type Installer interface {
 // stackPoll is how often the install reads the stack's progress.
 const stackPoll = 10 * time.Second
 
-const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--max-open-grants <n>] [--event-consumer-accounts <id,id>] [--config-versions-listed <n>] [--retention-months <n>] [--pitr] [--yes]"
+const installUsage = "install [--region <r>] [--admin-group <name>] [--requester-group <name>] [--auditor-group <name>] [--email <address>] [--organization-name <name>] [--max-open-grants <n>] [--event-consumer-accounts <id,id>] [--config-versions-listed <n>] [--retention-months <n>] [--pitr] [--kms-key-arn <arn>] [--yes]"
 
 // runInstall is the guided install: it creates the stack in the
 // delegated administrator account with the admin's own profile, then runs setup.
@@ -45,6 +45,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	versionsListed := f.String("config-versions-listed", "", "rules versions shown in the history (default: the template's)")
 	retentionMonths := f.String("retention-months", "", "months the grant history is kept (default: the template's)")
 	pitr := f.Bool("pitr", false, "turn on point-in-time recovery of the grants table (default: off)")
+	kmsKeyArn := f.String("kms-key-arn", "", "ARN of a KMS key in this region that encrypts the history and the logs (default: keys owned by AWS)")
 	yes := f.Bool("yes", false, "answer yes to the confirmations, for scripts")
 	stackName := f.String("stack-name", "elevate", "stack name, for tests")
 	templateURL := f.String("template-url", "", "template URL, for tests (default: the release bucket of the region)")
@@ -123,6 +124,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		{"ConfigVersionsListed", *versionsListed},
 		{"HistoryRetentionMonths", *retentionMonths},
 		{"PointInTimeRecovery", pitrValue},
+		{"KmsKeyArn", *kmsKeyArn},
 	} {
 		if p.value != "" {
 			stack.Parameters[p.param] = p.value

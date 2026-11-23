@@ -3,6 +3,7 @@ the template must keep."""
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -17,10 +18,25 @@ RESOURCES = TEMPLATE["Resources"]
 SSO_READ_PREFIXES = ("Describe", "Get", "List")
 
 
-def statements(role: str) -> list[dict]:
+def resolve_key_conditions(value, has_key: bool):
+    """Resolve the `!If [HasKmsKey, a, b]` nodes as CloudFormation does; anything else is kept."""
+    if isinstance(value, dict):
+        branches = value.get("Fn::If")
+        if len(value) == 1 and branches and branches[0] == "HasKmsKey":
+            chosen = branches[1] if has_key else branches[2]
+            return resolve_key_conditions(chosen, has_key)
+        resolved = {k: resolve_key_conditions(v, has_key) for k, v in value.items()}
+        return {k: v for k, v in resolved.items() if v != {"Ref": "AWS::NoValue"}}
+    if isinstance(value, list):
+        out = [resolve_key_conditions(v, has_key) for v in value]
+        return [v for v in out if v != {"Ref": "AWS::NoValue"}]
+    return value
+
+
+def statements(role: str, has_key: bool = True) -> list[dict]:
     out = []
     for policy in RESOURCES[role]["Properties"]["Policies"]:
-        out += policy["PolicyDocument"]["Statement"]
+        out += resolve_key_conditions(policy["PolicyDocument"]["Statement"], has_key)
     return out
 
 
@@ -94,6 +110,9 @@ def test_engine_tags_only_jit_keys():
 def test_engine_cannot_touch_iam_lambda_or_states():
     for stmt in engine_allows():
         for action in as_list(stmt["Action"]):
+            if stmt["Sid"] == "DecryptGrantsWithCustomerKey":
+                assert action == "kms:Decrypt"
+                continue
             assert action.split(":")[0] in ("sso", "dynamodb", "appconfig", "logs"), action
 
 
@@ -312,6 +331,7 @@ def test_api_actions_are_exactly_the_design_ones():
         "events:PutEvents",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
+        "kms:Decrypt",  # only under HasKmsKey, see the customer key tests
     }
 
 
@@ -322,7 +342,7 @@ def test_api_reads_permission_sets_of_this_instance_only():
         {"Fn::GetAtt": ["Precheck", "InstanceArn"]},
         {"Fn::Sub": "arn:${AWS::Partition}:sso:::permissionSet/${Precheck.InstanceId}/*"},
     ]
-    assert not [s for s in statements("ApiRole") if "sso:" in text(s) and s is not stmt]
+    assert not [s for s in statements("ApiRole") if "sso:" in text(s) and s["Sid"] != stmt["Sid"]]
 
 
 def test_api_reads_this_identity_store_whatever_account_owns_it():
@@ -633,6 +653,7 @@ def test_pitr_parameter():
     assert groups["Audit and data protection (optional)"] == [
         "HistoryRetentionMonths",
         "PointInTimeRecovery",
+        "KmsKeyArn",
     ]
 
 
@@ -682,3 +703,98 @@ def test_console_groups_in_order():
         "Audit and data protection (optional)",
         "For testing only: leave as they are",
     ]
+
+
+# ---------- customer KMS key ----------
+
+KMS_ARN_PATTERN = TEMPLATE["Parameters"]["KmsKeyArn"]["AllowedPattern"]
+LOG_GROUPS = ["PrecheckLogs", "EngineLogs", "ApiLogs"]
+
+
+@pytest.mark.parametrize(
+    "value,ok",
+    [
+        ("", True),
+        ("arn:aws:kms:eu-west-1:111111111111:key/1234abcd-12ab-34cd-56ef-1234567890ab", True),
+        ("alias/x", False),
+        ("arn:aws:kms:eu-west-1:111111111111:alias/x", False),
+        ("arn:aws:s3:::bucket", False),
+    ],
+)
+def test_kms_key_parameter_accepts_only_a_key_arn(value, ok):
+    assert bool(re.fullmatch(KMS_ARN_PATTERN, value)) is ok
+
+
+def test_kms_key_parameter_is_optional_and_in_the_data_protection_group():
+    param = TEMPLATE["Parameters"]["KmsKeyArn"]
+    assert param["Type"] == "String"
+    assert param["Default"] == ""
+    assert "README" in param["Description"]
+    assert INTERFACE["ParameterLabels"]["KmsKeyArn"]["default"] == "Customer KMS key ARN"
+    groups = {g["Label"]["default"]: g["Parameters"] for g in INTERFACE["ParameterGroups"]}
+    assert groups["Audit and data protection (optional)"][-1] == "KmsKeyArn"
+    assert TEMPLATE["Conditions"]["HasKmsKey"] == {
+        "Fn::Not": [{"Fn::Equals": [{"Ref": "KmsKeyArn"}, ""]}]
+    }
+
+
+def test_customer_key_encrypts_the_table_and_the_three_log_groups():
+    sse = RESOURCES["GrantsTable"]["Properties"]["SSESpecification"]
+    assert sse == {
+        "Fn::If": [
+            "HasKmsKey",
+            {"SSEEnabled": True, "SSEType": "KMS", "KMSMasterKeyId": {"Ref": "KmsKeyArn"}},
+            {"Ref": "AWS::NoValue"},
+        ]
+    }
+    for name in LOG_GROUPS:
+        key = RESOURCES[name]["Properties"]["KmsKeyId"]
+        assert key == {"Fn::If": ["HasKmsKey", {"Ref": "KmsKeyArn"}, {"Ref": "AWS::NoValue"}]}, name
+
+
+@pytest.mark.parametrize("role", ["ApiRole", "EngineRole"])
+def test_api_and_engine_only_decrypt_with_the_customer_key_through_dynamodb(role):
+    kms = [
+        s
+        for s in statements(role)
+        if any(a.startswith("kms:") for a in as_list(s.get("Action", [])))
+    ]
+    assert kms == [
+        {
+            "Sid": "DecryptGrantsWithCustomerKey",
+            "Effect": "Allow",
+            "Action": "kms:Decrypt",
+            "Resource": {"Ref": "KmsKeyArn"},
+            "Condition": {
+                "StringEquals": {
+                    "kms:ViaService": {"Fn::Sub": "dynamodb.${AWS::Region}.amazonaws.com"}
+                }
+            },
+        }
+    ]
+    raw = [
+        s
+        for p in RESOURCES[role]["Properties"]["Policies"]
+        for s in p["PolicyDocument"]["Statement"]
+    ]
+    (guarded,) = [s for s in raw if "DecryptGrantsWithCustomerKey" in json.dumps(s)]
+    assert guarded["Fn::If"][0] == "HasKmsKey"
+    assert guarded["Fn::If"][2] == {"Ref": "AWS::NoValue"}
+
+
+def test_without_a_key_nothing_mentions_kms():
+    resolved = json.dumps(
+        resolve_key_conditions(
+            {
+                k: v
+                for k, v in RESOURCES.items()
+                if k not in ("GrantsTable", *LOG_GROUPS, "ApiRole", "EngineRole")
+            },
+            False,
+        )
+    )
+    assert "kms" not in resolved.lower()
+    for name in ("GrantsTable", *LOG_GROUPS, "ApiRole", "EngineRole"):
+        props = resolve_key_conditions(RESOURCES[name]["Properties"], False)
+        assert "kms" not in json.dumps(props).lower(), name
+        assert "SSESpecification" not in props and "KmsKeyId" not in props
