@@ -137,7 +137,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	} else {
 		fmt.Fprintln(w, "  Advanced settings: "+strings.Join(advanced, ", "))
 	}
-	fmt.Fprintln(w, "  Idle cost: 0 $ · remove it with aws-elevate uninstall")
+	fmt.Fprintln(w, "  Idle cost: 0 $ · remove it with aws-elevate uninstall infra")
 	ok, err := u.Confirm("Proceed?", *yes)
 	if err != nil {
 		return err

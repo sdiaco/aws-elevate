@@ -199,3 +199,10 @@ func (u *UI) ConfirmYes(question string, yes bool) (bool, error) {
 func Plain(in io.Reader, out io.Writer, interactive bool) *UI {
 	return &UI{out: out, in: bufio.NewReader(in), fd: -1, interactive: interactive, now: time.Now}
 }
+
+// Colored is Plain with colors, for tests of what is highlighted.
+func Colored(in io.Reader, out io.Writer, interactive bool) *UI {
+	u := Plain(in, out, interactive)
+	u.color = true
+	return u
+}

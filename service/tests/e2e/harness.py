@@ -31,7 +31,7 @@ build/aws-elevate) at the previous infrastructure version, PREVIOUS_INFRA: the s
 with another INFRA_VERSION. test_upgrade.py, run first, updates it to the current code
 with a grant open. The install signs as OrganizationAccountAccessRole of
 the service account, through a temporary AWS config with one more profile and a temporary
-home. `down` removes the stack with `aws-elevate uninstall` and deletes the rest directly;
+home. `down` removes the stack with `aws-elevate uninstall infra` and deletes the rest directly;
 the direct deletion is also the net when uninstall fails, which still fails `down`.
 
 `up` stops when the Identity Center instance already has ElevateAdmin and no elevate-e2e
@@ -456,22 +456,22 @@ def setup_command(profile: str, account: str) -> list[str]:
 def uninstall_command(region: str, elevate_profile: str) -> list[str]:
     """The test history is deleted: the test organization keeps nothing."""
     return [
-        str(CLI), "uninstall", "--profile", INSTALL_PROFILE,
+        str(CLI), "uninstall", "infra", "--profile", INSTALL_PROFILE,
         "--elevate-profile", elevate_profile, "--region", region,
         "--stack-name", STACK, "--history", "delete", "--yes",
     ]  # fmt: skip
 
 
 def uninstall(session: boto3.Session) -> None:
-    """`aws-elevate setup` with the test user's profile, then `aws-elevate uninstall`."""
+    """`aws-elevate setup` with the test user's profile, then `aws-elevate uninstall infra`."""
     if not CLI.is_file():
         raise SystemExit(f"{CLI} is missing: build it with `make e2e-up` or `make e2e`")
-    log(f"uninstalling {STACK} with aws-elevate uninstall")
+    log(f"uninstalling {STACK} with aws-elevate uninstall infra")
     with client_env(session.region_name) as environ:
         _run_client(setup_command(env("PROFILE"), env("SERVICE_ACCOUNT")), environ,
                     "aws-elevate setup failed before uninstall")  # fmt: skip
         _run_client(uninstall_command(session.region_name, env("PROFILE")), environ,
-                    "aws-elevate uninstall failed")  # fmt: skip
+                    "aws-elevate uninstall infra failed")  # fmt: skip
 
 
 def guard_other_installation(session: boto3.Session, cfn) -> None:
