@@ -460,6 +460,23 @@ func TestInstallPassesTheAdvancedFlags(t *testing.T) {
 	}
 }
 
+func TestInstallPassesRetentionMonths(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--retention-months", "60", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if got := inst.created.Parameters["HistoryRetentionMonths"]; got != "60" {
+		t.Errorf("HistoryRetentionMonths = %q", got)
+	}
+	if !strings.Contains(h.out.String(), "\n  Advanced settings: HistoryRetentionMonths=60\n") {
+		t.Errorf("no advanced settings line:\n%s", h.out)
+	}
+}
+
 func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
@@ -469,7 +486,7 @@ func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed"} {
+	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed", "HistoryRetentionMonths"} {
 		if _, ok := inst.created.Parameters[k]; ok {
 			t.Errorf("%s is set: %v", k, inst.created.Parameters)
 		}
