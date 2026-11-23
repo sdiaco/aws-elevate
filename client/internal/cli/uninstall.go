@@ -35,9 +35,6 @@ const keptOnUninstall = "kept: Identity Center groups, delegated administrator"
 // clientStep is what is left to do on this computer when the installation is gone.
 const clientStep = "To remove the client from this computer: aws-elevate uninstall client"
 
-// errUninstallClientPending stands for the removal of the client until it exists.
-var errUninstallClientPending = errors.New("uninstall client: not available yet")
-
 const (
 	historyKeep   = "keep"
 	historyExport = "export"
@@ -75,10 +72,6 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 		return runUninstallInfra(ctx, e, args)
 	}
 	return runUninstallClient(ctx, e, args)
-}
-
-func runUninstallClient(context.Context, *Env, []string) error {
-	return errUninstallClientPending
 }
 
 // uninstallRun is one uninstall: every step reads what is left and skips what is done.

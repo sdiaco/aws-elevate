@@ -70,3 +70,57 @@ func WriteAlias(path string) (bool, error) {
 	}
 	return true, nil
 }
+
+// FindAlias reports whether our alias line is in the alias file, and whether a different
+// elevate alias is.
+func FindAlias(path string) (ours, foreign bool, err error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	_, ours, foreign = withoutOurAlias(string(data))
+	return ours, foreign, nil
+}
+
+// RemoveAlias takes our alias line out of the alias file and leaves every other line as
+// it is. It reports whether a line was removed, and whether a different elevate alias
+// is there: that one belongs to the user and stays.
+func RemoveAlias(path string) (removed, foreign bool, err error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	kept, removed, foreign := withoutOurAlias(string(data))
+	if !removed {
+		return false, foreign, nil
+	}
+	return true, foreign, writeFileAtomic(path, []byte(kept))
+}
+
+// withoutOurAlias drops our alias line from the [toplevel] section of doc.
+func withoutOurAlias(doc string) (kept string, ours, foreign bool) {
+	var out []string
+	section := ""
+	for _, l := range strings.SplitAfter(doc, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "[") {
+			section = t
+		} else if section == "[toplevel]" {
+			if t == AliasLine {
+				ours = true
+				continue
+			}
+			if name, _, ok := strings.Cut(t, "="); ok && strings.TrimSpace(name) == "elevate" {
+				foreign = true
+			}
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, ""), ours, foreign
+}
