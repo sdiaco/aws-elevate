@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   aws-elevate guardrails (optional): a service control policy, deployed from
   the management account, that keeps the other principals of the service account away
-  from the runtime actions and the resources of aws-elevate.
+  from the runtime actions and the resources of aws-elevate. It also protects the
+  grant history: the table and its backups.
 
 Parameters:
   ServiceAccountId:
@@ -98,6 +99,26 @@ Resources:
             Effect: Deny
             Action: iam:*
             Resource: !Sub arn:${AWS::Partition}:iam::${ServiceAccountId}:role/elevate/*
+            Condition:
+              ArnNotLike:
+                aws:PrincipalArn: !Ref DeployerRoleArns
+          # Keeps the history and its copies to the deployers. It is the only block on
+          # AWS Backup jobs with advanced DynamoDB backup features, because
+          # dynamodb:StartAwsBackupJob cannot be denied in a resource policy.
+          - Sid: ProtectGrantsTable
+            Effect: Deny
+            Action:
+              - dynamodb:PutResourcePolicy
+              - dynamodb:DeleteResourcePolicy
+              - dynamodb:DeleteTable
+              - dynamodb:UpdateTable
+              - dynamodb:UpdateTimeToLive
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:RestoreTableFromBackup
+              - dynamodb:StartAwsBackupJob
+            Resource:
+              - !Sub arn:${AWS::Partition}:dynamodb:*:${ServiceAccountId}:table/${StackName}-grants
+              - !Sub arn:${AWS::Partition}:dynamodb:*:${ServiceAccountId}:table/${StackName}-grants/backup/*
             Condition:
               ArnNotLike:
                 aws:PrincipalArn: !Ref DeployerRoleArns
