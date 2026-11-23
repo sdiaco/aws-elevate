@@ -200,7 +200,7 @@ make dev        # shell with Go, Python, uv and the AWS CLI
 make check      # lint and tests, as run before every push
 ```
 
-How to contribute: [docs/contributing.md](docs/contributing.md).
+How to contribute: [Contributing](docs/contributing.md).
 
 ## License
 
