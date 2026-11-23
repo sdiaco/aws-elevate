@@ -70,18 +70,8 @@ Use it when you prefer the CloudFormation console. Sign in to the delegated admi
 
 | Region | |
 |---|---|
-| `ca-central-1` | [Launch Stack](https://ca-central-1.console.aws.amazon.com/cloudformation/home?region=ca-central-1#/stacks/create/review?templateURL=https://aws-elevate-releases-ca-central-1.s3.ca-central-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `eu-central-1` | [Launch Stack](https://eu-central-1.console.aws.amazon.com/cloudformation/home?region=eu-central-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-central-1.s3.eu-central-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `eu-north-1` | [Launch Stack](https://eu-north-1.console.aws.amazon.com/cloudformation/home?region=eu-north-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-north-1.s3.eu-north-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `eu-south-1` | [Launch Stack](https://eu-south-1.console.aws.amazon.com/cloudformation/home?region=eu-south-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-south-1.s3.eu-south-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
 | `eu-west-1` | [Launch Stack](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `eu-west-2` | [Launch Stack](https://eu-west-2.console.aws.amazon.com/cloudformation/home?region=eu-west-2#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-2.s3.eu-west-2.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `eu-west-3` | [Launch Stack](https://eu-west-3.console.aws.amazon.com/cloudformation/home?region=eu-west-3#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-3.s3.eu-west-3.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `sa-east-1` | [Launch Stack](https://sa-east-1.console.aws.amazon.com/cloudformation/home?region=sa-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-sa-east-1.s3.sa-east-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
 | `us-east-1` | [Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `us-east-2` | [Launch Stack](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-2.s3.us-east-2.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `us-west-1` | [Launch Stack](https://us-west-1.console.aws.amazon.com/cloudformation/home?region=us-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-west-1.s3.us-west-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `us-west-2` | [Launch Stack](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create/review?templateURL=https://aws-elevate-releases-us-west-2.s3.us-west-2.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
 
 The stack is created with the name `elevate`. CloudFormation needs the group **ids**, not the names. Find the id of a group:
 

@@ -31,7 +31,7 @@ func TestTemplateURLUsesTheMappedBucket(t *testing.T) {
 
 func TestTemplateURLRefusesARegionWithoutRelease(t *testing.T) {
 	_, err := TemplateURL("ap-south-1", "0.2.0")
-	if err == nil || !strings.Contains(err.Error(), "not published in ap-south-1") || !strings.Contains(err.Error(), "ca-central-1, eu-central-1, eu-north-1, eu-south-1, eu-west-1, eu-west-2, eu-west-3, sa-east-1, us-east-1, us-east-2, us-west-1, us-west-2") {
+	if err == nil || !strings.Contains(err.Error(), "not published in ap-south-1") || !strings.Contains(err.Error(), "eu-west-1, us-east-1") {
 		t.Fatalf("%v", err)
 	}
 }
