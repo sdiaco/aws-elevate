@@ -478,3 +478,23 @@ func TestGrantProfilesListsTheManagedBlock(t *testing.T) {
 		t.Errorf("without a file: %v, %v", got, err)
 	}
 }
+
+func TestHasManagedBlockSeesAnEmptyBlock(t *testing.T) {
+	dir := t.TempDir()
+	for doc, want := range map[string]bool{
+		"[default]\n":                                      false,
+		blockBegin + "\n" + blockEnd + "\n":                true,
+		blockBegin + "\n[profile jit]\n" + blockEnd + "\n": true,
+	} {
+		path := filepath.Join(dir, "config")
+		if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := HasManagedBlock(path); err != nil || got != want {
+			t.Errorf("%q: got %v, err %v", doc, got, err)
+		}
+	}
+	if got, err := HasManagedBlock(filepath.Join(dir, "missing")); err != nil || got {
+		t.Errorf("missing file: %v, %v", got, err)
+	}
+}

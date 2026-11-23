@@ -27,6 +27,7 @@ type fakeUninstaller struct {
 	onDeleteStack func()
 	checkErr      error // answer of Check
 	leftoversErr  error // answer of Leftovers
+	deleteErr     error // answer of DeleteStack
 }
 
 func (f *fakeUninstaller) Check(context.Context) (awsx.Installation, error) {
@@ -39,6 +40,9 @@ func (f *fakeUninstaller) DeleteStack(context.Context) error {
 	f.calls = append(f.calls, "delete stack")
 	if f.onDeleteStack != nil {
 		f.onDeleteStack()
+	}
+	if f.deleteErr != nil {
+		return f.deleteErr
 	}
 	f.left.Stack, f.left.ServicePS = nil, nil
 	return nil
@@ -101,7 +105,7 @@ func TestUninstallCheckListsWhatIsLeftAndChangesNothing(t *testing.T) {
 	}
 	out := h.out.String()
 	for _, want := range []string{
-		"aws-elevate uninstall · stack elevate in 111111111111 · eu-west-1",
+		"aws-elevate uninstall infra · stack elevate in 111111111111 · eu-west-1",
 		"Stack elevate   UPDATE_COMPLETE, 42 resources",
 		"Table elevate-grants",
 		"AppConfig application elevate",
@@ -590,6 +594,19 @@ func TestUninstallNeedsAnArgumentWithYes(t *testing.T) {
 	}
 }
 
+func TestUninstallNeedsAnArgumentWithYesInAnyForm(t *testing.T) {
+	for _, arg := range []string{"--yes", "-yes", "--yes=true"} {
+		h := newHarness(t)
+		h.withUninstaller(&fakeUninstaller{}, "")
+		if code := h.run("uninstall", arg); code != 2 {
+			t.Fatalf("%s: exit %d: %s", arg, code, h.errOut)
+		}
+		if !strings.Contains(h.errOut.String(), "uninstall --yes needs infra or client") {
+			t.Errorf("%s: stderr %s", arg, h.errOut)
+		}
+	}
+}
+
 func TestUninstallCheckAsksWhichOneToo(t *testing.T) {
 	h := newHarness(t)
 	un := &fakeUninstaller{}
@@ -654,6 +671,23 @@ func TestUninstallInfraStopsBeforeDeletingWithoutAdminRights(t *testing.T) {
 		if _, err := os.Stat(h.env.SettingsPath); err != nil {
 			t.Errorf("%s: settings removed: %v", name, err)
 		}
+	}
+}
+
+func TestUninstallInfraDeletionDeniedNamesTheAdminRole(t *testing.T) {
+	denied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "not authorized"}
+	h := newHarness(t)
+	h.withUninstaller(&fakeUninstaller{left: installedEverything(), deleteErr: fmt.Errorf("delete stack: %w", denied)}, "")
+	h.withElevateProfiles(t, map[string]awsx.Target{"work": adminTarget})
+
+	if code := uninstall(h, "--history", "delete", "--yes"); code != 1 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.errOut.String(), "you need the account administrator role of 111111111111 to uninstall Elevate") {
+		t.Errorf("stderr %s", h.errOut)
+	}
+	if _, err := os.Stat(h.env.SettingsPath); err != nil {
+		t.Errorf("settings removed: %v", err)
 	}
 }
 

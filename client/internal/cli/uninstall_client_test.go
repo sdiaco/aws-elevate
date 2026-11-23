@@ -189,3 +189,22 @@ func TestUninstallClientWithoutTerminalNeedsYes(t *testing.T) {
 		t.Error("the executable was removed")
 	}
 }
+
+func TestUninstallClientRemovesAnEmptyManagedBlock(t *testing.T) {
+	h := newHarness(t)
+	h.withClientFiles(t)
+	empty := "\n# >>> aws-elevate: managed block, rewritten automatically, do not edit >>>\n# <<< aws-elevate <<<\n"
+	if err := os.WriteFile(h.env.ConfigFile, []byte(clientConfigBefore+empty), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := h.run("uninstall", "client", "--yes"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if data, _ := os.ReadFile(h.env.ConfigFile); string(data) != clientConfigBefore {
+		t.Errorf("config %q", data)
+	}
+	if strings.Contains(h.out.String(), "Grant profiles found") {
+		t.Errorf("warned about profiles that are not there:\n%s", h.out)
+	}
+}
