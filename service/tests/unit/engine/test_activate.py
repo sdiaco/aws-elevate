@@ -23,7 +23,7 @@ def test_activate_creates_configures_assigns_and_records(build, grant, admin, co
     assert stored.expires_at == "2026-11-15T11:00:00Z"
     assert stored.ephemeral_ps_arn == const.jit_arn
     assert admin.names() == ["create_ephemeral", "configure", "assign"]
-    assert result["waitSeconds"] == 3600
+    assert result["waitSeconds"] == 3605
     assert result["grant"]["state"] == "active"
     assert result["grant"]["expiresAt"] == "2026-11-15T11:00:00Z"
 
@@ -55,7 +55,7 @@ def test_rerun_after_permission_set_created_keeps_start_and_skips_create(
     result = engine.activate("abcde23456")
     assert admin.names() == ["configure", "assign"]
     assert table.get("abcde23456").expires_at == "2026-11-15T11:00:00Z"
-    assert result["waitSeconds"] == 3570
+    assert result["waitSeconds"] == 3575
 
 
 def test_rerun_when_already_active_does_nothing(build, grant, admin, clock):
@@ -69,7 +69,21 @@ def test_rerun_when_already_active_does_nothing(build, grant, admin, clock):
     clock.advance(600)
     result = engine.activate("abcde23456")
     assert admin.calls == []
-    assert result["waitSeconds"] == 3000
+    assert result["waitSeconds"] == 3005
+
+
+def test_revocation_starts_after_the_expiry_deny_applies(build, grant, clock):
+    # A fraction of a second left must not end the wait before expiresAt: revoking
+    # first would delete the JitExpiry deny before it applies.
+    engine, _ = build(
+        grant(
+            state=State.ACTIVE,
+            activated_at="2026-11-15T10:00:00Z",
+            expires_at="2026-11-15T11:00:00Z",
+        )
+    )
+    clock.advance(0.4)
+    assert engine.activate("abcde23456")["waitSeconds"] == 3605
 
 
 def test_wait_seconds_is_at_least_one(build, grant, clock):
