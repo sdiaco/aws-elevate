@@ -1,276 +1,207 @@
-# aws-elevate
+<h1 align="center">aws-elevate</h1>
 
-Temporary elevated access (just-in-time) for AWS IAM Identity Center.
+<p align="center">
+  <strong>Just-in-time elevated access for AWS IAM Identity Center.</strong><br>
+  Ask for a permission set, for a limited time, with a reason. It is removed when the time is over.
+</p>
 
-A user asks for a permission set on an account for a limited time, with a reason. Access is granted at once or after an approver says yes. When the time is over, the access is removed.
+<p align="center">
+  <a href="https://github.com/sdiaco/aws-elevate/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/sdiaco/aws-elevate?sort=semver"></a>
+  <a href="https://github.com/sdiaco/aws-elevate/actions/workflows/check.yml"><img alt="Check" src="https://github.com/sdiaco/aws-elevate/actions/workflows/check.yml/badge.svg?branch=develop"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Linux and macOS" src="https://img.shields.io/badge/client-Linux%20%7C%20macOS-lightgrey">
+</p>
 
-- License: Apache-2.0
-- Version: 0.0.4
+<p align="center">
+  Helps implement privileged-access controls for <strong>NIS2</strong>, <strong>DORA</strong> and <strong>GDPR</strong> · <a href="docs/security.md">Security and compliance</a>
+</p>
 
-## What you need
+---
 
-- AWS IAM Identity Center, with the accounts of your organization assigned through it.
-- The account that is the Identity Center **delegated administrator**. Elevate is installed there, in the Identity Center home region.
-- Three Identity Center groups (create them first, any name):
-  - **admins**: install and configure Elevate.
-  - **requesters**: everyone who asks for access. Approvers need it too, unless they are admins.
-  - **auditors** (optional): can read and export everything.
-- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
-- An AWS CLI SSO profile (see "Install Elevate").
+## How it works
 
-Elevate runs on Linux and macOS. On Windows, use WSL.
+1. A user asks for a permission set on an account, for a few hours, with a reason.
+2. A rule decides: the access is granted at once, or after someone of the approver group says yes.
+3. Elevate creates a temporary permission set and assigns it. The user works with it from the console or the CLI.
+4. When the time is over, or when someone revokes it, the access is denied and removed.
 
-## Install the client
+Everything runs in your AWS organization. Every request is kept in a history you can read and export.
+
+<!-- screenshot: requests page -->
+
+---
+
+## Before you start
+
+You need:
+
+- **AWS IAM Identity Center**, with the accounts of your organization assigned through it.
+- The **delegated administrator account** of Identity Center. Elevate is installed there, in the Identity Center home region.
+- **[AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** on Linux or macOS.
+- **Three groups** in Identity Center (Identity Center console → **Groups**). Create them first, with any name:
+
+| Group | Who is in it | What they can do |
+|---|---|---|
+| **Admins** | the people who run Elevate | install it, write the rules, revoke any access |
+| **Requesters** | everyone who uses Elevate | ask for access |
+| **Auditors** (optional) | security, compliance | read and export everything, change nothing |
+
+> **Approvers are not a fourth group of Elevate.** Each rule that needs approval names its own approver group, any group of Identity Center (for example `prod-approvers`). Approvers must also be in one of the three groups above, to reach Elevate. An admin approves only if they are in the approver group of that rule: add them to it when they need to.
+
+---
+
+## Install
+
+You do this once, as an administrator. Three steps.
+
+### 1. Install the client
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sdiaco/aws-elevate/main/install.sh | sh
-```
-
-The script downloads the executable for your system, checks its SHA-256 against the `checksums.txt` of the release, and installs it in `~/.local/bin/aws-elevate`. If the checksum does not match, nothing is installed. Add `~/.local/bin` to your `PATH` if the script says so.
-
-Options, as environment variables: `VERSION=<x.y.z>` installs that version instead of the latest; `PREFIX=<folder>` installs there.
-
-```bash
 aws-elevate --version
 ```
 
-## Install Elevate
+The script checks the SHA-256 of the download and installs `aws-elevate` in `~/.local/bin`.
 
-Do this once for the organization, as an administrator. Elevate goes in the delegated administrator account. Two ways: the guided command, or a CloudFormation Launch Stack.
-
-### With the client
-
-1. Create an SSO profile for the delegated administrator account. Choose the account, the administrator role and any name:
-
-   ```bash
-   aws configure sso
-   ```
-
-2. Run the install:
-
-   ```bash
-   aws-elevate install --profile <name>
-   ```
-
-   It asks for the region (the Identity Center home region), the three groups, an alert e-mail and, optionally, the organization name. It shows a summary, asks for confirmation, creates the stack and then runs `aws-elevate setup`.
-
-3. Confirm the subscription in the e-mail you receive, so alerts reach you.
-
-For a script, pass everything as flags and add `--yes`:
+### 2. Create a profile for the delegated administrator account
 
 ```bash
-aws-elevate install --profile <name> --region eu-west-1 \
-  --admin-group <admin group> --requester-group <requester group> \
-  --email user@example.com --yes
+aws configure sso
 ```
 
-### With Launch Stack
+Choose the delegated administrator account, an administrator role, and any profile name, for example `elevate-admin`.
 
-Use it when you prefer the CloudFormation console. Sign in to the delegated administrator account, then open the link of the Identity Center home region:
+### 3. Install Elevate
+
+```bash
+aws-elevate install --profile elevate-admin
+```
+
+The command asks for the region, the three groups (by name), an e-mail for alerts and, optionally, the name of your organization. It shows a summary, asks you to confirm, creates the stack in about 3 minutes and configures your client.
+
+Then **confirm the e-mail subscription** you receive, so alerts reach you.
+
+That is all: go to [First use](#first-use).
+
+<details>
+<summary><strong>Prefer the CloudFormation console? Use Launch Stack instead of step 3</strong></summary>
+
+<br>
+
+Sign in to the delegated administrator account and open the link of your Identity Center home region:
 
 | Region | |
 |---|---|
-| `eu-west-1` | [Launch Stack](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
-| `us-east-1` | [Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
+| Europe (Ireland) `eu-west-1` | [Launch Stack](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
+| US East (N. Virginia) `us-east-1` | [Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.0.4/elevate.yaml&stackName=elevate) |
 
-The stack is created with the name `elevate`. CloudFormation needs the group **ids**, not the names. Find the id of a group:
+Fill in the first two groups of parameters and leave the rest as they are:
+
+| Parameter | Value |
+|---|---|
+| **Admin group id** | id of the admin group |
+| **Requester group id** | id of the requester group |
+| **Auditor group id** | id of the auditor group, or empty |
+| **Alert e-mail** | address for critical alerts |
+| **Organization name** | shown at the top of the interface, optional |
+
+The console needs the group **ids**, not the names: you find them in Identity Center → **Groups** → the group → **Group ID**.
+
+Tick the IAM acknowledgement, create the stack, then configure the client:
 
 ```bash
-aws identitystore get-group-id --identity-store-id <d-xxxxxxxxxx> \
-  --alternate-identifier '{"UniqueAttribute":{"AttributePath":"displayName","AttributeValue":"<group name>"}}'
+aws-elevate setup --profile elevate-admin
 ```
 
-When the stack is created, set up the client:
+</details>
 
-```bash
-aws-elevate setup --profile <name>
-```
+Advanced settings (history retention, point-in-time recovery, your own KMS key, limits, events) are all optional: see [Installation details](docs/installation.md).
 
-### Install flags
-
-Every flag is optional. What you leave out and the command needs, it asks for.
-
-| Flag | Stack parameter | Default | What it is for |
-|---|---|---|---|
-| `--profile <name>` | none | the default profile | AWS CLI profile of the delegated administrator account |
-| `--region <r>` | none | `sso_region` of the profile, after confirmation | Identity Center home region, where the stack is created |
-| `--admin-group <name>` | `AdminGroupId` | asked | Group of the administrators |
-| `--requester-group <name>` | `RequesterGroupId` | asked | Group that may use Elevate |
-| `--auditor-group <name>` | `AuditorGroupId` | none | Group that can read and export everything |
-| `--email <address>` | `AlertEmail` | asked | Address subscribed to critical alerts |
-| `--organization-name <name>` | `OrganizationName` | empty | Name shown at the top of the interface (up to 64 characters) |
-| `--max-open-grants <n>` | `MaxOpenGrantsPerUser` | 5 | Grants not yet closed that one user may have |
-| `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Account ids allowed to receive the Elevate events |
-| `--config-versions-listed <n>` | `ConfigVersionsListed` | 50 | Newest rules versions shown in the history |
-| `--retention-months <n>` | `HistoryRetentionMonths` | 13 | Months the grant history is kept after a grant closes (1 to 120) |
-| `--pitr` | `PointInTimeRecovery` | `Disabled` | Sets it to `Enabled`: continuous backups of the grant history |
-| `--kms-key-arn <arn>` | `KmsKeyArn` | empty: keys owned by AWS | Customer KMS key, in the stack's region, for the history and the logs |
-| `--yes` | none | off | Answer yes to the questions, for scripts |
-
-Flags take group names; the stack takes their ids and `install` looks them up for you.
-
-To change a setting later: in the CloudFormation console, open the `elevate` stack, choose **Update**, **Use existing template**, and edit the parameter.
+---
 
 ## First use
 
-1. Open the local interface:
+```bash
+aws elevate ui
+```
+
+The interface opens in your browser. It runs on your computer and stops after 30 minutes without use.
+
+1. **Write the first rule** (admins). Who may ask, which permission set, on which accounts, for how long, and whether it needs approval. After you publish, it takes about 30 seconds to apply.
+2. **Ask for access.** Pick the role, the duration and write a reason. Do not put personal data in the reason: everyone who reads the history sees it.
+3. **Use it.** When the access is ready, open it in the console or use the profile that Elevate writes for you:
 
    ```bash
-   aws elevate ui
+   aws s3 ls --profile jit-<permission set>-<account id>
    ```
 
-   It opens in your browser and closes after 30 minutes without use. (`aws elevate` is an alias that `setup` adds; `aws-elevate ui` does the same.)
+4. **Close it** when you are done, with **Revoke**. Otherwise it ends by itself.
 
-2. As an administrator, create the first rule: who may ask (a group), which permission set, on which accounts, how long, and whether it is granted at once or needs an approver.
-3. After you publish, the rule shows as "Publishing". Rules take effect in about 30 seconds. Then the roles you may request appear.
-4. Request access, with a reason (up to 500 characters). Do not include personal data in it.
-5. When the grant is active, check that it works:
+<!-- screenshots: new request, active access, rules -->
 
-   ```bash
-   aws sts get-caller-identity --profile jit-<permission set>-<account id>
-   ```
+Everything also works from the terminal: `aws elevate request`, `status`, `approve`, `revoke`, `shell`. See `aws-elevate --help`.
 
-   For example `jit-ssm-write-111111111111`. The profile is written to your AWS CLI config. `aws elevate shell` opens a shell with it.
+---
 
-The same things work from the terminal: `aws elevate request`, `status`, `approve`, `revoke`. Run `aws-elevate --help` for the list. Administrators also have `aws elevate admin` (rules, export, import, checks).
+## Add users
 
-### Approvers
-
-A rule with manual approval names one approver group. To have several people or teams approve, create a dedicated group in Identity Center with all of them, and use it as the approver group.
-
-### More users
-
-Each user installs the client and sets it up. No admin step is needed if they are in the requester group:
+Each user installs the client and connects it, once:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sdiaco/aws-elevate/main/install.sh | sh
-aws configure sso
+aws configure sso          # any account of your Identity Center
 aws-elevate setup --profile <name>
+aws elevate ui
 ```
 
-Here the profile is an SSO profile for the same Identity Center. `setup` finds the Elevate account by itself.
+No admin step is needed: being in the requester group (or admin, or auditor) is enough. `setup` finds Elevate by itself.
 
-### WSL
-
-If `aws elevate ui` cannot open a browser, point `BROWSER` at the Windows one:
-
-```bash
-export BROWSER=/mnt/c/Windows/explorer.exe
-```
-
-Add it to your shell profile to keep it. If the browser does not open anyway, the command prints a URL to open yourself.
+---
 
 ## Uninstall
 
-Remove Elevate from AWS, for the whole organization (administrators only):
-
 ```bash
-aws-elevate uninstall infra --profile <name>
+aws-elevate uninstall
 ```
 
-Add `--check` to only list what exists. The command stops while any grant is open: revoke them first. It asks what to do with the history: keep it, export it to a local folder and then delete it, or delete it. You confirm by typing the stack name. The Identity Center groups and the delegated administrator are never removed.
+It asks what to remove:
 
-If you installed the optional service control policy stack, delete it from the management account. The command prints the line:
+- **infra**: Elevate from AWS, for the whole organization. **Admins only.** It stops while any access is open, lets you export the history first, and asks you to type the stack name to confirm.
+- **client**: `aws-elevate` from this computer. Every user does it on their own computer.
 
-```bash
-aws cloudformation delete-stack --stack-name elevate-guardrails --profile <management admin>
-```
+Details in [Installation details](docs/installation.md#uninstall).
 
-Remove the client from this computer, on every computer that has it:
-
-```bash
-aws-elevate uninstall client
-```
-
-It removes the grant profiles and settings of aws-elevate, the `elevate` alias, the cache and the executable. It does not call AWS. Revoke open grants first: it warns you if grant profiles are still there.
+---
 
 ## Security and compliance
 
-Elevate helps implement privileged-access controls required by NIS2, DORA and GDPR; it does not by itself make an organization compliant.
+- **No standing privileges.** Access exists only for the time asked, with a reason, and is denied at the expiry even before it is removed.
+- **Separation of duties.** The part of Elevate that reads requests cannot grant access; the part that grants access never reads requests.
+- **Everything is recorded.** Who asked, what, why, who approved, when it started and ended. Kept 13 months by default, up to 120.
+- **Your data stays in your account.** Nothing leaves your AWS organization.
+- **Optional hardening:** your own KMS key, point-in-time recovery, service control policies that keep even other admins away from the history.
 
-**What is stored and for how long**
+Elevate helps implement privileged-access controls required by NIS2, DORA and GDPR; it does not by itself make an organization compliant. Read [Security and compliance](docs/security.md) for what is stored, for how long, and how it is protected.
 
-- The history of grants (who asked, which permission set, which account, the reason, who approved, when it started and ended, how it closed) is in a DynamoDB table in the Elevate account. Each grant is kept for 13 months by default after it closes (1 to 120, see below), then deleted automatically. The rules versions stay in the Elevate account too.
-- The logs of the Lambda functions are kept 90 days (`api`, `engine`) and 30 days (precheck).
-- When the service refuses a call, it logs the line `refused call from <userArn>` with the ARN of the caller and the reason. The ARN identifies a person, so it is personal data in those logs.
-- The reason of a request is free text. Tell users not to put personal data in it; the form says so.
-
-**History retention.** `--retention-months` (stack parameter `HistoryRetentionMonths`) sets how many months a grant is kept after it closes: 13 by default, from 1 to 120. A change applies to grants closed after it; grants already closed keep the retention they had.
-
-**Point-in-time recovery.** Optional, off by default. `--pitr` (`PointInTimeRecovery=Enabled`) keeps continuous backups of the grant history for 35 days, so the table can be restored to any second in that window. Turn it on where the history must be recoverable, for example under DORA. It has a small storage cost (see "Costs").
-
-To restore, with the table resource policy in place (an administrator of the Elevate account, not the Elevate roles):
-
-1. Widen the table resource policy so your administrator may restore and copy data. This is a deliberate change, recorded in CloudTrail.
-2. Restore the table to a new table, with `RestoreTableToPointInTime`.
-3. Copy the items you need from the new table back into the Elevate table, then delete the new table. Elevate always uses its own table: it cannot be pointed at another one.
-4. Put the resource policy back exactly as the template defines it.
-
-**Customer KMS key.** By default the history and the logs use keys owned by AWS. To use your own key, pass `--kms-key-arn` (`KmsKeyArn`). The key must be in the same region as the stack. Its key policy must keep the statement that enables IAM policies in the account, and must allow CloudWatch Logs of that region. Example for account `111111111111`, region `eu-west-1`, stack `elevate`:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "EnableIAMPolicies",
-      "Effect": "Allow",
-      "Principal": {"AWS": "arn:aws:iam::111111111111:root"},
-      "Action": "kms:*",
-      "Resource": "*"
-    },
-    {
-      "Sid": "AllowCloudWatchLogs",
-      "Effect": "Allow",
-      "Principal": {"Service": "logs.eu-west-1.amazonaws.com"},
-      "Action": [
-        "kms:Encrypt*",
-        "kms:Decrypt*",
-        "kms:ReEncrypt*",
-        "kms:GenerateDataKey*",
-        "kms:Describe*"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ArnLike": {
-          "kms:EncryptionContext:aws:logs:arn": "arn:aws:logs:eu-west-1:111111111111:log-group:/aws/lambda/elevate-*"
-        }
-      }
-    }
-  ]
-}
-```
-
-The key covers the grant history table and the three log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`). It does not cover the rules (AppConfig), the execution history of the state machine (kept 90 days, it includes the user name and the reason), the events and the alert e-mails: these stay on keys owned by AWS.
-
-**What protects the history.** The resource policy of the table lets only the Elevate service roles read or write its data, and denies backups, point-in-time restores and exports to everyone else. The optional guardrails (below) also keep the table, its resource policy, its time-to-live, its point-in-time recovery and its backups to the deployers. They are the only block on AWS Backup jobs that use the advanced DynamoDB backup features, which the resource policy cannot stop. A backup plan of the organization that includes the table will therefore fail on it, by design: exclude the table from such plans.
-
-**Deleting a person's data.** You do not need to delete the grants of a person on request: the access register is kept to meet a legal obligation and to establish and defend legal claims, as GDPR article 17(3) allows. Keep it only for the period above.
-
-**A copy you cannot change.** Elevate publishes an event for every step of a grant on the `elevate-events` bus. Give the account ids of another account, for example an archive account, in `--event-consumer-accounts`. In that account, create a rule that stores the events. That copy is outside the Elevate account and cannot be changed from it.
-
-**Break-glass.** Elevate itself can be unavailable. An administrator can then use the `AdministratorAccess` permission set of Identity Center. If Identity Center is unavailable, nobody can. Prepare an emergency access before you need it:
-
-- the root user, or an IAM user, of the management account;
-- a physical MFA key kept in a safe place;
-- an alarm that tells you when it is used;
-- a test of the procedure at regular intervals.
-
-**Optional guardrails.** `infra/elevate-guardrails.yaml` is a service control policy, deployed from the management account, that keeps other principals of the Elevate account away from its functions and roles, and the grants table, its resource policy and its backups to the deployers.
+---
 
 ## Costs
 
-The services are pay per use. There is no instance and no fixed fee: an installation with no requests costs about nothing, and each request adds a few calls to Lambda, DynamoDB, Step Functions and EventBridge. Point-in-time recovery, if you turn it on, is billed per GB of table per month, which is tiny for this table. A customer KMS key costs about $1 per month plus requests. Check the current prices of those services for your region. `aws-elevate install` prints the idle cost before it asks you to confirm.
+Pay per use, no fixed fee: an installation without requests costs about nothing. Each request adds a few calls to Lambda, DynamoDB, Step Functions and EventBridge. Optional extras: point-in-time recovery (a few cents for this table) and a customer KMS key (about $1 per month). `aws-elevate install` shows the idle cost before you confirm.
+
+---
 
 ## Development
 
-Everything runs in a container; only Docker is needed on the host.
+Everything runs in a container: only Docker is needed.
 
 ```bash
-make dev                          # shell with Go, Python, uv and the AWS CLI
-make dev-run CMD="go version"     # run one command in the container
-make check                        # lint and tests, as run by the pre-push hook
-lefthook install                  # once per clone: commit message and pre-push hooks
+make dev        # shell with Go, Python, uv and the AWS CLI
+make check      # lint and tests, as run before every push
 ```
 
-Rules for contributors are in [AGENTS.md](AGENTS.md). `main` holds released versions; `develop` is the base for work branches and reaches `main` through a pull request.
+How to contribute: [docs/contributing.md](docs/contributing.md).
+
+## License
+
+[Apache-2.0](LICENSE)
