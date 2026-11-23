@@ -1051,3 +1051,12 @@ async function alive() {
 }
 setInterval(alive, 5 * 60 * 1000);
 document.addEventListener("visibilitychange", alive);
+
+// A reason field with data-count shows how much of its limit is used, as "12 / 500" in the
+// [data-counter] under it. The server gives the limit on the field; nothing is hard-coded.
+function updateCounter(field) {
+  const counter = field.parentElement.querySelector("[data-counter]");
+  if (counter) counter.textContent = `${field.value.length} / ${field.maxLength}`;
+}
+document.addEventListener("input", (e) => { if (e.target.matches("[data-count]")) updateCounter(e.target); });
+document.querySelectorAll("[data-count]").forEach(updateCounter);

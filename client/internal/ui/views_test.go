@@ -370,3 +370,48 @@ func TestAccountsShowTheNameTheyHadWhenRequested(t *testing.T) {
 		t.Errorf("header %v, row %v", rows[0], rows[1])
 	}
 }
+
+// reasonPages are every page and fragment that renders a reason textarea: the request
+// form (whole page and fetched fragment) and the reject and revoke confirmations.
+var reasonPages = []string{
+	"/requests/new?rule=ssm-prod",
+	"/requests/new/form?rule=ssm-prod",
+	"/requests/reject?id=ask2345678",
+	"/requests/revoke?id=mine234567",
+}
+
+func reasonHarness(limit int) *harness {
+	h := requestsHarness("requester", "approver")
+	h.app.Me.Limits.ReasonChars = limit
+	return h
+}
+
+func TestReasonFieldsCarryTheLimitAndTheHint(t *testing.T) {
+	h := reasonHarness(321)
+	for _, page := range reasonPages {
+		out := h.get(t, page)
+		if n := strings.Count(out, `<textarea name="reason"`); n != 1 {
+			t.Fatalf("%s: %d reason fields", page, n)
+		}
+		contains(t, out, ` maxlength="321" data-count`,
+			`</textarea>`+"\n"+`<p class="field-hint">Do not include personal data<span data-counter></span></p>`)
+		lacks(t, out, "500")
+	}
+}
+
+func TestReasonFieldWithoutALimitFromAnOlderService(t *testing.T) {
+	h := reasonHarness(0)
+	for _, page := range reasonPages {
+		out := h.get(t, page)
+		contains(t, out, `<textarea name="reason"`, `<p class="field-hint">Do not include personal data</p>`)
+		lacks(t, out, "maxlength", "data-count", "data-counter")
+	}
+}
+
+func TestEveryReasonFieldIsBuiltByTheServer(t *testing.T) {
+	js, err := files.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lacks(t, string(js), `"textarea"`, "createElement(\"textarea", "<textarea")
+}
