@@ -494,3 +494,22 @@ func TestInstallMentionsTheAdvancedSettings(t *testing.T) {
 		t.Errorf("line after Next:\n%s", out)
 	}
 }
+
+func TestInstallSummaryListsTheAdvancedSettingsGiven(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--config-versions-listed", "20",
+		"--max-open-grants", "3", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	out := h.out.String()
+	if !strings.Contains(out, "\n  Advanced settings: MaxOpenGrantsPerUser=3, ConfigVersionsListed=20\n") {
+		t.Errorf("no advanced settings line:\n%s", out)
+	}
+	if strings.Contains(out, "template defaults") {
+		t.Errorf("claims template defaults:\n%s", out)
+	}
+}

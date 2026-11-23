@@ -109,13 +109,15 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 		stack.Parameters["OrganizationName"] = *organization
 	}
 	// Passed through as typed: the template validates them.
-	for param, value := range map[string]string{
-		"MaxOpenGrantsPerUser":  *maxOpenGrants,
-		"EventConsumerAccounts": *eventConsumers,
-		"ConfigVersionsListed":  *versionsListed,
+	var advanced []string
+	for _, p := range []struct{ param, value string }{
+		{"MaxOpenGrantsPerUser", *maxOpenGrants},
+		{"EventConsumerAccounts", *eventConsumers},
+		{"ConfigVersionsListed", *versionsListed},
 	} {
-		if value != "" {
-			stack.Parameters[param] = value
+		if p.value != "" {
+			stack.Parameters[p.param] = p.value
+			advanced = append(advanced, p.param+"="+p.value)
 		}
 	}
 	if *codeBucket != "" {
@@ -129,7 +131,11 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	fmt.Fprintf(w, "\n  %s %s\n", u.Bold("Summary"), u.Dim(strings.Repeat("─", 39)))
 	fmt.Fprintf(w, "  Stack %q in %s · %s\n", stack.Name, where.Account, *region)
 	fmt.Fprintln(w, "  Creates: 3 permission sets, private API, Lambda functions, table, rules store")
-	fmt.Fprintln(w, "  Advanced settings: template defaults; change them with the install flags or in CloudFormation (Update, Use existing template)")
+	if len(advanced) == 0 {
+		fmt.Fprintln(w, "  Advanced settings: template defaults; change them with the install flags or in CloudFormation (Update, Use existing template)")
+	} else {
+		fmt.Fprintln(w, "  Advanced settings: "+strings.Join(advanced, ", "))
+	}
 	fmt.Fprintln(w, "  Idle cost: 0 $ · remove it with aws-elevate uninstall")
 	ok, err := u.Confirm("Proceed?", *yes)
 	if err != nil {
