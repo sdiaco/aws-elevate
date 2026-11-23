@@ -564,7 +564,8 @@ func TestUninstallSaysTheSecondOpenGrantsCheckIsARecheck(t *testing.T) {
 
 func TestUninstallAsksWhichOneWithoutAnArgument(t *testing.T) {
 	h := newHarness(t)
-	h.withUninstaller(&fakeUninstaller{}, "2\n")
+	h.withUninstaller(&fakeUninstaller{}, "2\nn\n")
+	h.withClientFiles(t)
 	if code := h.run("uninstall"); code != 1 {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
@@ -573,8 +574,8 @@ func TestUninstallAsksWhichOneWithoutAnArgument(t *testing.T) {
 			t.Errorf("misses %q:\n%s", want, h.out)
 		}
 	}
-	if !strings.Contains(h.errOut.String(), errUninstallClientPending.Error()) {
-		t.Errorf("the client was not chosen: %s", h.errOut)
+	if !strings.Contains(h.out.String(), "Remove aws-elevate from this computer?") {
+		t.Errorf("the client was not chosen:\n%s", h.out)
 	}
 }
 

@@ -63,3 +63,45 @@ func TestWriteAliasIgnoresElevateInOtherSections(t *testing.T) {
 		t.Errorf("changed %v, %v", changed, err)
 	}
 }
+
+func writeAliasFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "alias")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRemoveAliasTakesOnlyOurLine(t *testing.T) {
+	path := writeAliasFile(t, "[toplevel]\n  "+AliasLine+"  \nwhoami = sts get-caller-identity\n\n[command s3]\nelevate = x\nls = s3 ls\n")
+	removed, foreign, err := RemoveAlias(path)
+	if err != nil || !removed || foreign {
+		t.Fatalf("removed %v, foreign %v, %v", removed, foreign, err)
+	}
+	got, _ := os.ReadFile(path)
+	if want := "[toplevel]\nwhoami = sts get-caller-identity\n\n[command s3]\nelevate = x\nls = s3 ls\n"; string(got) != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	removed, _, err = RemoveAlias(path)
+	if err != nil || removed {
+		t.Errorf("second run removed %v, %v", removed, err)
+	}
+}
+
+func TestRemoveAliasLeavesAForeignElevateAlias(t *testing.T) {
+	before := "[toplevel]\nelevate = !/opt/bin/my-elevate\nwhoami = x\n"
+	path := writeAliasFile(t, before)
+	removed, foreign, err := RemoveAlias(path)
+	got, _ := os.ReadFile(path)
+	if err != nil || removed || !foreign || string(got) != before {
+		t.Errorf("removed %v, foreign %v, %v: %q", removed, foreign, err, got)
+	}
+}
+
+func TestRemoveAliasWithoutTheFile(t *testing.T) {
+	removed, foreign, err := RemoveAlias(filepath.Join(t.TempDir(), "alias"))
+	if err != nil || removed || foreign {
+		t.Errorf("removed %v, foreign %v, %v", removed, foreign, err)
+	}
+}
