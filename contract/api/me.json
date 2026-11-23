@@ -12,7 +12,7 @@
     "roles": [
       "admin"
     ],
-    "infraVersion": "0.0.3",
+    "infraVersion": "0.0.4",
     "minClient": "0.0.1",
     "organizationName": "Example Corp",
     "limits": {
