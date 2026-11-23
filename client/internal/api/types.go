@@ -37,7 +37,8 @@ type Me struct {
 }
 
 type Limits struct {
-	ReasonChars int `json:"reasonChars"`
+	ReasonChars   int `json:"reasonChars"`
+	HistoryMonths int `json:"historyMonths"`
 }
 
 type Installation struct {

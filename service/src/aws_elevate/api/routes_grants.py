@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 from botocore.exceptions import ClientError
 
-from ..adapters.grants_table import RETENTION_MONTHS, Duplicate, StateConflict
+from ..adapters.grants_table import Duplicate, StateConflict
 from ..core.authz import actions, can, decisions
 from ..core.ids import new_grant_id
 from ..core.models import (
@@ -99,6 +99,7 @@ class GrantRoutes:
         sfn,
         store,
         max_open: int,
+        history_months: int,
         clock: Callable[[], datetime] | None = None,
     ):
         self._table = table
@@ -106,6 +107,7 @@ class GrantRoutes:
         self._sfn = sfn
         self._store = store
         self._max_open = max_open
+        self._history_months = history_months
         self._now = clock or (lambda: datetime.now(UTC))
 
     # ---------- view ----------
@@ -439,9 +441,9 @@ class GrantRoutes:
         if start > end:
             raise _invalid("from must not be after to")
         start_iso, end_iso = iso(start), iso(end)
-        # 13 months are kept, so the period spans at most 14 month partitions.
-        if len(_months(start_iso, end_iso)) > RETENTION_MONTHS + 1:
-            raise _invalid(f"the history goes back {RETENTION_MONTHS} months")
+        # The retained months plus the current one are the most the period may span.
+        if len(_months(start_iso, end_iso)) > self._history_months + 1:
+            raise _invalid(f"the history goes back {self._history_months} months")
         return start_iso, end_iso
 
 

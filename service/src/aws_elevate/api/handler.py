@@ -77,13 +77,22 @@ def _check_client(event: dict) -> None:
 
 class Api:
     def __init__(
-        self, identity, grants, config, rules, versions, installation, organization_name=""
+        self,
+        identity,
+        grants,
+        config,
+        rules,
+        versions,
+        installation,
+        history_months,
+        organization_name="",
     ):
         self._identity = identity
         self._config = config
         # Resource ids the admin client needs to publish rules and run doctor with its own
         # credentials, which cannot list them.
         self._installation = installation
+        self._history_months = history_months
         self._organization_name = organization_name  # shown in the interface, may be empty
         self._targets = {"grants": grants, "rules": rules, "versions": versions}
 
@@ -151,7 +160,7 @@ class Api:
             "roles": roles,
             "infraVersion": INFRA_VERSION,
             "minClient": MIN_CLIENT,
-            "limits": {"reasonChars": MAX_REASON_CHARS},
+            "limits": {"reasonChars": MAX_REASON_CHARS, "historyMonths": self._history_months},
             "installation": self._installation if identity.is_admin else None,
         }
         if self._organization_name:
@@ -180,7 +189,8 @@ def _build_api() -> Api:
     from .routes_rules import RuleRoutes
 
     app, profile = os.environ["APPCONFIG_APPLICATION_ID"], os.environ["APPCONFIG_PROFILE_ID"]
-    table = GrantsTable(boto3.client("dynamodb"), os.environ["TABLE_NAME"])
+    history_months = int(os.environ["HISTORY_RETENTION_MONTHS"])
+    table = GrantsTable(boto3.client("dynamodb"), os.environ["TABLE_NAME"], history_months)
     store = IdentityStore(boto3.client("identitystore"), os.environ["IDENTITY_STORE_ID"])
     config = ConfigCache(
         appconfig=AppConfig(boto3.client("appconfig"), app, profile),
@@ -203,6 +213,7 @@ def _build_api() -> Api:
         sfn=StepFunctions(boto3.client("stepfunctions"), os.environ["STATE_MACHINE_ARN"]),
         store=store,
         max_open=int(os.environ["MAX_OPEN_GRANTS_PER_USER"]),
+        history_months=history_months,
     )
     rules = RuleRoutes(
         config=config,
@@ -226,6 +237,7 @@ def _build_api() -> Api:
         rules,
         ConfigRoutes(config),
         installation,
+        history_months,
         organization_name=os.environ["ORGANIZATION_NAME"],
     )
 

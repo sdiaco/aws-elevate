@@ -609,6 +609,25 @@ def test_install_parameters():
     assert params["ConfigVersionsListed"]["MinValue"] == 1
 
 
+def test_history_retention_parameter():
+    param = TEMPLATE["Parameters"]["HistoryRetentionMonths"]
+    assert param["Type"] == "Number"
+    assert param["Default"] == 13
+    assert param["MinValue"] == 1
+    assert param["MaxValue"] == 120
+    assert (
+        INTERFACE["ParameterLabels"]["HistoryRetentionMonths"]["default"] == "History kept (months)"
+    )
+    groups = {g["Label"]["default"]: g["Parameters"] for g in INTERFACE["ParameterGroups"]}
+    assert groups["Audit and data protection (optional)"] == ["HistoryRetentionMonths"]
+
+
+@pytest.mark.parametrize("function", ["ApiFunction", "EngineFunction"])
+def test_api_and_engine_get_the_history_retention(function):
+    env = RESOURCES[function]["Properties"]["Environment"]["Variables"]
+    assert env["HISTORY_RETENTION_MONTHS"] == {"Ref": "HistoryRetentionMonths"}
+
+
 def test_organization_name_is_optional_and_reaches_the_api():
     # Shown in the interface only; free text, so no markup characters.
     param = TEMPLATE["Parameters"]["OrganizationName"]
@@ -638,5 +657,6 @@ def test_console_groups_in_order():
         "Alerts and interface",
         "Limits (optional, defaults are fine)",
         "Integrations (optional)",
+        "Audit and data protection (optional)",
         "For testing only: leave as they are",
     ]
