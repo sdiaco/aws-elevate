@@ -101,12 +101,16 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 		Columns: []string{"Rule", "Status", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
 		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit", Primary: true}},
 	}
+	publishing := false
 	for _, rule := range rules {
 		state := ruleState(rule, inUse, sets)
 		l.Rows = append(l.Rows, ruleRow(rule, state, Cell{
 			Text: rule.ID, Href: "/rules?open=" + url.QueryEscape(rule.ID), Panel: "/rules/panel?id=" + url.QueryEscape(rule.ID),
 		}))
-		l.Reload = l.Reload || state == "publishing"
+		if state == "publishing" {
+			l.Reload = true
+			publishing = true
+		}
 	}
 	// A rule removed by the newest version shows until the service stops using it.
 	for _, rule := range inUse {
@@ -117,6 +121,10 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 			l.Reload = true
 		}
 	}
+	if publishing {
+		l.Hint = "Rules take effect in about 30 seconds"
+	}
+	a.rulesSettling(l.Reload)
 	if len(l.Rows) > 0 {
 		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true}}
 	}
@@ -148,9 +156,16 @@ func (a *App) rulesAndSets(ctx context.Context) (base, []api.Rule, []awsx.Named,
 
 // rulesBehind are the rules of the version the service uses, when it is behind the newest
 // valid one: only for the 30 seconds or so after a publish, so the list costs one more
-// call just then. Otherwise it returns nil, and every rule is in use.
+// call just then. Otherwise it returns nil, and every rule is in use. Before the service
+// uses any version it has no rules, so the result is empty and not nil.
 func (a *App) rulesBehind(ctx context.Context, b base) ([]api.Rule, error) {
-	if b.Current == nil || b.From == nil || *b.Current == *b.From {
+	if b.From == nil {
+		return nil, nil
+	}
+	if b.Current == nil {
+		return []api.Rule{}, nil
+	}
+	if *b.Current == *b.From {
 		return nil, nil
 	}
 	doc, err := a.Service.ConfigVersion(ctx, *b.Current)

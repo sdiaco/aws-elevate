@@ -642,6 +642,8 @@ function reloadList(list, since) {
       if (!res.ok) throw new Error(res.status);
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       const fresh = doc.querySelector("form[data-reload], form[data-list]");
+      // The service now uses what was published: roles come from it, so the menu changes too.
+      if (!fresh.hasAttribute("data-reload")) return location.reload();
       const checked = new Set([...list.querySelectorAll("[data-select]:checked")].map((b) => b.value));
       const open = list.querySelector("tr.open")?.dataset.grant;
       list.querySelector("tbody").replaceWith(fresh.querySelector("tbody"));
@@ -650,7 +652,6 @@ function reloadList(list, since) {
       if (open) list.querySelector(`tr[data-grant="${CSS.escape(open)}"]`)?.classList.add("open");
       updateSelection(list);
       list.querySelector("[data-search]")?.dispatchEvent(new Event("input", { bubbles: true })); // keep the filter
-      if (!fresh.hasAttribute("data-reload")) return list.removeAttribute("data-reload");
       if (Date.now() - since < reloadLimit) reloadList(list, since);
     } catch {
       list.title = "List not refreshed: reload the page";
