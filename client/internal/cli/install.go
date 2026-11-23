@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -154,6 +155,7 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(w, "  Follow it in the console (account %s): %s\n", where.Account, stackConsoleURL(*region, id))
 	p := u.Progress("Creating stack")
 	if err := waitStack(ctx, e, inst, id, stack.Name, total, p); err != nil {
 		return err
@@ -172,6 +174,12 @@ func runInstall(ctx context.Context, e *Env, args []string) error {
 	return nil
 }
 
+// stackConsoleURL is the page of a stack in the CloudFormation console.
+func stackConsoleURL(region, stackID string) string {
+	return "https://" + region + ".console.aws.amazon.com/cloudformation/home?region=" + region +
+		"#/stacks/stackinfo?stackId=" + url.QueryEscape(stackID)
+}
+
 // stackRegion is the region of the stack: the flag, or the Identity Center region of the
 // profile once confirmed. verb is the action, as in "Install in eu-west-1".
 func stackRegion(u *term.UI, src awsx.SourceProfile, profile, region, verb string, yes bool) (string, error) {
@@ -188,7 +196,7 @@ func stackRegion(u *term.UI, src awsx.SourceProfile, profile, region, verb strin
 	if region == "" {
 		return "", errors.New("profile " + profile + " has no region: pass --region <Identity Center home region>")
 	}
-	ok, err := u.Confirm(fmt.Sprintf("%s in %s, the Identity Center region (%s)?", verb, region, from), yes)
+	ok, err := u.ConfirmYes(fmt.Sprintf("%s in %s, the Identity Center region (%s)?", verb, region, from), yes)
 	if err != nil {
 		return "", err
 	}
