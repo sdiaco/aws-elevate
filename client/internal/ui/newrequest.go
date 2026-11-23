@@ -207,7 +207,7 @@ func (a *App) flashOf(g api.Grant) flash {
 	case api.StateActivating:
 		f.Text = "Activating"
 	case api.StateActive:
-		f.Text = "Active. Waiting for AWS to accept the role"
+		f.Text = "Preparing your access…"
 	default:
 		f.Kind, f.Text, f.Poll, f.Error = "error", outcome(g), "", errorOf(g)
 	}
