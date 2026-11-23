@@ -27,7 +27,7 @@
 
 Everything runs in your AWS organization. Every request is kept in a history you can read and export.
 
-<!-- screenshot: requests page -->
+<p align="center"><img src="docs/images/requests.png" alt="The requests page: active and pending accesses, with the account and the time left" width="900"></p>
 
 ---
 
@@ -137,7 +137,16 @@ The interface opens in your browser. It runs on your computer and stops after 30
 
 4. **Close it** when you are done, with **Revoke**. Otherwise it ends by itself.
 
-<!-- screenshots: new request, active access, rules -->
+<details>
+<summary><strong>Screenshots</strong>: new request, rules</summary>
+
+<br>
+
+<img src="docs/images/new-request.png" alt="New request: pick one of the rules you may use" width="900">
+
+<img src="docs/images/rules.png" alt="Rules page for admins: who can request what, where, for how long and with which approval" width="900">
+
+</details>
 
 Everything also works from the terminal: `aws elevate request`, `status`, `approve`, `revoke`, `shell`. See `aws-elevate --help`.
 
