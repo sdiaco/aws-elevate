@@ -269,6 +269,9 @@ Resources:
             # Only the service roles, by exact ARN, read or write grant data.
             # Wildcards would let anyone able to create a role with a matching name in.
             # Control-plane actions stay open so CloudFormation can update the table.
+            # UpdateContinuousBackups is deliberately not denied: this policy exempts only
+            # the service roles, while CloudFormation changes point-in-time recovery with
+            # the installer's credentials. The guardrails SCP denies it to everyone else.
             - Sid: OnlyServiceRolesTouchData
               Effect: Deny
               Principal: "*"
@@ -287,6 +290,8 @@ Resources:
                 - dynamodb:PartiQLUpdate
                 - dynamodb:PartiQLDelete
                 - dynamodb:ExportTableToPointInTime
+                - dynamodb:CreateBackup
+                - dynamodb:RestoreTableToPointInTime
               Resource:
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants/index/*

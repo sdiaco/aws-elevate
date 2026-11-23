@@ -175,6 +175,22 @@ def test_table_denies_data_access_to_everyone_but_the_service_roles_by_exact_arn
     assert "role/elevate/${AWS::StackName}-api" in text(allowed)
 
 
+def test_table_denies_copies_to_everyone_but_the_service_roles():
+    policy = RESOURCES["GrantsTable"]["Properties"]["ResourcePolicy"]["PolicyDocument"]
+    (deny,) = policy["Statement"]
+    assert {
+        "dynamodb:CreateBackup",
+        "dynamodb:RestoreTableToPointInTime",
+        "dynamodb:ExportTableToPointInTime",
+    } <= set(deny["Action"])
+
+
+def test_table_policy_leaves_continuous_backups_to_cloudformation():
+    policy = RESOURCES["GrantsTable"]["Properties"]["ResourcePolicy"]["PolicyDocument"]
+    (deny,) = policy["Statement"]
+    assert "dynamodb:UpdateContinuousBackups" not in deny["Action"]
+
+
 def test_engine_role_name_matches_the_table_exception():
     assert RESOURCES["EngineRole"]["Properties"]["RoleName"] == {
         "Fn::Sub": "${AWS::StackName}-engine"
