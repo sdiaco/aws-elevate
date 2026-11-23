@@ -12,11 +12,12 @@
     "roles": [
       "admin"
     ],
-    "infraVersion": "0.0.3",
+    "infraVersion": "0.0.4",
     "minClient": "0.0.1",
     "organizationName": "Example Corp",
     "limits": {
-      "reasonChars": 500
+      "reasonChars": 500,
+      "historyMonths": 13
     },
     "installation": {
       "stackId": "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/0a1b2c3d-1111-2222-3333-444455556666",

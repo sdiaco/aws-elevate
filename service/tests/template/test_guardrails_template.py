@@ -116,6 +116,31 @@ def test_service_resources_and_roles_are_changed_only_by_the_deployers():
         assert exempt(statement) == [DEPLOYERS]
 
 
+def test_grants_table_and_backups_are_changed_only_by_the_deployers():
+    table = statements()["ProtectGrantsTable"]
+    assert actions(table) == {
+        "dynamodb:PutResourcePolicy",
+        "dynamodb:DeleteResourcePolicy",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:UpdateContinuousBackups",
+        "dynamodb:RestoreTableFromBackup",
+        "dynamodb:StartAwsBackupJob",
+    }
+    assert table["Resource"] == [
+        {
+            "Fn::Sub": "arn:${AWS::Partition}:dynamodb:*:${ServiceAccountId}"
+            ":table/${StackName}-grants"
+        },
+        {
+            "Fn::Sub": "arn:${AWS::Partition}:dynamodb:*:${ServiceAccountId}"
+            ":table/${StackName}-grants/backup/*"
+        },
+    ]
+    assert exempt(table) == [DEPLOYERS]
+
+
 def test_no_wildcard_exemption_besides_the_deployer_parameter():
     for sid, s in statements().items():
         for principal in exempt(s):

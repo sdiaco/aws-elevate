@@ -37,6 +37,27 @@ func historyService() *pagedService {
 	}}
 }
 
+func TestExportWindowUsesTheServiceMonths(t *testing.T) {
+	svc := historyService()
+	svc.months = 24
+	if _, err := exportHistory(context.Background(), svc, filepath.Join(t.TempDir(), "h"), exportNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.queries[0].From; got != "2024-11-01T00:00:00Z" {
+		t.Errorf("from %s", got)
+	}
+}
+
+func TestExportWindowFallsBackToThirteenMonths(t *testing.T) {
+	svc := historyService()
+	if _, err := exportHistory(context.Background(), svc, filepath.Join(t.TempDir(), "h"), exportNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.queries[0].From; got != "2025-10-01T00:00:00Z" {
+		t.Errorf("from %s", got)
+	}
+}
+
 func TestExportWritesGrantsRulesAndManifest(t *testing.T) {
 	svc := historyService()
 	dir := filepath.Join(t.TempDir(), "elevate-history")

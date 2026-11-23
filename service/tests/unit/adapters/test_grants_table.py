@@ -8,6 +8,7 @@ from aws_elevate.adapters.grants_table import (
     Duplicate,
     GrantsTable,
     StateConflict,
+    _retention_ttl,
     from_item,
     timeline_item,
     to_item,
@@ -56,7 +57,7 @@ FIRST_ROW = {
 def table():
     client = boto3.client("dynamodb", region_name="eu-west-1")
     with Stubber(client) as stub:
-        yield GrantsTable(client, TABLE, clock=lambda: NOW), stub
+        yield GrantsTable(client, TABLE, retention_months=13, clock=lambda: NOW), stub
         stub.assert_no_pending_responses()
 
 
@@ -675,3 +676,17 @@ def test_discard_new_raises_state_conflict_once_the_grant_moved(table):
     add_error(stub, "transact_write_items", cancelled("ConditionalCheckFailed", "None", "None"))
     with pytest.raises(StateConflict):
         gt.discard_new(GRANT)
+
+
+@pytest.mark.parametrize(
+    ("closed_at", "months", "expires"),
+    [
+        (datetime(2026, 11, 15, 10, 0, tzinfo=UTC), 24, datetime(2028, 11, 15, 10, 0, tzinfo=UTC)),
+        (datetime(2026, 11, 15, 10, 0, tzinfo=UTC), 1, datetime(2026, 12, 15, 10, 0, tzinfo=UTC)),
+        (datetime(2027, 1, 31, 10, 0, tzinfo=UTC), 1, datetime(2027, 2, 28, 10, 0, tzinfo=UTC)),
+        (datetime(2027, 12, 31, 10, 0, tzinfo=UTC), 2, datetime(2028, 2, 29, 10, 0, tzinfo=UTC)),
+        (datetime(2027, 1, 31, 10, 0, tzinfo=UTC), 13, datetime(2028, 2, 29, 10, 0, tzinfo=UTC)),
+    ],
+)
+def test_close_sets_ttl_after_the_configured_months(closed_at, months, expires):
+    assert _retention_ttl(closed_at, months) == int(expires.timestamp())

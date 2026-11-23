@@ -12,32 +12,43 @@ import (
 	"github.com/sdiaco/aws-elevate/client/internal/api"
 )
 
-// periods on screen: 30 days by default, up to the 13 months kept.
-var periods = []struct {
+type periodChoice struct {
 	key, label string
 	from       func(time.Time) time.Time
-}{
-	{"30d", "30 days", func(t time.Time) time.Time { return t.AddDate(0, 0, -30) }},
-	{"90d", "90 days", func(t time.Time) time.Time { return t.AddDate(0, 0, -90) }},
-	{"13m", "13 months", func(t time.Time) time.Time { return t.AddDate(0, -13, 0) }},
+}
+
+// periods on screen: 30 days by default, up to the months the service keeps. The longest
+// is addressed as "all", so a link stays valid when the retention changes.
+func (a *App) periods() []periodChoice {
+	months := api.HistoryMonths(a.me())
+	return []periodChoice{
+		{"30d", "30 days", func(t time.Time) time.Time { return t.AddDate(0, 0, -30) }},
+		{"90d", "90 days", func(t time.Time) time.Time { return t.AddDate(0, 0, -90) }},
+		{"all", strconv.Itoa(months) + " months", func(t time.Time) time.Time { return t.AddDate(0, -months, 0) }},
+	}
 }
 
 // historyQuery reads period and scope from the address; unknown values fall back to the
 // defaults, and "all" only for the roles the service gives it to. Who never requests
 // starts on "all": their own history is always empty.
 func (a *App) historyQuery(r *http.Request) (period, scope string, q api.ListQuery) {
+	periods := a.periods()
 	period, scope = periods[0].key, "mine"
-	want := r.URL.Query().Get("scope")
-	if want == "" && !a.has("requester") {
-		want = "all"
+	scopeWanted := r.URL.Query().Get("scope")
+	if scopeWanted == "" && !a.has("requester") {
+		scopeWanted = "all"
 	}
 	from := periods[0].from
+	want := r.URL.Query().Get("period")
+	if want == "13m" { // address of the longest period before it was called "all"
+		want = "all"
+	}
 	for _, p := range periods {
-		if p.key == r.URL.Query().Get("period") {
+		if p.key == want {
 			period, from = p.key, p.from
 		}
 	}
-	if want == "all" && a.seesAll() {
+	if scopeWanted == "all" && a.seesAll() {
 		scope = "all"
 	}
 	return period, scope, api.ListQuery{Scope: scope, Closed: true, From: from(time.Now()).UTC().Format(time.RFC3339)}
@@ -71,7 +82,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 		}})
 	}
 	group := FilterGroup{Label: "Period"}
-	for _, p := range periods {
+	for _, p := range a.periods() {
 		group.Items = append(group.Items, Filter{Label: p.label, Path: "/history?period=" + p.key + "&scope=" + scope, On: p.key == period})
 	}
 	l.Filters = append(l.Filters, group)

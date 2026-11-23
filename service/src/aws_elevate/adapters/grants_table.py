@@ -23,8 +23,6 @@ from ..core.models import (
 )
 from ..core.times import iso, parse_iso
 
-RETENTION_MONTHS = 13
-
 
 class Duplicate(Exception):
     """The user already has a grant in progress for this permission set and account."""
@@ -166,8 +164,8 @@ def _timeline_row(item: dict) -> dict:
     return row
 
 
-def _retention_ttl(closed_at: datetime) -> int:
-    month0 = closed_at.month - 1 + RETENTION_MONTHS
+def _retention_ttl(closed_at: datetime, months: int) -> int:
+    month0 = closed_at.month - 1 + months
     year, month = closed_at.year + month0 // 12, month0 % 12 + 1
     day = min(closed_at.day, calendar.monthrange(year, month)[1])
     return int(closed_at.replace(year=year, month=month, day=day).timestamp())
@@ -216,9 +214,16 @@ def _cancellation_codes(err: ClientError) -> list[str] | None:
 
 
 class GrantsTable:
-    def __init__(self, client, table_name: str, clock: Callable[[], datetime] | None = None):
+    def __init__(
+        self,
+        client,
+        table_name: str,
+        retention_months: int,
+        clock: Callable[[], datetime] | None = None,
+    ):
         self._db = client
         self._table = table_name
+        self._retention_months = retention_months
         self._now = clock or (lambda: datetime.now(UTC))
 
     def put_new(self, grant: Grant) -> None:
@@ -310,12 +315,12 @@ class GrantsTable:
                 raise StateConflict(f"grant {grant_id} does not exist")
             names.update({"#closedAt": "closedAt", "#ttl": "ttl"})
             values[":closedAt"] = {"S": iso(now)}
-            values[":ttl"] = {"N": str(_retention_ttl(now))}
+            values[":ttl"] = {"N": str(_retention_ttl(now, self._retention_months))}
             sets += ["#closedAt = :closedAt", "#ttl = :ttl"]
             extra = [{"Delete": {"TableName": self._table, "Key": _lock_key(grant)}}]
         expression = "SET " + ", ".join(sets)
         if dst == State.CLOSED:
-            # The task token is useless once closed; do not keep it for 13 months.
+            # The task token is useless once closed; do not keep it for the whole retention.
             expression += " REMOVE gsi3pk, gsi3sk, taskToken"
         items = [
             {

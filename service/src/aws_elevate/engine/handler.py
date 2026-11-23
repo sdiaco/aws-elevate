@@ -46,7 +46,11 @@ def _build_engine():
     sso = boto3.client("sso-admin")
     reader = SsoRead(sso, os.environ["INSTANCE_ARN"])
     return Engine(
-        table=GrantsTable(boto3.client("dynamodb"), os.environ["TABLE_NAME"]),
+        table=GrantsTable(
+            boto3.client("dynamodb"),
+            os.environ["TABLE_NAME"],
+            int(os.environ["HISTORY_RETENTION_MONTHS"]),
+        ),
         rules=AppConfig(
             boto3.client("appconfig"),
             os.environ["APPCONFIG_APPLICATION_ID"],

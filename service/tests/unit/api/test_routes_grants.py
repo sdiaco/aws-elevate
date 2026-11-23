@@ -14,7 +14,7 @@ from aws_elevate.core.times import parse_iso
 
 @pytest.fixture
 def make(fx):
-    def build(*grants, config=None, sfn=None, store=None, max_open=5):
+    def build(*grants, config=None, sfn=None, store=None, max_open=5, history_months=13):
         table = fx.FakeTable(*grants)
         sfn = sfn or fx.FakeSfn()
         routes = GrantRoutes(
@@ -23,6 +23,7 @@ def make(fx):
             sfn=sfn,
             store=store or fx.FakeStore(),
             max_open=max_open,
+            history_months=history_months,
             clock=lambda: fx.NOW,
         )
         return routes, table, sfn
@@ -531,6 +532,21 @@ def test_period_is_taken_from_the_query(make, fx):
 def test_invalid_list_query_is_refused(make, fx, query):
     routes, _, _ = make()
     assert error_of(lambda: routes.list(fx.REQUESTER, query)).code == "invalid_request"
+
+
+def test_history_beyond_the_configured_retention_is_refused(make, fx):
+    routes, _, _ = make(history_months=6)
+    err = error_of(
+        lambda: routes.list(fx.REQUESTER, {"scope": "mine", "from": "2026-03-15T00:00:00Z"})
+    )
+    assert err.code == "invalid_request"
+    assert err.message == "the history goes back 6 months"
+
+
+def test_history_within_the_configured_retention_is_served(make, fx):
+    routes, table, _ = make(history_months=6)
+    routes.list(fx.REQUESTER, {"scope": "mine", "from": "2026-05-20T00:00:00Z"})
+    assert table.queries
 
 
 def test_scope_defaults_to_mine(make, fx):

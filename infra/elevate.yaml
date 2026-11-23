@@ -14,6 +14,8 @@ Metadata:
         Parameters: [MaxOpenGrantsPerUser, ConfigVersionsListed]
       - Label: {default: "Integrations (optional)"}
         Parameters: [EventConsumerAccounts]
+      - Label: {default: "Audit and data protection (optional)"}
+        Parameters: [HistoryRetentionMonths, PointInTimeRecovery, KmsKeyArn]
       - Label: {default: "For testing only: leave as they are"}
         Parameters: [CodeBucket, CodeKey]
     ParameterLabels:
@@ -25,6 +27,9 @@ Metadata:
       MaxOpenGrantsPerUser: {default: "Open grants per user"}
       ConfigVersionsListed: {default: "Rules versions listed"}
       EventConsumerAccounts: {default: "Event consumer accounts"}
+      HistoryRetentionMonths: {default: "History kept (months)"}
+      PointInTimeRecovery: {default: "Point-in-time recovery"}
+      KmsKeyArn: {default: "Customer KMS key ARN"}
       CodeBucket: {default: "Lambda package bucket"}
       CodeKey: {default: "Lambda package key"}
 
@@ -48,7 +53,7 @@ Parameters:
       region (ReleaseBuckets).
   CodeKey:
     Type: String
-    Default: v0.0.3/lambda.zip
+    Default: v0.0.4/lambda.zip
     Description: Object key of the Lambda package in CodeBucket.
 
   AdminGroupId:
@@ -86,41 +91,49 @@ Parameters:
     AllowedPattern: "^[^<>]*$"
     Description: Optional. Name of your organization, shown at the top of the interface.
 
+  HistoryRetentionMonths:
+    Type: Number
+    Default: 13
+    MinValue: 1
+    MaxValue: 120
+    Description: >-
+      How many months the grant history is kept after a grant closes. A change applies
+      to grants closed after it; grants already closed keep the retention they had.
+
+  PointInTimeRecovery:
+    Type: String
+    Default: Disabled
+    AllowedValues: [Disabled, Enabled]
+    Description: >-
+      Enabled keeps continuous backups of the grant history for 35 days (restore to any
+      second), at a small storage cost; recommended where the history must be recoverable.
+
+  KmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional. ARN of a KMS key in this region that encrypts the grant history and the
+      logs; empty uses keys owned by AWS. The key policy must allow CloudWatch Logs of
+      this region (see the README).
+
 # Regions where aws-elevate is published and their release buckets
 # (contract/release-buckets.json). The bucket is never derived from the region name: in a
 # region without a published release someone else could own that name. A region missing
 # here stops the stack before anything is created.
 Mappings:
   ReleaseBuckets:
-    ca-central-1:
-      Bucket: aws-elevate-releases-ca-central-1
-    eu-central-1:
-      Bucket: aws-elevate-releases-eu-central-1
-    eu-north-1:
-      Bucket: aws-elevate-releases-eu-north-1
-    eu-south-1:
-      Bucket: aws-elevate-releases-eu-south-1
     eu-west-1:
       Bucket: aws-elevate-releases-eu-west-1
-    eu-west-2:
-      Bucket: aws-elevate-releases-eu-west-2
-    eu-west-3:
-      Bucket: aws-elevate-releases-eu-west-3
-    sa-east-1:
-      Bucket: aws-elevate-releases-sa-east-1
     us-east-1:
       Bucket: aws-elevate-releases-us-east-1
-    us-east-2:
-      Bucket: aws-elevate-releases-us-east-2
-    us-west-1:
-      Bucket: aws-elevate-releases-us-west-1
-    us-west-2:
-      Bucket: aws-elevate-releases-us-west-2
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]
   HasConsumers: !Not [!Equals [!Join ["", !Ref EventConsumerAccounts], ""]]
   HasAuditors: !Not [!Equals [!Ref AuditorGroupId, ""]]
+  PitrEnabled: !Equals [!Ref PointInTimeRecovery, Enabled]
+  HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, ""]]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -158,6 +171,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-precheck
       RetentionInDays: 30
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   PrecheckFunction:
     Type: AWS::Lambda::Function
@@ -223,7 +237,11 @@ Resources:
         AttributeName: ttl
         Enabled: true
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
+        PointInTimeRecoveryEnabled: !If [PitrEnabled, true, false]
+      SSESpecification: !If
+        - HasKmsKey
+        - {SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !Ref KmsKeyArn}
+        - !Ref AWS::NoValue
       ResourcePolicy:
         PolicyDocument:
           Version: "2012-10-17"
@@ -231,6 +249,9 @@ Resources:
             # Only the service roles, by exact ARN, read or write grant data.
             # Wildcards would let anyone able to create a role with a matching name in.
             # Control-plane actions stay open so CloudFormation can update the table.
+            # UpdateContinuousBackups is deliberately not denied: this policy exempts only
+            # the service roles, while CloudFormation changes point-in-time recovery with
+            # the installer's credentials. The guardrails SCP denies it to everyone else.
             - Sid: OnlyServiceRolesTouchData
               Effect: Deny
               Principal: "*"
@@ -249,6 +270,8 @@ Resources:
                 - dynamodb:PartiQLUpdate
                 - dynamodb:PartiQLDelete
                 - dynamodb:ExportTableToPointInTime
+                - dynamodb:CreateBackup
+                - dynamodb:RestoreTableToPointInTime
               Resource:
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-grants/index/*
@@ -304,6 +327,16 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              - !If
+                - HasKmsKey
+                - Sid: DecryptGrantsWithCustomerKey
+                  Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref KmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
+                - !Ref AWS::NoValue
               # Scoped to this instance.
               - Sid: CreateOnlyJitTagged
                 Effect: Allow
@@ -407,6 +440,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-engine
       RetentionInDays: 90
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   EngineFunction:
     Type: AWS::Lambda::Function
@@ -430,6 +464,7 @@ Resources:
           APPCONFIG_APPLICATION_ID: !Ref RulesApplication
           APPCONFIG_PROFILE_ID: !GetAtt RulesProfile.ConfigurationProfileId
           MANAGEMENT_ACCOUNT_ID: !GetAtt Precheck.ManagementAccountId
+          HISTORY_RETENTION_MONTHS: !Ref HistoryRetentionMonths
           SERVICE_ACCOUNT_ID: !Ref AWS::AccountId
 
   # ---------------------------------------------------------------------------
@@ -1316,6 +1351,16 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              - !If
+                - HasKmsKey
+                - Sid: DecryptGrantsWithCustomerKey
+                  Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref KmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
+                - !Ref AWS::NoValue
               # Reads by key and by index only: no Scan.
               - Sid: GrantsTable
                 Effect: Allow
@@ -1405,6 +1450,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-api
       RetentionInDays: 90
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
 
   ApiFunction:
     Type: AWS::Lambda::Function
@@ -1435,6 +1481,7 @@ Resources:
           AUDITOR_GROUP_ID: !Ref AuditorGroupId
           MAX_OPEN_GRANTS_PER_USER: !Ref MaxOpenGrantsPerUser
           CONFIG_VERSIONS_LISTED: !Ref ConfigVersionsListed
+          HISTORY_RETENTION_MONTHS: !Ref HistoryRetentionMonths
           ORGANIZATION_NAME: !Ref OrganizationName
           SSO_INSTANCE_ARN: !GetAtt Precheck.InstanceArn
           STACK_ID: !Ref AWS::StackId

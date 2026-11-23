@@ -36,8 +36,18 @@ type Me struct {
 	Installation *Installation `json:"installation"`
 }
 
+// HistoryMonths is how long the service keeps closed grants. An infrastructure older
+// than the field does not send it; it kept 13 months.
+func HistoryMonths(me Me) int {
+	if me.Limits.HistoryMonths == 0 {
+		return 13
+	}
+	return me.Limits.HistoryMonths
+}
+
 type Limits struct {
-	ReasonChars int `json:"reasonChars"`
+	ReasonChars   int `json:"reasonChars"`
+	HistoryMonths int `json:"historyMonths"`
 }
 
 type Installation struct {

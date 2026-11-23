@@ -29,6 +29,7 @@ type fakeService struct {
 	calls    []string
 	revokeBy map[string]string
 	roles    []string // roles of GET /me; requester when empty
+	months   int      // limits.historyMonths of GET /me; 0 when the service does not say
 	// admin side
 	installation *api.Installation
 	check        *api.CheckResult
@@ -47,7 +48,7 @@ func (f *fakeService) Me(context.Context) (*api.Me, error) {
 	if roles == nil {
 		roles = []string{"requester"}
 	}
-	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: roles, InfraVersion: "0.0.1", MinClient: "0.0.1", Installation: f.installation}, nil
+	return &api.Me{User: api.User{UserName: "user@example.com"}, Roles: roles, InfraVersion: "0.0.1", MinClient: "0.0.1", Installation: f.installation, Limits: api.Limits{HistoryMonths: f.months}}, nil
 }
 
 func (f *fakeService) Rules(context.Context) (*api.RuleList, error) {

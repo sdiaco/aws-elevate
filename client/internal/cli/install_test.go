@@ -460,6 +460,58 @@ func TestInstallPassesTheAdvancedFlags(t *testing.T) {
 	}
 }
 
+func TestInstallPassesRetentionMonths(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--retention-months", "60", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if got := inst.created.Parameters["HistoryRetentionMonths"]; got != "60" {
+		t.Errorf("HistoryRetentionMonths = %q", got)
+	}
+	if !strings.Contains(h.out.String(), "\n  Advanced settings: HistoryRetentionMonths=60\n") {
+		t.Errorf("no advanced settings line:\n%s", h.out)
+	}
+}
+
+func TestInstallPitrFlagEnablesIt(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--pitr", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if got := inst.created.Parameters["PointInTimeRecovery"]; got != "Enabled" {
+		t.Errorf("PointInTimeRecovery = %q", got)
+	}
+	if !strings.Contains(h.out.String(), "\n  Advanced settings: PointInTimeRecovery=Enabled\n") {
+		t.Errorf("no advanced settings line:\n%s", h.out)
+	}
+}
+
+func TestInstallPassesTheKmsKey(t *testing.T) {
+	const arn = "arn:aws:kms:eu-west-1:111111111111:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--kms-key-arn", arn, "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	if got := inst.created.Parameters["KmsKeyArn"]; got != arn {
+		t.Errorf("KmsKeyArn = %q", got)
+	}
+	if !strings.Contains(h.out.String(), "\n  Advanced settings: KmsKeyArn="+arn+"\n") {
+		t.Errorf("no advanced settings line:\n%s", h.out)
+	}
+}
+
 func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
 	h := newHarness(t)
 	inst := &fakeInstaller{groups: installGroups, states: installed}
@@ -469,7 +521,7 @@ func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed"} {
+	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed", "HistoryRetentionMonths", "PointInTimeRecovery", "KmsKeyArn"} {
 		if _, ok := inst.created.Parameters[k]; ok {
 			t.Errorf("%s is set: %v", k, inst.created.Parameters)
 		}

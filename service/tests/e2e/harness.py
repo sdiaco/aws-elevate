@@ -60,6 +60,7 @@ from botocore.exceptions import ClientError
 
 STACK = "elevate-e2e"
 INSTALL_PROFILE = "elevate-e2e-install"  # admin of the service account, for the client
+PITR_ON = {"ParameterKey": "PointInTimeRecovery", "ParameterValue": "Enabled"}
 PREVIOUS_INFRA = "0.0.0"  # what a new e2e stack runs until test_upgrade updates it
 CLI = Path(
     os.environ.get("ELEVATE_CLI", Path(__file__).resolve().parents[3] / "build" / "aws-elevate")
@@ -356,6 +357,7 @@ def stack_up(session: boto3.Session) -> dict:
         {"ParameterKey": "AdminGroupId", "ParameterValue": groups[ADMIN_GROUP]},
         {"ParameterKey": "RequesterGroupId", "ParameterValue": groups[REQUESTER_GROUP]},
         {"ParameterKey": "AuditorGroupId", "ParameterValue": groups[AUDITOR_GROUP]},
+        PITR_ON,
     ]
     _update(cfn, params, template_url(session))
     return stack_outputs(session)
@@ -380,16 +382,18 @@ def _update(cfn, params: list[dict], url: str) -> None:
 
 def upgrade(session: boto3.Session) -> None:
     """The update an admin runs from `admin updates --preview`: every
-    parameter keeps its value except CodeKey, the package of the new release."""
+    parameter keeps its value except CodeKey, the package of the new release. It also
+    turns on point-in-time recovery, so every run exercises the table with it on."""
     bucket, key = upload(session)
     cfn = session.client("cloudformation")
     stack = cfn.describe_stacks(StackName=STACK)["Stacks"][0]
     params = [
         {"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
         for p in stack["Parameters"]
-        if p["ParameterKey"] != "CodeKey"
+        if p["ParameterKey"] not in ("CodeKey", PITR_ON["ParameterKey"])
     ]
     params.append({"ParameterKey": "CodeKey", "ParameterValue": key})
+    params.append(PITR_ON)
     _update(cfn, params, template_url(session))
 
 

@@ -82,6 +82,7 @@ def api(fx):
         rules=None,
         versions=None,
         organization_name="",
+        history_months=13,
     ):
         return Api(
             resolver or FakeResolver(identity or fx.REQUESTER),
@@ -90,6 +91,7 @@ def api(fx):
             rules or RecordingGrants(),
             versions or RecordingGrants(),
             INSTALLATION,
+            history_months=history_months,
             organization_name=organization_name,
         )
 
@@ -286,7 +288,7 @@ def test_me_lists_user_roles_and_versions(api, fx):
         "roles": ["requester"],
         "infraVersion": INFRA_VERSION,
         "minClient": MIN_CLIENT,
-        "limits": {"reasonChars": MAX_REASON_CHARS},
+        "limits": {"reasonChars": MAX_REASON_CHARS, "historyMonths": 13},
         "installation": None,
     }
 
@@ -294,7 +296,13 @@ def test_me_lists_user_roles_and_versions(api, fx):
 def test_me_tells_the_reason_limit(api, fx):
     for identity in (fx.REQUESTER, fx.LEAD, fx.ADMIN, fx.AUDITOR):
         resp = api(identity=identity).handle(event("GET", "me"))
-        assert body_of(resp)["limits"] == {"reasonChars": MAX_REASON_CHARS}
+        assert body_of(resp)["limits"]["reasonChars"] == MAX_REASON_CHARS
+
+
+def test_me_tells_the_history_months(api, fx):
+    for identity in (fx.REQUESTER, fx.LEAD, fx.ADMIN, fx.AUDITOR):
+        resp = api(identity=identity, history_months=24).handle(event("GET", "me"))
+        assert body_of(resp)["limits"]["historyMonths"] == 24
 
 
 def test_me_returns_the_organization_name_when_set(api, fx):
@@ -340,6 +348,7 @@ def test_handler_wires_the_api_once_from_the_environment(monkeypatch):
     env = {
         "AWS_DEFAULT_REGION": "eu-west-1",
         "TABLE_NAME": "elevate-grants",
+        "HISTORY_RETENTION_MONTHS": "13",
         "STATE_MACHINE_ARN": "arn:aws:states:eu-west-1:111111111111:stateMachine:elevate-grant",
         "APPCONFIG_APPLICATION_ID": "app1",
         "APPCONFIG_PROFILE_ID": "prof1",
