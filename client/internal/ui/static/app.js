@@ -147,7 +147,8 @@ function sync(next) {
     try {
       const { next: fresh, moved } = await replace(other, address, false);
       followPanel(fresh, moved);
-      if (fresh.dataset.poll && !other.dataset.poll) poll(fresh, 0);
+      // The loop of the replaced element stops (it is no longer in the page): start one.
+      if (fresh.dataset.poll) poll(fresh, 0);
     } catch {
       other.title = "Status not refreshed: reload the page";
     }

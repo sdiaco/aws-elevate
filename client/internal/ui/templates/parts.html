@@ -37,7 +37,8 @@
 {{- with .Refresh}}{{template "refresh-button" .}}{{end}}
 {{- if or (eq .Kind "success") (eq .Kind "error")}}{{template "dismiss-button"}}{{end}}</div>
 {{with .Error}}<p class="flash-body">{{.}}</p>{{end}}
-{{if eq .Grant.State "active"}}<div class="flash-body">
+{{/* The commands come once the access is usable (or AWS kept refusing: shell waits by itself). */}}
+{{if and (eq .Grant.State "active") (or .Ready .Error)}}<div class="flash-body">
 {{if .Ready}}<a class="btn primary" href="{{.Console}}" target="_blank" rel="noopener noreferrer">Open in console ↗</a>{{end}}
 {{template "command" (print "aws elevate shell " .Grant.ID)}}
 {{if .Ready}}{{template "profile-command" .Profile}}{{end}}

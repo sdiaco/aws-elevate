@@ -444,11 +444,20 @@ func TestTheFlashWaitsForTheRoleBeforeTheConsole(t *testing.T) {
 	// The page itself does not wait: the poll does.
 	out := h.get(t, "/requests?sent=new4567890")
 	contains(t, out, `data-poll=`, "Preparing your access…")
+	lacks(t, out, "aws elevate shell new4567890")
 	if len(h.ready) != 0 {
 		t.Errorf("waited on the page: %v", h.ready)
 	}
 
+	// The first poll that finds it active says so at once; the wait is the next poll.
 	out = h.get(t, "/requests/flash/new4567890")
+	contains(t, out, `data-poll="/requests/flash/new4567890?ready=1"`, "Preparing your access…")
+	lacks(t, out, "Activating", "aws elevate shell")
+	if len(h.ready) != 0 {
+		t.Fatalf("waited on the first active poll: %v", h.ready)
+	}
+
+	out = h.get(t, "/requests/flash/new4567890?ready=1")
 	if len(h.ready) != 1 {
 		t.Fatalf("ready calls %v", h.ready)
 	}
@@ -471,7 +480,7 @@ func TestTheFlashOfAClosedOrUnreadyRequest(t *testing.T) {
 
 	h.app.Ready = func(context.Context, api.Grant) (string, error) { return "", errors.New("role not accepted after 60s") }
 	h.svc.grants["new4567890"] = grant("new4567890", api.StateActive, me)
-	out = h.get(t, "/requests/flash/new4567890")
+	out = h.get(t, "/requests/flash/new4567890?ready=1")
 	contains(t, out, `class="flash error"`, "role not accepted after 60s", "aws elevate shell new4567890")
 }
 
