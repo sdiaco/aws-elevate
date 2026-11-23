@@ -211,10 +211,10 @@ Elevate helps implement privileged-access controls required by NIS2, DORA and GD
 
 To restore, with the table resource policy in place (an administrator of the Elevate account, not the Elevate roles):
 
-1. Widen the table resource policy so your administrator may restore. This is a deliberate change, recorded in CloudTrail.
+1. Widen the table resource policy so your administrator may restore and copy data. This is a deliberate change, recorded in CloudTrail.
 2. Restore the table to a new table, with `RestoreTableToPointInTime`.
-3. Point Elevate at the restored data, or copy the items you need back into the Elevate table.
-4. Put the resource policy back as it was.
+3. Copy the items you need from the new table back into the Elevate table, then delete the new table. Elevate always uses its own table: it cannot be pointed at another one.
+4. Put the resource policy back exactly as the template defines it.
 
 **Customer KMS key.** By default the history and the logs use keys owned by AWS. To use your own key, pass `--kms-key-arn` (`KmsKeyArn`). The key must be in the same region as the stack. Its key policy must keep the statement that enables IAM policies in the account, and must allow CloudWatch Logs of that region. Example for account `111111111111`, region `eu-west-1`, stack `elevate`:
 
