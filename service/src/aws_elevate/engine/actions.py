@@ -2,6 +2,7 @@
 and tolerates being run again by Step Functions."""
 
 import dataclasses
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -25,6 +26,9 @@ from ..core.times import iso, parse_iso
 from .errors import ActivationFailed, InvalidState, Retryable
 
 # AWS errors that no retry can fix: the activation fails with AWS's message.
+# Seconds between expiresAt and the start of revocation, see _activated.
+REVOKE_AFTER_EXPIRY_SECONDS = 5
+
 _PERMANENT = {
     "ValidationException",
     "AccessDeniedException",
@@ -267,8 +271,12 @@ class Engine:
 
     def _activated(self, grant: Grant) -> dict:
         remaining = parse_iso(grant.expires_at) - self._now()
+        # Revocation deletes the permission set, JitExpiry deny included: it must start
+        # once that deny applies, or access lasts until the deletion reaches every IAM
+        # endpoint (measured up to about 30 s). Hence rounding up plus a margin.
+        wait = math.ceil(remaining.total_seconds()) + REVOKE_AFTER_EXPIRY_SECONDS
         return {
             "grant": snapshot(grant),
             # At least 1: a zero timeout is a States.Runtime error, which no Catch handles.
-            "waitSeconds": max(1, int(remaining.total_seconds())),
+            "waitSeconds": max(1, wait),
         }
