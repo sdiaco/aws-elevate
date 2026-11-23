@@ -15,6 +15,7 @@ from ..core.rules import requestable
 from ..version import INFRA_VERSION, MIN_CLIENT
 from .config_cache import ConfigUnavailable
 from .errors import ApiError
+from .routes_grants import MAX_REASON_CHARS
 
 _ID = r"([a-z2-7]{10})"
 # (method, path under /v1, route object, its method, extra argument, success status).
@@ -150,6 +151,7 @@ class Api:
             "roles": roles,
             "infraVersion": INFRA_VERSION,
             "minClient": MIN_CLIENT,
+            "limits": {"reasonChars": MAX_REASON_CHARS},
             "installation": self._installation if identity.is_admin else None,
         }
         if self._organization_name:

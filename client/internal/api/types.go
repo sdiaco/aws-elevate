@@ -30,8 +30,14 @@ type Me struct {
 	MinClient    string   `json:"minClient"`
 	// The stack parameter OrganizationName; empty when not set.
 	OrganizationName string `json:"organizationName,omitempty"`
+	// Zero when the service is older than this field: no limit known.
+	Limits Limits `json:"limits"`
 	// Only for admins: the resources the admin commands use with their own credentials.
 	Installation *Installation `json:"installation"`
+}
+
+type Limits struct {
+	ReasonChars int `json:"reasonChars"`
 }
 
 type Installation struct {

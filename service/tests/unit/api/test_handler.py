@@ -6,6 +6,7 @@ from aws_elevate.api import handler as module
 from aws_elevate.api.config_cache import ConfigUnavailable
 from aws_elevate.api.errors import ApiError, forbidden
 from aws_elevate.api.handler import Api
+from aws_elevate.api.routes_grants import MAX_REASON_CHARS
 from aws_elevate.version import INFRA_VERSION, MIN_CLIENT
 
 
@@ -285,8 +286,15 @@ def test_me_lists_user_roles_and_versions(api, fx):
         "roles": ["requester"],
         "infraVersion": INFRA_VERSION,
         "minClient": MIN_CLIENT,
+        "limits": {"reasonChars": MAX_REASON_CHARS},
         "installation": None,
     }
+
+
+def test_me_tells_the_reason_limit(api, fx):
+    for identity in (fx.REQUESTER, fx.LEAD, fx.ADMIN, fx.AUDITOR):
+        resp = api(identity=identity).handle(event("GET", "me"))
+        assert body_of(resp)["limits"] == {"reasonChars": MAX_REASON_CHARS}
 
 
 def test_me_returns_the_organization_name_when_set(api, fx):
