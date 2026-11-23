@@ -3,6 +3,32 @@ Description: >-
   aws-elevate: temporary elevated access for AWS IAM Identity Center. Deploy in the
   Identity Center delegated administrator account, in the Identity Center home region.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: "Who uses Elevate (required)"}
+        Parameters: [AdminGroupId, RequesterGroupId, AuditorGroupId]
+      - Label: {default: "Alerts and interface"}
+        Parameters: [AlertEmail, OrganizationName]
+      - Label: {default: "Limits (optional, defaults are fine)"}
+        Parameters: [MaxOpenGrantsPerUser, ConfigVersionsListed]
+      - Label: {default: "Integrations (optional)"}
+        Parameters: [EventConsumerAccounts]
+      - Label: {default: "For testing only: leave as they are"}
+        Parameters: [CodeBucket, CodeKey]
+    ParameterLabels:
+      AdminGroupId: {default: "Admin group id"}
+      RequesterGroupId: {default: "Requester group id"}
+      AuditorGroupId: {default: "Auditor group id"}
+      AlertEmail: {default: "Alert e-mail"}
+      OrganizationName: {default: "Organization name"}
+      MaxOpenGrantsPerUser: {default: "Open grants per user"}
+      ConfigVersionsListed: {default: "Rules versions listed"}
+      EventConsumerAccounts: {default: "Event consumer accounts"}
+      CodeBucket: {default: "Lambda package bucket"}
+      CodeKey: {default: "Lambda package key"}
+
+
 Parameters:
   AlertEmail:
     Type: String
@@ -22,7 +48,7 @@ Parameters:
       region (ReleaseBuckets).
   CodeKey:
     Type: String
-    Default: v0.0.2/lambda.zip
+    Default: v0.0.3/lambda.zip
     Description: Object key of the Lambda package in CodeBucket.
 
   AdminGroupId:
@@ -66,10 +92,30 @@ Parameters:
 # here stops the stack before anything is created.
 Mappings:
   ReleaseBuckets:
+    ca-central-1:
+      Bucket: aws-elevate-releases-ca-central-1
+    eu-central-1:
+      Bucket: aws-elevate-releases-eu-central-1
+    eu-north-1:
+      Bucket: aws-elevate-releases-eu-north-1
+    eu-south-1:
+      Bucket: aws-elevate-releases-eu-south-1
     eu-west-1:
       Bucket: aws-elevate-releases-eu-west-1
+    eu-west-2:
+      Bucket: aws-elevate-releases-eu-west-2
+    eu-west-3:
+      Bucket: aws-elevate-releases-eu-west-3
+    sa-east-1:
+      Bucket: aws-elevate-releases-sa-east-1
     us-east-1:
       Bucket: aws-elevate-releases-us-east-1
+    us-east-2:
+      Bucket: aws-elevate-releases-us-east-2
+    us-west-1:
+      Bucket: aws-elevate-releases-us-west-1
+    us-west-2:
+      Bucket: aws-elevate-releases-us-west-2
 
 Conditions:
   OfficialCode: !Equals [!Ref CodeBucket, ""]

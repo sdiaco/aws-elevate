@@ -2,6 +2,7 @@ package awsx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aws/smithy-go"
 )
 
 // fakeUninstallAWS answers the CloudFormation, DynamoDB, AppConfig and Identity Center
@@ -26,6 +29,8 @@ type fakeUninstallAWS struct {
 	assigned  map[string]bool   // arn → assigned to user u-1 in 222222222222
 	calls     []string
 	deleteErr string // error code answered to DeletePermissionSet
+	group     bool   // the assignment is to group g-1, not to user u-1
+	noNames   bool   // DescribeUser and DescribeGroup are denied
 }
 
 func (f *fakeUninstallAWS) serve(t *testing.T) *httptest.Server {
@@ -132,7 +137,21 @@ func (f *fakeUninstallAWS) serve(t *testing.T) *httptest.Server {
 			}
 			fmt.Fprint(w, `{"AccountIds":[]}`)
 		case op == "ListAccountAssignments":
+			if f.group {
+				fmt.Fprint(w, `{"AccountAssignments":[{"AccountId":"222222222222","PrincipalType":"GROUP","PrincipalId":"g-1"}]}`)
+				return
+			}
 			fmt.Fprint(w, `{"AccountAssignments":[{"AccountId":"222222222222","PrincipalType":"USER","PrincipalId":"u-1"}]}`)
+		case op == "DescribeUser" || op == "DescribeGroup":
+			if f.noNames {
+				jsonErr(http.StatusBadRequest, "AccessDeniedException")
+				return
+			}
+			if op == "DescribeUser" {
+				fmt.Fprint(w, `{"UserId":"u-1","UserName":"user@example.com","IdentityStoreId":"d-1"}`)
+				return
+			}
+			fmt.Fprint(w, `{"GroupId":"g-1","DisplayName":"platform","IdentityStoreId":"d-1"}`)
 		case op == "DeleteAccountAssignment":
 			f.calls = append(f.calls, "assignment")
 			fmt.Fprint(w, `{"AccountAssignmentDeletionStatus":{"RequestId":"req-1","Status":"IN_PROGRESS"}}`)
@@ -181,7 +200,7 @@ func TestLeftoversFindsEveryKindOfResource(t *testing.T) {
 		RulesApp:  "app1",
 		ServicePS: []string{"ElevateRequester"},
 		Orphans: []OrphanPS{{ARN: "arn:ps-jit", Name: "JIT-abc",
-			Assignments: []Assignment{{Account: "222222222222", PrincipalType: "USER", PrincipalID: "u-1"}}}},
+			Assignments: []Assignment{{Account: "222222222222", PrincipalType: "USER", PrincipalID: "u-1", PrincipalName: "user@example.com"}}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got  %+v\nwant %+v", got, want)
@@ -275,5 +294,48 @@ func TestLeftoversTreatsATableBeingDeletedAsGone(t *testing.T) {
 	}
 	if got.Table {
 		t.Error("a table being deleted is listed as left")
+	}
+}
+
+func assignmentsOf(t *testing.T, f *fakeUninstallAWS) []Assignment {
+	t.Helper()
+	f.permSets = map[string]string{"arn:ps-jit": "JIT-abc"}
+	f.assigned = map[string]bool{"arn:ps-jit": true}
+	srv := f.serve(t)
+	defer srv.Close()
+	got, err := uninstallerFor(srv).Leftovers(context.Background())
+	if err != nil || len(got.Orphans) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	return got.Orphans[0].Assignments
+}
+
+func TestLeftoversNameAGroupByItsDisplayName(t *testing.T) {
+	got := assignmentsOf(t, &fakeUninstallAWS{group: true})
+	want := []Assignment{{Account: "222222222222", PrincipalType: "GROUP", PrincipalID: "g-1", PrincipalName: "platform"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestLeftoversLeaveThePrincipalNameEmptyWhenItCannotBeRead(t *testing.T) {
+	got := assignmentsOf(t, &fakeUninstallAWS{noNames: true})
+	if len(got) != 1 || got[0].PrincipalID != "u-1" || got[0].PrincipalName != "" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestIsAccessDenied(t *testing.T) {
+	for code, want := range map[string]bool{
+		"AccessDenied": true, "AccessDeniedException": true, "UnauthorizedOperation": true,
+		"ValidationError": false, "ResourceNotFoundException": false,
+	} {
+		err := fmt.Errorf("read: %w", &smithy.GenericAPIError{Code: code, Message: "no"})
+		if got := IsAccessDenied(err); got != want {
+			t.Errorf("%s: got %v", code, got)
+		}
+	}
+	if IsAccessDenied(nil) || IsAccessDenied(errors.New("AccessDenied")) {
+		t.Error("only API errors count")
 	}
 }

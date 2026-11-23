@@ -618,3 +618,25 @@ def test_organization_name_is_optional_and_reaches_the_api():
     assert param["AllowedPattern"] == "^[^<>]*$"
     env = RESOURCES["ApiFunction"]["Properties"]["Environment"]["Variables"]
     assert env["ORGANIZATION_NAME"] == {"Ref": "OrganizationName"}
+
+
+INTERFACE = TEMPLATE.get("Metadata", {}).get("AWS::CloudFormation::Interface", {})
+
+
+def test_every_parameter_is_in_exactly_one_console_group():
+    listed = [p for group in INTERFACE.get("ParameterGroups", []) for p in group["Parameters"]]
+    assert sorted(listed) == sorted(TEMPLATE["Parameters"])
+    labels = INTERFACE.get("ParameterLabels", {})
+    for name in TEMPLATE["Parameters"]:
+        assert labels.get(name, {}).get("default"), name
+
+
+def test_console_groups_in_order():
+    groups = [g["Label"]["default"] for g in INTERFACE.get("ParameterGroups", [])]
+    assert groups == [
+        "Who uses Elevate (required)",
+        "Alerts and interface",
+        "Limits (optional, defaults are fine)",
+        "Integrations (optional)",
+        "For testing only: leave as they are",
+    ]

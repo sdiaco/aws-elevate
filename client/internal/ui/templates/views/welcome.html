@@ -37,8 +37,8 @@
 <details class="expand"><summary>Show JSON</summary><pre>{{.JSON}}</pre></details>
 <input type="hidden" name="change" value="{{.Change}}">
 <input type="hidden" name="latest" value="{{.Latest}}">
-<div class="form-actions"><button type="button" class="btn link" data-step-goto="3">Back</button><button class="btn primary" formaction="/rules/publish">Publish</button></div>
+<div class="form-actions"><button type="button" class="btn link" data-step-goto="3">Back</button><button class="btn primary" data-busy="Publishing…" formaction="/rules/publish">Publish</button></div>
 </section>{{end}}
-<div class="form-actions" data-step-buttons><button type="button" class="btn link" data-step-back hidden>Back</button><button type="button" class="btn primary" data-step-next hidden>Next</button><button class="btn primary" data-step-done>Next</button></div>
+<div class="form-actions" data-step-buttons><button type="button" class="btn link" data-step-back hidden>Back</button><button type="button" class="btn primary" data-step-next hidden>Next</button><button class="btn primary" data-busy="Checking…" data-step-done>Next</button></div>
 </div>
 </form></div>{{end}}

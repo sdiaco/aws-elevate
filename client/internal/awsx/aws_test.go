@@ -202,6 +202,19 @@ func TestSessionExpiredErrorSaysWhatToRunAndKeepsTheCause(t *testing.T) {
 	}
 }
 
+func TestSSOProfilesSkipsTheManagedBlockAndNonSSOProfiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[default]\nregion = eu-west-1\n[profile a]\nsso_session = s\n[profile x]\nrole_arn = r\n[profile b]\nsso_start_url = https://example.awsapps.com/start\n\n" +
+		blockBegin + "\n[profile jit-ssm-write-111111111111]\nsso_session = s\n" + blockEnd + "\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SSOProfiles(path)
+	if err != nil || strings.Join(got, ",") != "a,b" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
 func TestSSOProfiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
 	doc := "[default]\nregion = eu-west-1\n[profile a]\nsso_session = s\n[profile x]\nrole_arn = r\n  # sso_session = commented\n[profile b]\nsso_start_url = https://example.awsapps.com/start\n[sso-session s]\nsso_start_url = https://example.awsapps.com/start\n"

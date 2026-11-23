@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -460,5 +461,40 @@ func TestRemoveManagedBlockIgnoresMarkersInsideOtherLines(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(path); string(data) != doc {
 		t.Errorf("rewritten: %q", data)
+	}
+}
+
+func TestGrantProfilesListsTheManagedBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	doc := "[profile work]\nregion = eu-west-1\n\n" + blockBegin + "\n[profile jit-ssm-111111111111]\nregion = eu-west-1\n\n[profile jit-ssm-222222222222]\nregion = eu-west-1\n" + blockEnd + "\n"
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GrantProfiles(path)
+	if want := []string{"jit-ssm-111111111111", "jit-ssm-222222222222"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("got %v, %v; want %v", got, err, want)
+	}
+	if got, err := GrantProfiles(filepath.Join(t.TempDir(), "none")); err != nil || len(got) != 0 {
+		t.Errorf("without a file: %v, %v", got, err)
+	}
+}
+
+func TestHasManagedBlockSeesAnEmptyBlock(t *testing.T) {
+	dir := t.TempDir()
+	for doc, want := range map[string]bool{
+		"[default]\n":                                      false,
+		blockBegin + "\n" + blockEnd + "\n":                true,
+		blockBegin + "\n[profile jit]\n" + blockEnd + "\n": true,
+	} {
+		path := filepath.Join(dir, "config")
+		if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := HasManagedBlock(path); err != nil || got != want {
+			t.Errorf("%q: got %v, err %v", doc, got, err)
+		}
+	}
+	if got, err := HasManagedBlock(filepath.Join(dir, "missing")); err != nil || got {
+		t.Errorf("missing file: %v, %v", got, err)
 	}
 }

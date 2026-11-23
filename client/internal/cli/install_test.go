@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
+	"github.com/sdiaco/aws-elevate/client/internal/term"
 	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
@@ -131,7 +132,7 @@ func TestInstallAsksAndCreatesTheStackWithGroupIds(t *testing.T) {
 		"✓ Region   eu-west-1",
 		"✓ Template   official v" + version.Client + ", bucket aws-elevate-releases-eu-west-1",
 		`Stack "elevate" in 111111111111 · eu-west-1`,
-		"Idle cost: 0 $ · remove it with aws-elevate uninstall",
+		"Idle cost: 0 $ · remove it with aws-elevate uninstall infra",
 		"✓ Stack created   in ",
 	} {
 		if !strings.Contains(out, want) {
@@ -366,7 +367,7 @@ func TestInstallWithFlagsAndYesAsksNothing(t *testing.T) {
 	if code != 0 || inst.created == nil {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
-	if strings.Contains(h.out.String(), "?") {
+	if strings.Contains(h.out.String(), "? ") {
 		t.Errorf("asked something:\n%s", h.out)
 	}
 }
@@ -438,5 +439,118 @@ func TestInstallPassesTheOrganizationName(t *testing.T) {
 	}
 	if _, ok := inst.created.Parameters["OrganizationName"]; ok || !strings.Contains(h.out.String(), "? Organization name, optional") {
 		t.Errorf("parameters %v, out %s", inst.created.Parameters, h.out)
+	}
+}
+
+func TestInstallPassesTheAdvancedFlags(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--max-open-grants", "3",
+		"--event-consumer-accounts", "222222222222", "--config-versions-listed", "20", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	want := map[string]string{"MaxOpenGrantsPerUser": "3", "EventConsumerAccounts": "222222222222", "ConfigVersionsListed": "20"}
+	for k, v := range want {
+		if inst.created.Parameters[k] != v {
+			t.Errorf("%s = %q, want %q", k, inst.created.Parameters[k], v)
+		}
+	}
+}
+
+func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed"} {
+		if _, ok := inst.created.Parameters[k]; ok {
+			t.Errorf("%s is set: %v", k, inst.created.Parameters)
+		}
+	}
+}
+
+func TestInstallMentionsTheAdvancedSettings(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	const line = "Advanced settings: template defaults; change them with the install flags or in CloudFormation (Update, Use existing template)"
+	out := h.out.String()
+	i := strings.Index(out, line)
+	if i < 0 {
+		t.Fatalf("no advanced settings line:\n%s", out)
+	}
+	if n := strings.Index(out, "Next:"); n >= 0 && n < i {
+		t.Errorf("line after Next:\n%s", out)
+	}
+}
+
+func TestInstallSummaryListsTheAdvancedSettingsGiven(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--config-versions-listed", "20",
+		"--max-open-grants", "3", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	out := h.out.String()
+	if !strings.Contains(out, "\n  Advanced settings: MaxOpenGrantsPerUser=3, ConfigVersionsListed=20\n") {
+		t.Errorf("no advanced settings line:\n%s", out)
+	}
+	if strings.Contains(out, "template defaults") {
+		t.Errorf("claims template defaults:\n%s", out)
+	}
+}
+
+func TestStackRegionDefaultsToYes(t *testing.T) {
+	var out strings.Builder
+	u := term.Plain(strings.NewReader("\n"), &out, true)
+	src := awsx.SourceProfile{SSORegion: "eu-west-1"}
+	got, err := stackRegion(u, src, "work", "", "Install", false)
+	if err != nil || got != "eu-west-1" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if !strings.Contains(out.String(), "[Y/n]") {
+		t.Errorf("prompt: %q", out.String())
+	}
+}
+
+func TestStackConsoleURL(t *testing.T) {
+	got := stackConsoleURL("eu-west-1", "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/0a1b")
+	want := "https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/stackinfo?stackId=arn%3Aaws%3Acloudformation%3Aeu-west-1%3A111111111111%3Astack%2Felevate%2F0a1b"
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestInstallPrintsTheStackConsoleLink(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed, total: 2}
+	h.withInstaller(inst, "y\n1\ndevs\n\nops@example.com\n\ny\n")
+
+	if code := h.run("install", "--profile", "work"); code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	out := h.out.String()
+	line := "Follow it in the console (account 111111111111): " + stackConsoleURL("eu-west-1", "arn:aws:cloudformation:eu-west-1:111111111111:stack/elevate/1")
+	at := strings.Index(out, line)
+	if at < 0 {
+		t.Fatalf("missing %q in:\n%s", line, out)
+	}
+	if at > strings.Index(out, "Stack created") {
+		t.Errorf("link printed after the progress:\n%s", out)
 	}
 }

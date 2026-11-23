@@ -147,7 +147,8 @@ function sync(next) {
     try {
       const { next: fresh, moved } = await replace(other, address, false);
       followPanel(fresh, moved);
-      if (fresh.dataset.poll && !other.dataset.poll) poll(fresh, 0);
+      // The loop of the replaced element stops (it is no longer in the page): start one.
+      if (fresh.dataset.poll) poll(fresh, 0);
     } catch {
       other.title = "Status not refreshed: reload the page";
     }
@@ -642,6 +643,8 @@ function reloadList(list, since) {
       if (!res.ok) throw new Error(res.status);
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       const fresh = doc.querySelector("form[data-reload], form[data-list]");
+      // The service now uses what was published: roles come from it, so the menu changes too.
+      if (!fresh.hasAttribute("data-reload")) return location.reload();
       const checked = new Set([...list.querySelectorAll("[data-select]:checked")].map((b) => b.value));
       const open = list.querySelector("tr.open")?.dataset.grant;
       list.querySelector("tbody").replaceWith(fresh.querySelector("tbody"));
@@ -650,7 +653,6 @@ function reloadList(list, since) {
       if (open) list.querySelector(`tr[data-grant="${CSS.escape(open)}"]`)?.classList.add("open");
       updateSelection(list);
       list.querySelector("[data-search]")?.dispatchEvent(new Event("input", { bubbles: true })); // keep the filter
-      if (!fresh.hasAttribute("data-reload")) return list.removeAttribute("data-reload");
       if (Date.now() - since < reloadLimit) reloadList(list, since);
     } catch {
       list.title = "List not refreshed: reload the page";
@@ -782,17 +784,20 @@ async function confirmDialog(address, opener) {
 function grantTable(ids) {
   const table = document.createElement("table");
   table.className = "compact";
-  const names = ["Permission set", "Account"];
   table.innerHTML = "<thead><tr><th>Id</th><th>Permission set</th><th>Account</th></tr></thead><tbody></tbody>";
   ids.forEach((id) => {
     const tr = document.createElement("tr");
     const row = document.querySelector(`tr[data-grant="${CSS.escape(id)}"]`);
     const heads = row ? [...row.closest("table").querySelectorAll("thead th")].map((th) => th.textContent.trim()) : [];
-    [id, ...names.map((n) => row?.cells[heads.indexOf(n)]?.textContent.trim() ?? "")].forEach((text) => {
-      const td = document.createElement("td");
-      td.textContent = text;
-      tr.append(td);
-    });
+    const cellOf = (name) => row?.cells[heads.indexOf(name)];
+    const idCell = document.createElement("td");
+    idCell.textContent = id;
+    const ps = document.createElement("td");
+    ps.textContent = cellOf("Permission set")?.textContent.trim() ?? "";
+    // The account is copied as it is, so its name and its id stay apart.
+    const account = document.createElement("td");
+    account.append(...[...(cellOf("Account")?.childNodes ?? [])].map((node) => node.cloneNode(true)));
+    tr.append(idCell, ps, account);
     table.tBodies[0].append(tr);
   });
   return table;
@@ -1051,3 +1056,51 @@ async function alive() {
 }
 setInterval(alive, 5 * 60 * 1000);
 document.addEventListener("visibilitychange", alive);
+
+// A reason field with data-count shows how much of its limit is used, as "12 / 500" in the
+// [data-counter] under it. The server gives the limit on the field; nothing is hard-coded.
+function updateCounter(field) {
+  const counter = field.parentElement.querySelector("[data-counter]");
+  if (counter) counter.textContent = `${field.value.length} / ${field.maxLength}`;
+}
+document.addEventListener("input", (e) => { if (e.target.matches("[data-count]")) updateCounter(e.target); });
+document.querySelectorAll("[data-count]").forEach(updateCounter);
+
+// A form being sent: its submit button says what it waits for (data-busy) and cannot be
+// pressed twice. It is disabled after the browser has built the form data, which leaves
+// out a disabled button's name and value. A form the script or the dialogs stopped
+// never gets here, and pageshow brings every button back, also after Back from the next
+// page (the browser may keep this page as it was).
+const busyButtons = new Map();
+
+document.addEventListener("submit", (e) => {
+  const button = e.submitter;
+  if (e.defaultPrevented || !button || !button.dataset.busy) return;
+  setTimeout(() => {
+    busyButtons.set(button, button.innerHTML);
+    button.textContent = button.dataset.busy;
+    button.disabled = true;
+  }, 0);
+});
+
+window.addEventListener("pageshow", () => {
+  busyButtons.forEach((html, button) => {
+    button.innerHTML = html;
+    button.disabled = false;
+  });
+  busyButtons.clear();
+});
+
+// An outcome notice ([data-autoclose]) goes away after 5 seconds. Pointing at it or
+// focusing inside it holds the time; leaving starts it again. A notice with the grant just
+// requested, or an error, never has the attribute.
+document.querySelectorAll("[data-autoclose]").forEach((notice) => {
+  let timer;
+  const start = () => { clearTimeout(timer); timer = setTimeout(() => notice.remove(), 5000); };
+  const stop = () => clearTimeout(timer);
+  notice.addEventListener("mouseenter", stop);
+  notice.addEventListener("focusin", stop);
+  notice.addEventListener("mouseleave", start);
+  notice.addEventListener("focusout", start);
+  start();
+});

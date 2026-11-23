@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestUIOpensTheBrowserOnALocalServerUntilInterrupted(t *testing.T) {
 	}
 }
 
-func TestUIPrintsTheAddressWhenNoBrowserOpens(t *testing.T) {
+func TestUIPrintsTheURLWhenTheBrowserDoesNotOpen(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
 	h.env.OpenBrowser = func(string) error { return errors.New("no browser") }
@@ -69,7 +70,7 @@ func TestUIPrintsTheAddressWhenNoBrowserOpens(t *testing.T) {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
 	out := h.out.String()
-	if !strings.Contains(out, "http://127.0.0.1:") || !strings.Contains(out, "Open this address") {
+	if !strings.Contains(out, "http://127.0.0.1:") || !strings.Contains(out, "Could not open a browser: open this URL yourself (it works once): http://127.0.0.1:") {
 		t.Errorf("output %q", out)
 	}
 }
@@ -136,5 +137,33 @@ func TestUISaysWhyItClosedAndHowToReopen(t *testing.T) {
 	want := "Closed after 30 minutes without use. Open it again with:\n  aws elevate ui --profile work\n"
 	if !strings.HasSuffix(h.out.String(), want) {
 		t.Errorf("stdout %q", h.out.String())
+	}
+}
+
+func TestOpenerFailureIsReported(t *testing.T) {
+	if err := runOpener(exec.Command("sh", "-c", "exit 3"), time.Second); err == nil {
+		t.Fatal("a failing opener was reported as opened")
+	}
+}
+
+func TestOpenerStillRunningCountsAsOpened(t *testing.T) {
+	start := time.Now()
+	if err := runOpener(exec.Command("sh", "-c", "sleep 5"), 100*time.Millisecond); err != nil {
+		t.Fatalf("running opener: %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("waited %s", time.Since(start))
+	}
+}
+
+func TestOpenerThatExitsCleanlyCountsAsOpened(t *testing.T) {
+	if err := runOpener(exec.Command("sh", "-c", "exit 0"), time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenerThatCannotStartIsReported(t *testing.T) {
+	if err := runOpener(exec.Command("/nonexistent/opener"), time.Second); err == nil {
+		t.Fatal("missing opener was reported as opened")
 	}
 }

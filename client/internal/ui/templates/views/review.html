@@ -11,7 +11,7 @@
 <h2 id="replace-title">Replace another admin's change?</h2>
 <p>Another admin changed these rules after you started. Publishing replaces their change with yours.</p>
 <ul class="ids">{{range .Replaces}}<li><code>{{.}}</code></li>{{end}}</ul>
-<div class="form-actions"><button type="button" class="btn link" data-close autofocus>Go back</button><button class="btn primary" name="confirmed" value="1" formaction="/rules/publish">Replace and publish</button></div>
+<div class="form-actions"><button type="button" class="btn link" data-close autofocus>Go back</button><button class="btn primary" data-busy="Publishing…" name="confirmed" value="1" formaction="/rules/publish">Replace and publish</button></div>
 </dialog>
 {{- else if .Deletes}}
 <button type="button" class="btn primary" data-dialog="delete">Delete and publish…</button>
@@ -19,7 +19,7 @@
 <h2 id="delete-title">{{.DeleteTitle}}</h2>
 <p>Publishing deletes these rules: they can no longer be requested. They can be restored from Config versions.</p>
 <ul class="ids">{{range .Deletes}}<li><code>{{.}}</code></li>{{end}}</ul>
-<div class="form-actions"><button type="button" class="btn link" data-close autofocus>Go back</button><button class="btn primary" formaction="/rules/publish">Delete and publish</button></div>
+<div class="form-actions"><button type="button" class="btn link" data-close autofocus>Go back</button><button class="btn primary" data-busy="Publishing…" formaction="/rules/publish">Delete and publish</button></div>
 </dialog>
-{{- else}}<button class="btn primary" formaction="/rules/publish">Publish</button>{{end}}
+{{- else}}<button class="btn primary" data-busy="Publishing…" formaction="/rules/publish">Publish</button>{{end}}
 </form>{{end}}

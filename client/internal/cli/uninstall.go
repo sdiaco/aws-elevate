@@ -25,14 +25,15 @@ type Uninstaller interface {
 	DeleteOrphan(ctx context.Context, o awsx.OrphanPS) error
 }
 
-const uninstallUsage = "uninstall [--check] [--elevate-profile <p>] [--region <r>] [--stack-name <name>]\n" +
-	"                  [--history keep|export|delete] [--export-dir <dir>] [--yes]"
+const uninstallUsage = "uninstall [infra | client] [--check] [--yes] …\n" +
+	"  infra:  [--elevate-profile <p>] [--region <r>] [--stack-name <name>]\n" +
+	"          [--history keep|export|delete] [--export-dir <dir>]"
 
 // keptOnUninstall is what the uninstall never deletes: it belongs to the organization.
 const keptOnUninstall = "kept: Identity Center groups, delegated administrator"
 
-// notTouched is what the uninstall leaves on this computer.
-const notTouched = "not touched: the elevate alias of the AWS CLI and this executable"
+// clientStep is what is left to do on this computer when the installation is gone.
+const clientStep = "To remove the client from this computer: aws-elevate uninstall client"
 
 const (
 	historyKeep   = "keep"
@@ -44,6 +45,40 @@ func openUninstaller(ctx context.Context, profile, region, stack string) (Uninst
 	return awsx.OpenUninstaller(ctx, profile, region, stack)
 }
 
+// runUninstall removes the installation of the organization (infra) or the client of this
+// computer (client); without either it asks which.
+func runUninstall(ctx context.Context, e *Env, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "infra":
+			return runUninstallInfra(ctx, e, args[1:])
+		case "client":
+			return runUninstallClient(ctx, e, args[1:])
+		}
+	}
+	if slices.ContainsFunc(args, isYesFlag) {
+		return fmt.Errorf("uninstall --yes needs infra or client: %w", errUsage)
+	}
+	items := []term.Item{
+		{Title: "infra", Detail: "Elevate from AWS, for the whole organization (admins only)"},
+		{Title: "client", Detail: "aws-elevate from this computer"},
+	}
+	i, err := e.UI().Select("Uninstall", items, false)
+	if err != nil {
+		return err
+	}
+	answered(e.UI(), false)
+	if i == 0 {
+		return runUninstallInfra(ctx, e, args)
+	}
+	return runUninstallClient(ctx, e, args)
+}
+
+// isYesFlag matches --yes and -yes, with or without a value.
+func isYesFlag(a string) bool {
+	return a == "--yes" || a == "-yes" || strings.HasPrefix(a, "--yes=") || strings.HasPrefix(a, "-yes=")
+}
+
 // uninstallRun is one uninstall: every step reads what is left and skips what is done.
 type uninstallRun struct {
 	e       *Env
@@ -51,12 +86,21 @@ type uninstallRun struct {
 	un      Uninstaller
 	stack   string
 	account string
+	region  string
 	yes     bool
 }
 
-// runUninstall lists what is left of an installation and, without --check, removes it.
-func runUninstall(ctx context.Context, e *Env, args []string) error {
-	f := newFlags(e, "uninstall")
+// needAdminRights turns an access denied answer into what to do about it.
+func needAdminRights(err error, account string) error {
+	if awsx.IsAccessDenied(err) {
+		return fmt.Errorf("you need the account administrator role of %s to uninstall Elevate", account)
+	}
+	return err
+}
+
+// runUninstallInfra lists what is left of an installation and, without --check, removes it.
+func runUninstallInfra(ctx context.Context, e *Env, args []string) error {
+	f := newFlags(e, "uninstall infra")
 	elevateProfile := f.String("elevate-profile", "", "profile set up with ElevateAdmin in the account of the stack (default: the only one)")
 	region := f.String("region", "", "region of the stack (default: sso_region of the profile, after confirmation)")
 	stackName := f.String("stack-name", "elevate", "stack name")
@@ -84,24 +128,36 @@ func runUninstall(ctx context.Context, e *Env, args []string) error {
 	if *region, err = stackRegion(u, src, profile, *region, "Uninstall", *check || *yes); err != nil {
 		return err
 	}
+	if !*check {
+		ok, err := u.Confirm("Uninstall Elevate from AWS, for the whole organization?", *yes)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("uninstall stopped: nothing was deleted")
+		}
+		answered(u, *yes)
+	}
 	un, err := e.Uninstaller(ctx, profile, *region, *stackName)
 	if err != nil {
 		return err
 	}
+	// Reading what is left is also the check of the rights: it stops here, before any
+	// deletion, remote or local.
 	where, err := un.Check(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, where.Account)
 	}
 	left, err := un.Leftovers(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, where.Account)
 	}
-	u.Header(fmt.Sprintf("aws-elevate uninstall · stack %s in %s · %s", *stackName, where.Account, *region))
+	u.Header(fmt.Sprintf("aws-elevate uninstall infra · stack %s in %s · %s", *stackName, where.Account, *region))
 	if *check {
 		printLeftovers(u, *stackName, where.Account, left)
 		return nil
 	}
-	r := &uninstallRun{e: e, u: u, un: un, stack: *stackName, account: where.Account, yes: *yes}
+	r := &uninstallRun{e: e, u: u, un: un, stack: *stackName, account: where.Account, region: *region, yes: *yes}
 	return r.run(ctx, left, *elevateProfile, *history, *exportDir)
 }
 
@@ -146,23 +202,23 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 			}
 		}
 		if err := r.deleteStack(ctx, left.Stack); err != nil {
-			return err
+			return needAdminRights(err, r.account)
 		}
 	}
 	if deleteHistory {
 		if err := r.deleteHistory(ctx, left); err != nil {
-			return err
+			return needAdminRights(err, r.account)
 		}
 	}
-	r.u.Warn("If you installed the SCP stack, it lives in the management account: run there",
-		"aws cloudformation delete-stack --stack-name elevate-guardrails")
+	fmt.Fprintf(r.u.Writer(), "  SCP stack, if you installed it (management account):\n    %s\n\n",
+		"aws cloudformation delete-stack --stack-name elevate-guardrails --profile <management admin>")
 	// A grant opened while the questions were answered leaves its permission set behind.
 	now, err := r.un.Leftovers(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	if err := r.deleteOrphans(ctx, now.Orphans); err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	if left.Empty() {
 		ok, err := r.u.Confirm(fmt.Sprintf("Nothing of stack %s found in %s: remove the local grant profiles and settings anyway?", r.stack, r.account), r.yes)
@@ -180,10 +236,10 @@ func (r *uninstallRun) run(ctx context.Context, left awsx.Leftovers, elevateProf
 	}
 	final, err := r.un.Leftovers(ctx)
 	if err != nil {
-		return err
+		return needAdminRights(err, r.account)
 	}
 	printLeftovers(r.u, r.stack, r.account, final)
-	fmt.Fprintf(r.u.Writer(), "  %s\n", r.u.Dim(notTouched))
+	fmt.Fprintf(r.u.Writer(), "  %s\n", clientStep)
 	return nil
 }
 
@@ -277,7 +333,7 @@ func (r *uninstallRun) chooseHistory(flag string, live bool) (string, error) {
 func (r *uninstallRun) confirmDeletion(stack, history bool) error {
 	var what []string
 	if stack {
-		what = append(what, "stack "+r.stack)
+		what = append(what, "stack "+r.u.Bold(r.stack))
 	}
 	if history {
 		what = append(what, "grant history and rules versions")
@@ -289,7 +345,7 @@ func (r *uninstallRun) confirmDeletion(stack, history bool) error {
 	if !r.u.Interactive() {
 		return term.ErrNeedsYes
 	}
-	name, err := r.u.Ask("Type the stack name to delete it", "")
+	name, err := r.u.Ask("Type "+r.u.Bold(r.stack)+" to delete it", "")
 	if err != nil {
 		return err
 	}
@@ -307,6 +363,7 @@ func (r *uninstallRun) deleteStack(ctx context.Context, info *awsx.StackInfo) er
 			return err
 		}
 	}
+	fmt.Fprintf(r.u.Writer(), "  Follow it in the console (account %s): %s\n", r.account, stackConsoleURL(r.region, info.ID))
 	p := r.u.Progress("Deleting stack")
 	for {
 		state, err := r.un.Stack(ctx, info.ID)
@@ -455,7 +512,11 @@ func assignedTo(o awsx.OrphanPS) string {
 	}
 	where := make([]string, len(o.Assignments))
 	for i, a := range o.Assignments {
-		where[i] = fmt.Sprintf("%s %s in %s", strings.ToLower(a.PrincipalType), a.PrincipalID, a.Account)
+		who := a.PrincipalName
+		if who == "" {
+			who = a.PrincipalID
+		}
+		where[i] = fmt.Sprintf("%s %s in %s", strings.ToLower(a.PrincipalType), who, a.Account)
 	}
 	return "assigned to " + strings.Join(where, ", ")
 }

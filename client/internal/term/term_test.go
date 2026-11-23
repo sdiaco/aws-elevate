@@ -148,3 +148,37 @@ func TestPlainHasNoColorsAndReadsLines(t *testing.T) {
 		t.Fatalf("got %d, %v, %q", got, err, out.String())
 	}
 }
+
+func TestConfirmYesAcceptsAnEmptyAnswer(t *testing.T) {
+	u, out := fakeUI("\ny\nyes\nYES\n", true)
+	for i := 0; i < 4; i++ {
+		got, err := u.ConfirmYes("Install?", false)
+		if err != nil || !got {
+			t.Fatalf("answer %d: got %v, %v", i, got, err)
+		}
+	}
+	if !strings.Contains(out.String(), "Install? [Y/n] ") {
+		t.Fatalf("prompt: %q", out.String())
+	}
+}
+
+func TestConfirmYesRefusesNo(t *testing.T) {
+	u, _ := fakeUI("n\nNo\n", true)
+	for i := 0; i < 2; i++ {
+		got, err := u.ConfirmYes("Install?", false)
+		if err != nil || got {
+			t.Fatalf("answer %d: got %v, %v", i, got, err)
+		}
+	}
+}
+
+func TestConfirmYesNeedsYesWithoutATerminal(t *testing.T) {
+	u, _ := fakeUI("\n", false)
+	if _, err := u.ConfirmYes("Install?", false); !errors.Is(err, ErrNeedsYes) {
+		t.Fatalf("err = %v", err)
+	}
+	ok, err := u.ConfirmYes("Install?", true)
+	if !ok || err != nil {
+		t.Fatalf("yes: %v, %v", ok, err)
+	}
+}

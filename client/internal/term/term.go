@@ -177,8 +177,32 @@ func (u *UI) Confirm(question string, yes bool) (bool, error) {
 	return answer == "y" || answer == "yes", nil
 }
 
+// ConfirmYes is Confirm with yes as the default: an empty answer is yes, only n or no is no.
+func (u *UI) ConfirmYes(question string, yes bool) (bool, error) {
+	if yes {
+		return true, nil
+	}
+	if !u.interactive {
+		return false, ErrNeedsYes
+	}
+	fmt.Fprintf(u.out, "  %s %s [Y/n] ", u.paint(cyan, "?"), question)
+	answer, err := u.readLine()
+	if err != nil {
+		return false, err
+	}
+	answer = strings.ToLower(answer)
+	return answer != "n" && answer != "no", nil
+}
+
 // Plain is a UI without colors that reads answers line by line: interactive says whether
 // it behaves as a terminal with someone typing. For tests of the commands.
 func Plain(in io.Reader, out io.Writer, interactive bool) *UI {
 	return &UI{out: out, in: bufio.NewReader(in), fd: -1, interactive: interactive, now: time.Now}
+}
+
+// Colored is Plain with colors, for tests of what is highlighted.
+func Colored(in io.Reader, out io.Writer, interactive bool) *UI {
+	u := Plain(in, out, interactive)
+	u.color = true
+	return u
 }

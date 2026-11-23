@@ -514,3 +514,7 @@ tr.covered td { color: var(--text-2); }
   .wizard-steps li.current { border-bottom-color: var(--accent); }
   .kv.cols3 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Hint under the reason: small and grey, the counter on the right of the same line. */
+.field-hint { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.field-hint [data-counter] { margin-left: auto; font-variant-numeric: tabular-nums; }
