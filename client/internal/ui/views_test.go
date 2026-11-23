@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -414,4 +416,100 @@ func TestEveryReasonFieldIsBuiltByTheServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	lacks(t, string(js), `"textarea"`, "createElement(\"textarea", "<textarea")
+}
+
+// busyOf returns the data-busy of the submit button with this label, or "" when the page
+// has none.
+func busyOf(out, label string) string {
+	m := regexp.MustCompile(`<button[^>]*data-busy="([^"]*)"[^>]*>` + regexp.QuoteMeta(label) + `</button>`).FindStringSubmatch(out)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+func TestSubmitButtonsSayWhatTheyWaitFor(t *testing.T) {
+	req := requestsHarness("requester", "approver")
+	rules, _ := rulesHarness()
+	review := rules.do(t, "POST", "/rules/edit", postedRule("db-prod")).Body.String()
+	replacing := rules.do(t, "POST", "/rules/publish", url.Values{"change": {hidden(review, "change")}, "latest": {hidden(review, "latest")}, "replaces": {"ssm-dev"}}).Body.String()
+	deleting := rules.do(t, "POST", "/rules/delete", url.Values{"id": {"ssm-prod"}}).Body.String()
+	first := freshInstall()
+	cases := []struct{ name, page, label, want string }{
+		{"rule form", rules.get(t, "/rules/edit"), "Review changes", "Checking…"},
+		{"import", rules.get(t, "/rules/import"), "Review changes", "Checking…"},
+		{"publish", review, "Publish", "Publishing…"},
+		{"replace and publish", replacing, "Replace and publish", "Publishing…"},
+		{"delete and publish", deleting, "Delete and publish", "Publishing…"},
+		{"first rule, last step", first.get(t, "/welcome"), "Next", "Checking…"},
+		{"first rule, publish", first.do(t, "POST", "/rules/edit", firstRule).Body.String(), "Publish", "Publishing…"},
+		{"send request", twoRules(newHarness("requester")).get(t, "/requests/new?rule=ssm-prod"), "Submit request", "Sending…"},
+		{"approve", req.get(t, "/requests?f=approve&open=ask2345678"), "Approve", "Approving…"},
+		{"reject", req.get(t, "/requests/reject?id=ask2345678"), "Reject", "Rejecting…"},
+		{"revoke", req.get(t, "/requests/revoke?id=mine234567"), "Revoke", "Revoking…"},
+		{"cancel", req.get(t, "/requests/cancel?id=own2345678"), "Cancel request", "Cancelling…"},
+	}
+	for _, c := range cases {
+		if got := busyOf(c.page, c.label); got != c.want {
+			t.Errorf("%s: button %q has data-busy %q, want %q", c.name, c.label, got, c.want)
+		}
+	}
+}
+
+func TestActiveGrantNotYetReadySaysPreparing(t *testing.T) {
+	h := newHarness("requester")
+	f := h.app.flashOf(grant("new4567890", api.StateActive, me))
+	if f.Text != "Preparing your access…" {
+		t.Errorf("text %q", f.Text)
+	}
+	var b bytes.Buffer
+	if err := parts.ExecuteTemplate(&b, "flash", f); err != nil {
+		t.Fatal(err)
+	}
+	contains(t, b.String(), "Preparing your access…", `data-poll=`)
+	lacks(t, b.String(), "Active", "Open in console")
+}
+
+func execPart(t *testing.T, name string, data any) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := parts.ExecuteTemplate(&b, name, data); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func TestOnlyOutcomeNoticesCloseByThemselves(t *testing.T) {
+	for _, kind := range []string{"success", "info"} {
+		contains(t, execPart(t, "notice", notice{Kind: kind, Text: "done"}), ` data-autoclose`)
+	}
+	for _, kind := range []string{"error", "warning"} {
+		lacks(t, execPart(t, "notice", notice{Kind: kind, Text: "done"}), "data-autoclose")
+	}
+	// A revocation still being followed turns into its outcome later: it stays.
+	lacks(t, execPart(t, "notice", notice{Kind: "success", Text: "started", Follow: []string{"mine234567"}}), "data-autoclose")
+	// The grant just requested keeps its console button for as long as the page is open.
+	for _, kind := range []string{"info", "success", "error"} {
+		g := grant("new4567890", api.StateActive, me)
+		lacks(t, execPart(t, "flash", flash{Grant: g, Kind: kind, Ready: true, Console: "https://example.awsapps.com/start"}), "data-autoclose")
+	}
+}
+
+func TestModalAccountKeepsNameAndId(t *testing.T) {
+	h := newHarness("requester")
+	named := grant("new2345678", "active", me, "revoke")
+	named.AccountName = "prod"
+	h.svc.lists["mine"] = []api.Grant{named}
+	// The modal copies this cell's nodes: name and id are separate elements.
+	contains(t, h.get(t, "/requests"), `<span>prod</span><span class="cell-sub">222222222222</span>`)
+
+	js, err := files.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(js), "function grantTable")
+	end := strings.Index(string(js)[start:], "\n}\n")
+	body := string(js)[start : start+end]
+	contains(t, body, "cloneNode(true)")
+	lacks(t, body, `cellOf("Account")?.textContent`)
 }

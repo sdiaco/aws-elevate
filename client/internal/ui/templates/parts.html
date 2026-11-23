@@ -45,7 +45,7 @@
 </div>{{end}}
 
 {{/* The outcome of an action, once, at the top of the page it returned to. */}}
-{{define "notice"}}<div class="flash {{.Kind}}" role="status"{{with .Follow}} data-follow="{{join . " "}}"{{end}}{{if .Follow}} data-follow-failed="{{.Refused}}"{{end}}>
+{{define "notice"}}<div class="flash {{.Kind}}" role="status"{{if and (or (eq .Kind "success") (eq .Kind "info")) (not .Follow)}} data-autoclose{{end}}{{with .Follow}} data-follow="{{join . " "}}"{{end}}{{if .Follow}} data-follow-failed="{{.Refused}}"{{end}}>
 <div class="flash-head">{{template "flash-icon" .Kind}}<span class="flash-text">{{.Text}}</span>{{template "dismiss-button"}}</div>
 {{with .Items}}<ul class="flash-body flash-list">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
 </div>{{end}}
@@ -65,7 +65,7 @@
 {{if can $g "revoke"}}<a class="btn" href="/requests/revoke?id={{$g.ID}}" data-confirm>Revoke…</a>{{end}}
 {{if can $g "reject"}}<a class="btn" href="/requests/reject?id={{$g.ID}}" data-confirm>Reject…</a>{{end}}
 {{if can $g "redrive"}}<button class="btn primary" formaction="/requests/retry">Retry</button>{{end}}
-{{if can $g "approve"}}<button class="btn primary" formaction="/requests/approve">Approve</button>{{end}}
+{{if can $g "approve"}}<button class="btn primary" data-busy="Approving…" formaction="/requests/approve">Approve</button>{{end}}
 </form>
 {{template "panel-close" .Close}}</div>
 <div class="tabs" data-tabs>
@@ -169,7 +169,7 @@
 <div><dt>Duration</dt><dd data-mirror="duration" data-of="request" data-empty="{{short .Duration.DefaultSeconds}} (default)">{{with $.Form.Duration}}{{.}}{{else}}{{short $.Rule.Duration.DefaultSeconds}} (default){{end}}</dd></div>
 <div><dt>Reason</dt><dd data-mirror="reason" data-of="request" class="clamp">{{or $.Form.Reason "-"}}</dd></div>
 </dl>
-<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" form="request">Submit request</button></div>
+<div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" data-busy="Sending…" form="request">Submit request</button></div>
 </aside>{{else}}<aside class="box launch-summary"><h2>Summary</h2>
 <p class="muted">Choose a rule to see its details.</p>
 <div class="form-actions"><a class="btn link" href="/requests">Cancel</a><button class="btn primary" disabled>Submit request</button></div>

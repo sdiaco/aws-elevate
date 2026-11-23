@@ -354,7 +354,7 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 	contains(t, out,
 		`id="rule-ssm-prod" checked`,
 		`<form method="post" action="/requests/new" class="box launch-details" id="request">`,
-		`<button class="btn primary" form="request">Submit request</button>`,
+		`<button class="btn primary" data-busy="Sending…" form="request">Submit request</button>`,
 		`data-paginate="8"`, `data-filter`, `data-pager`,
 		`<input type="hidden" name="rule" value="ssm-prod">`,
 		`class="cards" data-limit="10"`, `data-more`,
@@ -443,7 +443,7 @@ func TestTheFlashWaitsForTheRoleBeforeTheConsole(t *testing.T) {
 	h.svc.grants["new4567890"] = grant("new4567890", api.StateActive, me)
 	// The page itself does not wait: the poll does.
 	out := h.get(t, "/requests?sent=new4567890")
-	contains(t, out, `data-poll=`, "Waiting for AWS to accept the role")
+	contains(t, out, `data-poll=`, "Preparing your access…")
 	if len(h.ready) != 0 {
 		t.Errorf("waited on the page: %v", h.ready)
 	}
