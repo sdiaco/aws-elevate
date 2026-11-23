@@ -3,6 +3,32 @@ Description: >-
   aws-elevate: temporary elevated access for AWS IAM Identity Center. Deploy in the
   Identity Center delegated administrator account, in the Identity Center home region.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: "Who uses Elevate (required)"}
+        Parameters: [AdminGroupId, RequesterGroupId, AuditorGroupId]
+      - Label: {default: "Alerts and interface"}
+        Parameters: [AlertEmail, OrganizationName]
+      - Label: {default: "Limits (optional, defaults are fine)"}
+        Parameters: [MaxOpenGrantsPerUser, ConfigVersionsListed]
+      - Label: {default: "Integrations (optional)"}
+        Parameters: [EventConsumerAccounts]
+      - Label: {default: "For testing only: leave as they are"}
+        Parameters: [CodeBucket, CodeKey]
+    ParameterLabels:
+      AdminGroupId: {default: "Admin group id"}
+      RequesterGroupId: {default: "Requester group id"}
+      AuditorGroupId: {default: "Auditor group id"}
+      AlertEmail: {default: "Alert e-mail"}
+      OrganizationName: {default: "Organization name"}
+      MaxOpenGrantsPerUser: {default: "Open grants per user"}
+      ConfigVersionsListed: {default: "Rules versions listed"}
+      EventConsumerAccounts: {default: "Event consumer accounts"}
+      CodeBucket: {default: "Lambda package bucket"}
+      CodeKey: {default: "Lambda package key"}
+
+
 Parameters:
   AlertEmail:
     Type: String

@@ -440,3 +440,57 @@ func TestInstallPassesTheOrganizationName(t *testing.T) {
 		t.Errorf("parameters %v, out %s", inst.created.Parameters, h.out)
 	}
 }
+
+func TestInstallPassesTheAdvancedFlags(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--max-open-grants", "3",
+		"--event-consumer-accounts", "222222222222", "--config-versions-listed", "20", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	want := map[string]string{"MaxOpenGrantsPerUser": "3", "EventConsumerAccounts": "222222222222", "ConfigVersionsListed": "20"}
+	for k, v := range want {
+		if inst.created.Parameters[k] != v {
+			t.Errorf("%s = %q, want %q", k, inst.created.Parameters[k], v)
+		}
+	}
+}
+
+func TestInstallLeavesAdvancedParametersOutByDefault(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	for _, k := range []string{"MaxOpenGrantsPerUser", "EventConsumerAccounts", "ConfigVersionsListed"} {
+		if _, ok := inst.created.Parameters[k]; ok {
+			t.Errorf("%s is set: %v", k, inst.created.Parameters)
+		}
+	}
+}
+
+func TestInstallMentionsTheAdvancedSettings(t *testing.T) {
+	h := newHarness(t)
+	inst := &fakeInstaller{groups: installGroups, states: installed}
+	h.withInstaller(inst, "")
+	code := h.run("install", "--profile", "work", "--region", "eu-west-1", "--admin-group", "admins",
+		"--requester-group", "devs", "--email", "ops@example.com", "--yes")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %s", code, h.errOut)
+	}
+	const line = "Advanced settings: template defaults; change them with the install flags or in CloudFormation (Update, Use existing template)"
+	out := h.out.String()
+	i := strings.Index(out, line)
+	if i < 0 {
+		t.Fatalf("no advanced settings line:\n%s", out)
+	}
+	if n := strings.Index(out, "Next:"); n >= 0 && n < i {
+		t.Errorf("line after Next:\n%s", out)
+	}
+}
