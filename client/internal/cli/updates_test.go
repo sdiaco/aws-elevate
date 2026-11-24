@@ -8,6 +8,7 @@ import (
 
 	"github.com/sdiaco/aws-elevate/client/internal/awsx"
 	"github.com/sdiaco/aws-elevate/client/internal/release"
+	"github.com/sdiaco/aws-elevate/client/internal/version"
 )
 
 // The harness runs client 0.0.1 against infrastructure 0.0.1.
@@ -17,7 +18,12 @@ var releases = []release.Release{
 	{Version: "0.0.1", Type: "feature", Name: "First", MinInfra: "0.0.1", MinClient: "0.0.1"},
 }
 
-func (h *harness) withReleases(rels []release.Release) *int {
+// withReleases also pins the running client to 0.0.1, so the fake releases stay newer
+// whatever the version of the code under test.
+func (h *harness) withReleases(t *testing.T, rels []release.Release) *int {
+	old := version.Client
+	version.Client = "0.0.1"
+	t.Cleanup(func() { version.Client = old })
 	calls := 0
 	h.env.Releases = func(context.Context) ([]release.Release, error) {
 		calls++
@@ -28,7 +34,7 @@ func (h *harness) withReleases(rels []release.Release) *int {
 
 func TestUpdatesListsClientAndInfrastructureUpdates(t *testing.T) {
 	h := adminHarness(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	if code := h.run("admin", "updates", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
@@ -50,7 +56,7 @@ func TestUpdatesListsClientAndInfrastructureUpdates(t *testing.T) {
 
 func TestUpdatesUpToDate(t *testing.T) {
 	h := adminHarness(t)
-	h.withReleases(releases[2:])
+	h.withReleases(t, releases[2:])
 	if code := h.run("admin", "updates", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, h.errOut)
 	}
@@ -61,7 +67,7 @@ func TestUpdatesUpToDate(t *testing.T) {
 
 func TestUpdatesCheckCanBeTurnedOff(t *testing.T) {
 	h := adminHarness(t)
-	calls := h.withReleases(releases)
+	calls := h.withReleases(t, releases)
 	settings, _ := awsx.LoadSettings(h.env.SettingsPath)
 	settings.CheckUpdates = ptr(false)
 	if err := awsx.SaveSettings(h.env.SettingsPath, settings); err != nil {
@@ -91,7 +97,7 @@ func TestUpdatesFailWhenTheReleasesCannotBeRead(t *testing.T) {
 
 func TestPreviewShowsTheChangesAndTheCommandToApply(t *testing.T) {
 	h := adminHarness(t)
-	calls := h.withReleases(releases)
+	calls := h.withReleases(t, releases)
 	admin := h.backend.admin
 	admin.preview = awsx.Preview{
 		Parameters: []string{"AdminGroupId", "AlertEmail", "RequesterGroupId"},

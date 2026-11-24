@@ -13,6 +13,10 @@ type Item struct{ Title, Detail string }
 
 const noneTitle = "(none)"
 
+// visibleRows is how many choices fit on screen at once: a long list (hundreds of
+// accounts) would otherwise scroll the terminal and hide the prompt. Typing filters it.
+const visibleRows = 8
+
 // Select asks for one of items and returns its index; -1 is "none", only when optional.
 // On a terminal the arrows move and typing filters; otherwise, or when the terminal cannot
 // switch to single keys, the answer is a number or a name of a numbered list.
@@ -78,13 +82,14 @@ func (u *UI) selectKeys(label string, items []Item, optional bool, restore func(
 	if optional {
 		all = append(all, -1)
 	}
-	filter, cursor, drawn := "", 0, 0
+	filter, cursor, top, drawn := "", 0, 0, 0
 	for {
 		shown := matching(items, all, filter)
 		if cursor >= len(shown) {
 			cursor = max(len(shown)-1, 0)
 		}
-		drawn = u.drawChoices(label, items, shown, cursor, filter, drawn)
+		top = scroll(top, cursor, len(shown))
+		drawn = u.drawChoices(label, items, shown, cursor, top, filter, drawn)
 		b, rerr := u.in.ReadByte()
 		if rerr != nil {
 			return 0, fmt.Errorf("read the answer: %w", rerr)
@@ -162,15 +167,33 @@ func matching(items []Item, all []int, filter string) []int {
 	return out
 }
 
+// scroll returns the first visible row: the window moves only when the cursor leaves it.
+func scroll(top, cursor, n int) int {
+	switch {
+	case cursor < top:
+		top = cursor
+	case cursor >= top+visibleRows:
+		top = cursor - visibleRows + 1
+	}
+	return max(min(top, n-visibleRows), 0)
+}
+
 // drawChoices replaces the previous drawing and returns how many lines it wrote.
-func (u *UI) drawChoices(label string, items []Item, shown []int, cursor int, filter string, drawn int) int {
+func (u *UI) drawChoices(label string, items []Item, shown []int, cursor, top int, filter string, drawn int) int {
 	u.clear(drawn)
 	hint := filter
 	if hint == "" {
 		hint = u.Dim("↑↓ to move, type to filter")
 	}
 	fmt.Fprintf(u.out, "%s%s\r\n", u.prompt(label), hint)
-	for i, idx := range shown {
+	lines := 1
+	end := min(top+visibleRows, len(shown))
+	if top > 0 {
+		fmt.Fprintf(u.out, "    %s\r\n", u.Dim(fmt.Sprintf("↑ %d more", top)))
+		lines++
+	}
+	for i := top; i < end; i++ {
+		idx := shown[i]
 		mark, title, detail := "  ", noneTitle, ""
 		if idx >= 0 {
 			title, detail = items[idx].Title, items[idx].Detail
@@ -183,12 +206,17 @@ func (u *UI) drawChoices(label string, items []Item, shown []int, cursor int, fi
 			line += "   " + u.Dim(detail)
 		}
 		fmt.Fprintf(u.out, "%s\r\n", line)
+		lines++
+	}
+	if below := len(shown) - end; below > 0 {
+		fmt.Fprintf(u.out, "    %s\r\n", u.Dim(fmt.Sprintf("↓ %d more", below)))
+		lines++
 	}
 	if len(shown) == 0 {
 		fmt.Fprintf(u.out, "    %s\r\n", u.Dim("no match"))
-		return 2
+		lines++
 	}
-	return len(shown) + 1
+	return lines
 }
 
 // clear erases the last n lines written, leaving the cursor where they began.

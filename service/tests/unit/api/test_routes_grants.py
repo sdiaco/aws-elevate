@@ -632,6 +632,20 @@ def test_list_never_returns_a_grant_the_caller_cannot_view(make, fx):
     assert routes.list(fx.REQUESTER, {"scope": "mine"})["items"] == []
 
 
+def test_list_works_before_any_rules_version_is_published(make, fx):
+    # Uninstalling right after install reads the open grants: with no rules published
+    # yet there are none, and the list must say so instead of answering 503.
+    routes, _, _ = make(config=fx.FakeConfig(unavailable=True))
+    assert routes.list(fx.ADMIN, {"scope": "all", "open": "true"})["items"] == []
+
+
+def test_grants_list_as_rule_removed_when_no_rules_version_exists(make, fx):
+    old = g(fx, "aaaaa23456", "2026-11-14T00:00:00Z")
+    routes, _, _ = make(old, config=fx.FakeConfig(unavailable=True))
+    items = routes.list(fx.ADMIN, {"scope": "all"})["items"]
+    assert [(i["id"], i["ruleRemoved"]) for i in items] == [("aaaaa23456", True)]
+
+
 # ---------- reason length (approved by the maintainer: 500 characters) ----------
 
 

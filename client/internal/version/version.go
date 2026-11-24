@@ -9,7 +9,7 @@ import (
 )
 
 // Client is this client's version, set at build time with -ldflags.
-var Client = "0.0.4"
+var Client = "0.1.0"
 
 // MinInfra is the oldest infrastructure this client works with.
 var MinInfra = "0.0.1"
