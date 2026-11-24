@@ -50,7 +50,7 @@ func content(t *testing.T, path string) string {
 func TestUpdateInstallsTheNewestClientThatWorksWithTheInfrastructure(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases) // 0.2.0 needs infrastructure 0.2.0; the harness has 0.0.1
+	h.withReleases(t, releases) // 0.2.0 needs infrastructure 0.2.0; the harness has 0.0.1
 	exe, downloaded := h.withExecutable(t, nil)
 
 	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
@@ -71,7 +71,7 @@ func TestUpdateInstallsTheNewestClientThatWorksWithTheInfrastructure(t *testing.
 func TestUpdateWorksWhenTheServiceRefusesThisClient(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	h.svc.err = &api.Error{Status: 426, Code: api.CodeClientTooOld, Message: "client too old", InfraVersion: "0.2.0"}
 	exe, _ := h.withExecutable(t, nil)
 
@@ -86,7 +86,7 @@ func TestUpdateWorksWhenTheServiceRefusesThisClient(t *testing.T) {
 func TestUpdateWithNothingNewer(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases[2:])
+	h.withReleases(t, releases[2:])
 	exe, downloaded := h.withExecutable(t, nil)
 
 	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
@@ -100,7 +100,7 @@ func TestUpdateWithNothingNewer(t *testing.T) {
 func TestUpdateWithAWrongChecksumReplacesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	exe, _ := h.withExecutable(t, fmt.Errorf("%w: aws-elevate_linux_amd64 of release 0.1.0 is not the published file", release.ErrChecksum))
 
 	if code := h.run("update", "--yes", "--profile", "work"); code != 1 {
@@ -117,7 +117,7 @@ func TestUpdateInAReadOnlyFolderSavesTheFileAndSaysWhatToRun(t *testing.T) {
 	}
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	exe, _ := h.withExecutable(t, nil)
 	dir := filepath.Dir(exe)
 	if err := os.Chmod(dir, 0o555); err != nil {
@@ -140,7 +140,7 @@ func TestUpdateInAReadOnlyFolderSavesTheFileAndSaysWhatToRun(t *testing.T) {
 func TestUpdateCheckTurnedOff(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	calls := h.withReleases(releases)
+	calls := h.withReleases(t, releases)
 	_, downloaded := h.withExecutable(t, nil)
 	settings, _ := awsx.LoadSettings(h.env.SettingsPath)
 	settings.CheckUpdates = ptr(false)
@@ -158,7 +158,7 @@ func TestUpdateCheckTurnedOff(t *testing.T) {
 func TestUpdateAsksBeforeReplacing(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	exe, downloaded := h.withExecutable(t, nil)
 	h.typing("n\n")
 	if code := h.run("update", "--profile", "work"); code != 1 {
@@ -169,7 +169,7 @@ func TestUpdateAsksBeforeReplacing(t *testing.T) {
 	}
 	h = newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	exe, _ = h.withExecutable(t, nil)
 	if code := h.run("update", "--profile", "work"); code != 1 || !strings.Contains(h.errOut.String(), "--yes") || content(t, exe) != "old" {
 		t.Errorf("without a terminal: exit %d, %q", code, h.errOut)
@@ -179,7 +179,7 @@ func TestUpdateAsksBeforeReplacing(t *testing.T) {
 func TestUpdateWithYes(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	exe, _ := h.withExecutable(t, nil)
 	if code := h.run("update", "--yes", "--profile", "work"); code != 0 || content(t, exe) != "client 0.1.0" {
 		t.Errorf("exit %d: %s", code, h.errOut)
@@ -189,7 +189,7 @@ func TestUpdateWithYes(t *testing.T) {
 func TestUpdatePrintsVersionsAndChecksum(t *testing.T) {
 	h := newHarness(t)
 	h.setUp(t)
-	h.withReleases(releases)
+	h.withReleases(t, releases)
 	h.withExecutable(t, nil)
 	if code := h.run("update", "--yes", "--profile", "work"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.errOut)

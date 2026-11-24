@@ -53,7 +53,7 @@ Parameters:
       region (ReleaseBuckets).
   CodeKey:
     Type: String
-    Default: v0.0.4/lambda.zip
+    Default: v0.1.0/lambda.zip
     Description: Object key of the Lambda package in CodeBucket.
 
   AdminGroupId:
