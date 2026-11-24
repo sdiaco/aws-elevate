@@ -28,6 +28,7 @@ from ..core.models import (
 )
 from ..core.rules import InvalidRequest, coherence_errors, requestable, validate_request
 from ..core.times import iso, parse_iso
+from .config_cache import ConfigUnavailable
 from .errors import ApiError, forbidden
 
 PAGE_SIZE = 50
@@ -151,7 +152,12 @@ class GrantRoutes:
         }
 
     def _rule_ids(self) -> set[str]:
-        return {r.id for r in self._config.current()[1]}
+        try:
+            return {r.id for r in self._config.current()[1]}
+        except ConfigUnavailable:
+            # Before the first rules version every grant's rule is gone: reading grants
+            # must still work, for example to uninstall right after install.
+            return set()
 
     def _reply(self, identity: Identity, grant_id: str) -> dict:
         return {"grant": self._view(identity, self._table.get(grant_id), self._rule_ids())}
