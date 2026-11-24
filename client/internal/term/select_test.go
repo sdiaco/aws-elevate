@@ -3,6 +3,7 @@ package term
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -148,3 +149,81 @@ func TestSelectWithoutItems(t *testing.T) {
 type errReader struct{ err error }
 
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+// many returns n items named item-01, item-02, …
+func many(n int) []Item {
+	items := make([]Item, n)
+	for i := range items {
+		items[i] = Item{Title: fmt.Sprintf("item-%02d", i+1)}
+	}
+	return items
+}
+
+// lastFrame is the last drawing of the choices, before Ctrl-C erased it.
+func lastFrame(out string) string {
+	out = out[:strings.LastIndex(out, "\x1b[")] // the erase on Ctrl-C
+	if i := strings.LastIndex(out, "\x1b[J"); i >= 0 {
+		return out[i+len("\x1b[J"):]
+	}
+	return out
+}
+
+func TestSelectShowsAtMostEightRowsAndCountsTheHiddenOnes(t *testing.T) {
+	u, _ := rawUI("\x03")
+	u.color = false
+	out := u.out.(interface{ String() string })
+	_, _ = u.Select("Account", many(20), false)
+	frame := out.String()
+	for _, want := range []string{"item-01", "item-08", "↓ 12 more"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("missing %q in %q", want, frame)
+		}
+	}
+	for _, absent := range []string{"item-09", "↑ "} {
+		if strings.Contains(frame, absent) {
+			t.Errorf("unexpected %q in %q", absent, frame)
+		}
+	}
+}
+
+func TestSelectScrollsWithTheCursor(t *testing.T) {
+	down := strings.Repeat("\x1b[B", 10) // cursor on item-11
+	u, _ := rawUI(down + "\x03")
+	u.color = false
+	out := u.out.(interface{ String() string })
+	_, _ = u.Select("Account", many(20), false)
+	frame := lastFrame(out.String())
+	for _, want := range []string{"↑ 3 more", "item-04", "item-11", "↓ 9 more"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("missing %q in %q", want, frame)
+		}
+	}
+	if strings.Contains(frame, "item-03") || strings.Contains(frame, "item-12") {
+		t.Errorf("rows outside the window in %q", frame)
+	}
+}
+
+func TestSelectPicksARowBeyondTheFirstWindow(t *testing.T) {
+	u, _ := rawUI(strings.Repeat("\x1b[B", 14) + "\r")
+	got, err := u.Select("Account", many(20), false)
+	if err != nil || got != 14 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+}
+
+func TestSelectFilterNarrowsBeforeTheWindow(t *testing.T) {
+	u, _ := rawUI("item-1\x03")
+	u.color = false
+	out := u.out.(interface{ String() string })
+	_, _ = u.Select("Account", many(20), false)
+	frame := lastFrame(out.String())
+	// item-10 … item-19 match: ten rows, eight shown, two below.
+	for _, want := range []string{"item-10", "item-17", "↓ 2 more"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("missing %q in %q", want, frame)
+		}
+	}
+	if strings.Contains(frame, "item-01") {
+		t.Errorf("filtered-out row in %q", frame)
+	}
+}
