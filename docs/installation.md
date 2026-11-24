@@ -59,7 +59,7 @@ Flags take group **names**; the stack takes their ids and `install` looks them u
 |---|---|---|---|
 | `--max-open-grants <n>` | `MaxOpenGrantsPerUser` | 5 | Grants not yet closed that one user may have |
 | `--config-versions-listed <n>` | `ConfigVersionsListed` | 50 | Newest rules versions shown in the history |
-| `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Accounts allowed to receive the Elevate events |
+| `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Accounts allowed to receive the Elevate events: see [Events](events.md) |
 
 ### Audit and data protection
 
