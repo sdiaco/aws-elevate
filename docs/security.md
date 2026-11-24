@@ -144,7 +144,7 @@ If a deployer ARN is wrong, the management account is never affected by service 
 
 ## A copy you cannot change
 
-Elevate publishes an event for every step of a grant on the `elevate-events` bus. Give another account, for example an archive account, in `--event-consumer-accounts`, and create a rule there that stores the events. That copy is outside the Elevate account and cannot be changed from it.
+Elevate publishes an event for every step of a grant on the `elevate-events` bus. Give another account, for example an archive account, in `--event-consumer-accounts`, and create a rule there that stores the events. That copy is outside the Elevate account and cannot be changed from it. The event format and the steps are in [Events](events.md).
 
 ---
 
