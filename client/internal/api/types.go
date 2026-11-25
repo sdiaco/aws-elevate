@@ -193,6 +193,7 @@ type Permissions struct {
 
 type CheckError struct {
 	RuleID  *string `json:"ruleId"`
+	Field   *string `json:"field"`
 	Code    string  `json:"code"`
 	Message string  `json:"message"`
 }

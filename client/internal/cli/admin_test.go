@@ -168,6 +168,7 @@ func TestSaveRefusedByTheCheckPublishesNothing(t *testing.T) {
 	h.svc.check = &api.CheckResult{Valid: false, Errors: []api.CheckError{
 		{RuleID: ptr("db-admin-prod"), Code: "ps_not_found", Message: "permission set db-admin does not exist"},
 		{Code: "invalid_document", Message: "schemaVersion must be 1"},
+		{RuleID: ptr("db-admin-prod"), Field: ptr("accounts"), Code: "invalid", Message: "choose at least one account"},
 	}}
 	if code := h.run("admin", "rules", "save", rulesFile(t, rulesDoc), "--profile", "work"); code != 1 {
 		t.Fatalf("exit %d", code)
@@ -175,7 +176,7 @@ func TestSaveRefusedByTheCheckPublishesNothing(t *testing.T) {
 	if len(h.backend.admin.published) != 0 {
 		t.Fatal("published a refused document")
 	}
-	for _, want := range []string{"was not published", "rule db-admin-prod: permission set db-admin does not exist (ps_not_found)", "document: schemaVersion must be 1"} {
+	for _, want := range []string{"was not published", "rule db-admin-prod: permission set db-admin does not exist (ps_not_found)", "document: schemaVersion must be 1", "rule db-admin-prod, accounts: choose at least one account (invalid)"} {
 		if !strings.Contains(h.errOut.String(), want) {
 			t.Fatalf("stderr misses %q: %s", want, h.errOut)
 		}

@@ -56,6 +56,10 @@ func (f *fakeService) CheckRules(_ context.Context, doc []byte) (*api.CheckResul
 		id := "broken"
 		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "limits", Message: "ssm-write: inline policy too long"}}}, nil
 	}
+	if strings.Contains(string(doc), `"accounts":[]`) {
+		id, field := "no-accounts", "accounts"
+		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Field: &field, Code: "invalid", Message: "choose at least one account"}}}, nil
+	}
 	if strings.Contains(string(doc), `"ElevateAdmin"`) {
 		id := "uses-reserved"
 		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "reserved", Message: "permission set ElevateAdmin is reserved to aws-elevate"}}}, nil
@@ -272,6 +276,18 @@ func TestARefusedPermissionSetIsExplainedOnlyByTheService(t *testing.T) {
 	out := h.do(t, "POST", "/rules/edit", form).Body.String()
 	contains(t, out, "permission set ElevateAdmin is reserved to aws-elevate")
 	lacks(t, out, "no longer in Identity Center")
+}
+
+func TestARefusedFieldIsNamedAndMarkedInTheForm(t *testing.T) {
+	h, _ := rulesHarness()
+	form := postedRule("no-accounts")
+	form.Del("account")
+	out := h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out,
+		"Rule no-accounts · Accounts: choose at least one account",
+		`<p class="field-error" id="accounts-error">`,
+	)
+	lacks(t, out, "rules[0]")
 }
 
 func TestConflictReviewsAgainAgainstTheNewVersion(t *testing.T) {

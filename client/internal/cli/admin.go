@@ -211,6 +211,9 @@ func printCheckErrors(e *Env, errs []api.CheckError) {
 		if ce.RuleID != nil {
 			where = "rule " + *ce.RuleID
 		}
+		if ce.Field != nil && *ce.Field != "" {
+			where += ", " + *ce.Field
+		}
 		fmt.Fprintf(e.Stderr, "  %s: %s (%s)\n", where, ce.Message, ce.Code)
 	}
 }

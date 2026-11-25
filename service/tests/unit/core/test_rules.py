@@ -204,7 +204,47 @@ def test_parse_reports_missing_fields():
 
 def test_parse_refuses_duplicate_rule_ids():
     errors = errors_of({"schemaVersion": 1, "rules": [RULE_DOC, RULE_DOC]})
-    assert errors == ["rules[1].id: backend-ssm-prod is already used by rules[0]"]
+    assert errors == ["rules[1].id: another rule is already named backend-ssm-prod"]
+
+
+def problems_of(doc) -> list[tuple]:
+    with pytest.raises(InvalidRules) as caught:
+        parse(doc)
+    return [(p.index, p.field, p.message) for p in caught.value.problems]
+
+
+@pytest.mark.parametrize(
+    ("changes", "problem"),
+    [
+        ({"id": ""}, ("id", "enter a name")),
+        ({"accounts": []}, ("accounts", "choose at least one account")),
+        ({"group": {"id": "", "name": ""}}, ("group", "choose who can request")),
+        ({"approverGroup": {"id": "", "name": ""}}, ("approverGroup", "choose who approves")),
+        (
+            {"duration": {"defaultSeconds": 60, "maxSeconds": 3600}},
+            (
+                "duration.defaultSeconds",
+                "must be from 5 minutes to 12 hours (300 to 43200 seconds)",
+            ),
+        ),
+        (
+            {"duration": {"defaultSeconds": 7200, "maxSeconds": 3600}},
+            ("duration.defaultSeconds", "must not be longer than the maximum duration"),
+        ),
+        (
+            {"approval": "auto", "approverGroup": None, "privileged": True},
+            ("privileged", "a privileged rule needs manual approval"),
+        ),
+    ],
+)
+def test_parse_says_which_field_is_wrong_in_plain_words(changes, problem):
+    assert problems_of(doc_with(**changes)) == [(0, *problem)]
+
+
+def test_document_problem_has_no_rule_and_no_field():
+    assert problems_of({"schemaVersion": 2, "rules": []}) == [
+        (None, None, "schemaVersion must be 1")
+    ]
 
 
 def test_parse_collects_errors_of_every_rule():
