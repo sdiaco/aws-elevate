@@ -126,7 +126,11 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	}
 	a.rulesSettling(l.Reload)
 	if len(l.Rows) > 0 {
-		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true}}
+		l.Actions = []Action{
+			{Label: "Edit", Path: "/rules/edit", Count: 1},
+			{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true},
+		}
+		l.Menu = true
 	}
 	view := listView{List: l, Notice: a.noticeOf(r)}
 	if open := r.URL.Query().Get("open"); open != "" {
