@@ -94,8 +94,10 @@ func TestRulesViewIsForAdminsWithAWSAccess(t *testing.T) {
 func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	h, _ := rulesHarness()
 	out := h.get(t, "/rules")
+	// A rule is known by its name; its permission set is in the panel.
+	lacks(t, out, "<th>Permission set</th>", "old-ps")
 	contains(t, h.get(t, "/rules/edit?id=ssm-prod"), "old-ps is no longer in Identity Center")
-	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", `<span class="st st-ps_missing">PS not found</span>`,
+	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, `<span class="st st-ps_missing">PS not found</span>`,
 		`<span class="st st-active">Active</span>`, "<th>Status</th>", "privileged",
 		`<span>prod</span><span class="cell-sub">222222222222</span>`, "1h (max 4h)", "manual by leads", "auto",
 		`href="/rules/edit"`, "New rule", `href="/rules/import"`,

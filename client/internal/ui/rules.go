@@ -98,7 +98,7 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Rules", Search: true, Empty: "No rule yet.",
-		Columns: []string{"Rule", "Status", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
+		Columns: []string{"Rule", "Status", "Who can request", "Accounts", "Duration", "Approval"},
 		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit", Primary: true}},
 	}
 	publishing := false
@@ -203,7 +203,6 @@ func ruleRow(rule api.Rule, state string, id Cell) Row {
 		id,
 		{State: state},
 		{Text: rule.Group.Name},
-		{Text: rule.PermissionSet.Name},
 		accountsCell(rule),
 		{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
 		approval,
