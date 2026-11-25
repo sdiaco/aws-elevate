@@ -12,6 +12,7 @@ from cfnlint.decode import decode
 from aws_elevate.statemachine import definition
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "infra" / "elevate.yaml"
+CONTRACT = TEMPLATE_PATH.parents[1] / "contract"
 TEMPLATE, _errors = decode(str(TEMPLATE_PATH))
 RESOURCES = TEMPLATE["Resources"]
 
@@ -282,6 +283,45 @@ def test_alert_and_approval_rules():
     assert patterns["ManualRequestRule"]["detail"] == {"approval": ["manual"]}
     approvals = RESOURCES["ApprovalsTopic"]["Properties"]
     assert "Subscription" not in approvals
+
+
+NOTIFICATION_RULES = {
+    "GrantErrorRule": "elevate.grant.error",
+    "ConfigRejectedRule": "elevate.config.rejected",
+    "ManualRequestRule": "elevate.request.created",
+}
+
+
+def _event_path(event: dict, path: str):
+    value = event
+    for key in path.removeprefix("$.").split("."):
+        value = value[key]
+    return value
+
+
+@pytest.mark.parametrize("name", NOTIFICATION_RULES)
+def test_notification_text_is_one_quoted_string_per_line(name):
+    # EventBridge documents multi-line text output as one double-quoted string per line.
+    transformer = RESOURCES[name]["Properties"]["Targets"][0]["InputTransformer"]
+    lines = transformer["InputTemplate"].split("\n")
+    assert len(lines) > 3, name
+    for line in lines:
+        assert re.fullmatch(r'"([^"\\]|\\")*"', line), f"{name}: {line}"
+    used = set(re.findall(r"<([a-z]+)>", transformer["InputTemplate"]))
+    assert used == set(transformer["InputPathsMap"]), name
+    example = json.loads((CONTRACT / "events" / f"{NOTIFICATION_RULES[name]}.json").read_text())
+    for path in transformer["InputPathsMap"].values():
+        if path == "$.time":  # set by EventBridge on every event, not part of the contract
+            continue
+        _event_path(example, path)  # every field the e-mail reads is in the event contract
+
+
+def test_approval_email_names_the_rule_and_how_to_answer():
+    target = RESOURCES["ManualRequestRule"]["Properties"]["Targets"][0]
+    template = target["InputTransformer"]["InputTemplate"]
+    assert "<rule>" in template and "sourcePs" not in str(RESOURCES["ManualRequestRule"])
+    assert "aws elevate approve <grant>" in template
+    assert 'aws elevate approve <grant> --reject --reason \\"why\\"' in template
 
 
 def test_sns_topic_policy_statements_name_one_topic_each():
