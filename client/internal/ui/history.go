@@ -72,7 +72,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "History", Search: true, Empty: "No grant in this period.",
-		Columns: []string{"Id", "Outcome", "Requested", "Permission set", "Account"},
+		Columns: []string{"Id", "Outcome", "Requested", "Rule", "Account"},
 		Tools:   []Action{{Label: "Export CSV", Path: "/history/export.csv?" + base}},
 	}
 	if a.seesAll() {
@@ -95,7 +95,7 @@ func (a *App) historyPage(w http.ResponseWriter, r *http.Request) {
 			{Text: g.ID, Href: "/history?" + here + "&open=" + g.ID, Panel: "/panel/" + g.ID + "?from=history"},
 			{Outcome: closeReasonOf(g)},
 			{At: g.CreatedAt},
-			{Text: g.SourcePs.Name, Tags: tags(g)},
+			{Text: g.RuleID, Tags: tags(g)},
 			accountCell(g),
 		}
 		if scope == "all" {
