@@ -564,9 +564,15 @@ Resources:
               user: $.detail.requester.userName
               account: $.detail.account
               time: $.time
-            InputTemplate: >-
-              "aws-elevate: grant <grant> of <user> on account <account> needs attention
-              (<code>: <error>) at <time>. Open Problems: aws elevate ui"
+            # One double-quoted string per line: how EventBridge documents multi-line text.
+            InputTemplate: |-
+              "aws-elevate: a grant needs attention"
+              ""
+              "Grant <grant> of <user> on account <account> could not be closed."
+              "Error: <code>: <error>"
+              "Time: <time>"
+              ""
+              "Open Problems in: aws elevate ui"
 
   ConfigRejectedRule:
     Type: AWS::Events::Rule
@@ -583,9 +589,13 @@ Resources:
             InputPathsMap:
               version: $.detail.configVersion
               time: $.time
-            InputTemplate: >-
-              "aws-elevate: rules version <version> is not valid and was ignored at <time>;
-              the previous valid version stays in force. See: aws elevate ui"
+            InputTemplate: |-
+              "aws-elevate: rules version <version> was ignored"
+              ""
+              "It is not valid. The previous valid version stays in force."
+              "Time: <time>"
+              ""
+              "See the errors in: aws elevate ui"
 
   ManualRequestRule:
     Type: AWS::Events::Rule
@@ -604,13 +614,20 @@ Resources:
             InputPathsMap:
               grant: $.detail.grantId
               user: $.detail.requester.userName
-              ps: $.detail.sourcePs.name
+              rule: $.detail.rule
               account: $.detail.account
               group: $.detail.approverGroup.name
               reason: $.detail.reason
-            InputTemplate: >-
-              "aws-elevate: <user> asks for <ps> on account <account> (reason: <reason>).
-              Approvers: group <group>. Approve with: aws elevate approve <grant>"
+            InputTemplate: |-
+              "aws-elevate: approval needed"
+              ""
+              "<user> asks for rule <rule> on account <account>."
+              "Reason: <reason>"
+              "Approvers: group <group>"
+              ""
+              "Approve:  aws elevate approve <grant>"
+              "Reject:   aws elevate approve <grant> --reject --reason \"why\""
+              "Or open:  aws elevate ui"
 
   # ---------------------------------------------------------------------------
   # Grant lifecycle. Definition generated from
