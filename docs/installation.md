@@ -5,6 +5,7 @@ The [README](../README.md) covers the usual path. This page has everything else:
 - [The client](#the-client)
 - [Install options](#install-options)
 - [Change a setting later](#change-a-setting-later)
+- [Notifications](#notifications)
 - [Updates](#updates)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -81,6 +82,35 @@ In the CloudFormation console of the delegated administrator account: open the `
 
 ---
 
+## Notifications
+
+Elevate sends e-mails through two SNS topics in the delegated administrator account:
+
+| Topic | What it sends | Who receives it after the install |
+|---|---|---|
+| `<stack>-alerts` | A grant that could not be closed after retries, and a rules version that was ignored because it is not valid | The `--email` address, once its owner confirms the e-mail from AWS |
+| `<stack>-approvals` | Every request that needs manual approval, with the rule, the account, the reason, the approver group and the commands to answer | Nobody until you subscribe someone |
+
+E-mails reach whoever is subscribed to the topic, not the members of the Identity Center group: SNS does not know the groups. One approvals topic receives the requests of every rule, so everyone subscribed sees every request, including who asked and why. Only members of the approver group can approve, whoever reads the e-mail. Without subscribers, requests waiting for approval show in `aws elevate status` and in the interface.
+
+To subscribe an address, with an administrator profile of the delegated administrator account (Elevate's own roles cannot) and the default stack name `elevate`:
+
+```bash
+aws sns subscribe --profile elevate-admin --region <region> \
+  --topic-arn arn:aws:sns:<region>:<account>:elevate-approvals \
+  --protocol email --notification-endpoint approvers@example.com
+```
+
+Or in the SNS console of that account and region: **Topics** → `elevate-approvals` → **Create subscription** → protocol **Email**. Each address must confirm the e-mail AWS sends before anything reaches it. A mailing list of the approvers is easier to keep up to date than one subscription per person.
+
+`aws elevate admin doctor` checks that the alerts topic has a confirmed subscriber and shows how many the approvals topic has.
+
+The e-mails are plain text with the subject and the unsubscribe footer that SNS adds. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
+
+Costs: the first 1,000 e-mails a month are free, then about $2 per 100,000 (see [SNS pricing](https://aws.amazon.com/sns/pricing/)).
+
+---
+
 ## Updates
 
 The **Updates** page of `aws elevate ui` shows when a new version is out. Every user updates the client from there; administrators also update the stack, after a preview of the changes.
@@ -133,4 +163,6 @@ For every user, on their own computer. It removes the grant profiles and setting
 | `install` asks for the home region | Use the region where Identity Center is enabled |
 | `aws elevate ui` prints *Could not open a browser* | Open the URL it prints. To fix it, set `BROWSER` to your browser |
 | No **New request** after the first rule | Rules take about 30 seconds to apply; the interface updates by itself |
+| `ElevateRequester`, `ElevateAdmin` or `ElevateAuditor` in the AWS access portal | Expected: they are the roles the client uses to call Elevate. Opening the console with them shows almost nothing |
+| No e-mail for requests waiting for approval | Nobody is subscribed to the approvals topic: see [Notifications](#notifications) |
 | `uninstall infra` says you need the administrator role | Use an administrator profile of the delegated administrator account |
