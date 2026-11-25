@@ -97,6 +97,11 @@ func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 		`href="/rules/edit"`, "New rule", `href="/rules/import"`,
 		// The list is a GET form; deleting changes the rules and is only accepted as POST.
 		`formaction="/rules/delete" formmethod="post"`)
+	// Edit and Delete sit in one Actions menu; Edit opens the editor of exactly one rule.
+	contains(t, out,
+		`<button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>`,
+		`role="menuitem" formaction="/rules/edit" disabled data-action="" data-count="1">Edit<`,
+		`role="menuitem" formaction="/rules/delete" formmethod="post" disabled data-action="">Delete…<`)
 	if strings.Count(out, "PS not found") != 1 {
 		t.Errorf("only ssm-prod lost its permission set:\n%s", out)
 	}

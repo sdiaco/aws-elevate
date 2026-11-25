@@ -21,7 +21,8 @@ function updateSelection(list) {
     const allowed = !name || picked.every((b) => (b.dataset.actions || "").split(" ").includes(name));
     const exact = Number(btn.dataset.count) || 0;
     btn.disabled = picked.length === 0 || !allowed || (exact > 0 && picked.length !== exact);
-    btn.querySelector("[data-selected-count]").textContent = picked.length ? ` (${picked.length})` : "";
+    // An action on exactly one row (Edit) needs no count.
+    btn.querySelector("[data-selected-count]").textContent = picked.length && exact !== 1 ? ` (${picked.length})` : "";
   });
 }
 
