@@ -297,7 +297,10 @@ td.wrap code { display: inline-block; margin: 0 6px 2px 0; }
 .tab-list [role="tab"]:hover { color: var(--accent); }
 .tab-list [role="tab"][aria-selected="true"] { color: var(--accent); }
 .tab-list [role="tab"][aria-selected="true"]::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 4px; border-radius: 4px; background: var(--accent); }
-.split-panel-body { overflow: auto; padding: 16px 20px 20px; flex: 1; }
+/* The body scrolls when the panel is shorter than its content; a thin bar in the divider
+   colour keeps that from drawing the eye. */
+.split-panel-body { overflow: auto; padding: 16px 20px 20px; flex: 1; scrollbar-width: thin; scrollbar-color: var(--divider) transparent; }
+.split-panel-body:hover { scrollbar-color: var(--text-2) transparent; }
 .split-panel .box + .box, .split-panel .alert + .box { margin-top: 16px; }
 .split-panel .box h3 { margin: 0 0 12px; font-size: 20px; line-height: 24px; font-weight: 500; }
 .split-panel .kv dt { font-size: 13px; font-weight: 500; }
