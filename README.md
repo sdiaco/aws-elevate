@@ -77,7 +77,7 @@ aws-elevate install --profile elevate-admin
 
 The command asks for the region, the three groups (by name), an e-mail for alerts and, optionally, the name of your organization. It shows a summary, asks you to confirm, creates the stack in about 3 minutes and configures your client.
 
-Then **confirm the e-mail subscription** you receive, so alerts reach you.
+Then **confirm the e-mail subscription** you receive, so alerts reach you. To also get an e-mail for each request waiting for approval, see [Notifications](docs/installation.md#notifications).
 
 That is all: go to [First use](#first-use).
 
