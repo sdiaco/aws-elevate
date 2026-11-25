@@ -91,7 +91,7 @@ func (a *App) reviewFirstRule(w http.ResponseWriter, r *http.Request, form ruleF
 }
 
 func (a *App) showWelcome(w http.ResponseWriter, r *http.Request, form ruleForm, review *firstReview, alerts ...Alert) {
-	v := ruleView{Form: form, Review: review}
+	v := ruleView{Form: form, Review: review, Errors: fieldErrors(alerts)}
 	if err := a.readChoices(r.Context(), &v, r.URL.Query().Get("refresh") == "1"); err != nil {
 		a.fail(w, "Your first rule", "/rules", err)
 		return

@@ -42,6 +42,7 @@
     "errors": [
       {
         "ruleId": "db-admin-prod",
+        "field": "permissionSet",
         "code": "ps_not_found",
         "message": "permission set db-admin (arn:aws:sso:::permissionSet/ssoins-1/ps-2) does not exist in Identity Center"
       }

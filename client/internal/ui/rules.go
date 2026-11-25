@@ -283,6 +283,8 @@ type ruleView struct {
 	Groups    []awsx.Named
 	PSMissing bool
 	Review    *firstReview // the first run's last step, once the service accepted the rule
+	// Errors are the service's messages per form field, shown under each field.
+	Errors map[string]string
 }
 
 // ruleCards are the accounts of the rule form as cards, the chosen ones ticked.
@@ -333,7 +335,7 @@ func (a *App) ruleEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, refresh bool, alerts ...Alert) {
-	v := ruleView{Form: form}
+	v := ruleView{Form: form, Errors: fieldErrors(alerts)}
 	if err := a.readChoices(r.Context(), &v, refresh); err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return

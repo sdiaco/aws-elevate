@@ -43,6 +43,8 @@ type Alert struct {
 	Kind    string
 	Text    string
 	Command string // a command to run, shown copyable after Text
+	// Field is the rule form field the alert is about; FieldText is shown under it.
+	Field, FieldText string
 }
 
 // errorAlert is the alert for a failed call. An expired SSO session says what to run
@@ -166,6 +168,9 @@ var stateLabels = map[string]string{
 }
 
 var funcs = template.FuncMap{
+	"fieldError": func(errs map[string]string, id string) struct{ ID, Text string } {
+		return struct{ ID, Text string }{id, errs[id]}
+	},
 	"stateLabel": func(s string) string { return stateLabels[s] },
 	"outcomeLabel": func(reason string) string {
 		label := reasonLabel(reason)
