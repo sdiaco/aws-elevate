@@ -129,7 +129,7 @@ func (a *App) requestsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Requests", Search: true, Empty: noOwnRequest,
-		Columns: []string{"Id", "State", "Permission set", "Account", "Time left"},
+		Columns: []string{"Id", "State", "Rule", "Account", "Time left"},
 	}
 	if a.seesOthers() {
 		l.Empty = "No open request."
@@ -206,7 +206,7 @@ func (a *App) requestRowOf(g api.Grant, here string) Row {
 	row := Row{Key: g.ID, State: state, Cells: []Cell{
 		{Text: g.ID, Href: withParam(here, "open", g.ID), Panel: "/panel/" + g.ID + "?from=requests"},
 		{State: state, Refresh: refreshOf(state, g.ID)},
-		{Text: g.SourcePs.Name, Tags: tags(g)},
+		{Text: g.RuleID, Tags: tags(g)},
 		accountCell(g),
 		{Until: countdown(g)},
 	}}

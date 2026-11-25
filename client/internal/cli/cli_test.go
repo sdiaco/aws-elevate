@@ -549,6 +549,10 @@ func TestStatusShowsOwnGrantsAndOnlyApprovableRequests(t *testing.T) {
 	if !strings.Contains(out, "mine000001") || !strings.Contains(out, "privileged") {
 		t.Errorf("output %q", out)
 	}
+	// Grants are named by their rule, as in the UI.
+	if strings.Contains(out, "PERMISSION SET") || !strings.Contains(out, "RULE") {
+		t.Errorf("columns %q", out)
+	}
 }
 
 func TestStatusEmpty(t *testing.T) {

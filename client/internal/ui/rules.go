@@ -98,7 +98,7 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	}
 	l := List{
 		Title: "Rules", Search: true, Empty: "No rule yet.",
-		Columns: []string{"Rule", "Status", "Who can request", "Permission set", "Accounts", "Duration", "Approval"},
+		Columns: []string{"Rule", "Status", "Who can request", "Accounts", "Duration", "Approval"},
 		Tools:   []Action{{Label: "Import", Path: "/rules/import"}, {Label: "New rule", Path: "/rules/edit", Primary: true}},
 	}
 	publishing := false
@@ -203,8 +203,7 @@ func ruleRow(rule api.Rule, state string, id Cell) Row {
 		id,
 		{State: state},
 		{Text: rule.Group.Name},
-		{Text: rule.PermissionSet.Name},
-		{Text: accountNames(rule)},
+		accountsCell(rule),
 		{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
 		approval,
 	}}
@@ -219,6 +218,17 @@ func approvalText(rule api.Rule) string {
 		return rule.Approval + " by " + rule.ApproverGroup.Name
 	}
 	return rule.Approval
+}
+
+// accountsCell names the accounts of a rule with their ids under the names, small, as
+// the account of a request.
+func accountsCell(rule api.Rule) Cell {
+	names := make([]string, len(rule.Accounts))
+	ids := make([]string, len(rule.Accounts))
+	for i, acc := range rule.Accounts {
+		names[i], ids[i] = acc.Name, acc.ID
+	}
+	return Cell{Text: strings.Join(names, ", "), Sub: strings.Join(ids, ", ")}
 }
 
 func accountNames(rule api.Rule) string {

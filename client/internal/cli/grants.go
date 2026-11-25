@@ -72,7 +72,7 @@ func listAll(ctx context.Context, svc Service, q api.ListQuery) ([]api.Grant, er
 // printGrants writes a table of grants; withCommand adds how to approve each one.
 func printGrants(e *Env, grants []api.Grant, withCommand bool) {
 	w := tabwriter.NewWriter(e.Stdout, 0, 0, 2, ' ', 0)
-	header := "  ID\tSTATE\tRULE\tPERMISSION SET\tACCOUNT\tREQUESTER\tUNTIL\tREASON"
+	header := "  ID\tSTATE\tRULE\tACCOUNT\tREQUESTER\tUNTIL\tREASON"
 	if withCommand {
 		header += "\tCOMMAND"
 	}
@@ -90,7 +90,7 @@ func printGrants(e *Env, grants []api.Grant, withCommand bool) {
 		if g.State == api.StatePending {
 			until = g.ApprovalExpiresAt // when the request times out
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", g.ID, state, rule, g.SourcePs.Name, g.Account,
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\t%s", g.ID, state, rule, g.Account,
 			g.Requester.UserName, when(until), g.Reason)
 		if withCommand {
 			fmt.Fprintf(w, "\taws elevate approve %s", g.ID)

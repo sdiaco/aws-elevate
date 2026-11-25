@@ -88,6 +88,15 @@ func TestARequesterSeesOnlyTheirRequestsWithoutFilters(t *testing.T) {
 	}
 }
 
+func TestRequestsAndHistoryNameTheRuleNotThePermissionSet(t *testing.T) {
+	past := newHarness("requester")
+	past.svc.lists["mine"] = []api.Grant{grant("old2345678", "closed", me)}
+	for _, out := range []string{requestsHarness("requester").get(t, "/requests"), past.get(t, "/history")} {
+		contains(t, out, "<th>Rule</th>", "<span>ssm-prod</span>")
+		lacks(t, out, "<th>Permission set</th>", "ssm-write")
+	}
+}
+
 func TestAnApproverFiltersAllMineAndToApprove(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
