@@ -163,8 +163,7 @@
 </form>
 <aside class="box launch-summary"><h2>Summary</h2>
 <dl class="kv">
-<div><dt>Permission set</dt><dd>{{.PermissionSet.Name}}{{if .Privileged}} <span class="tag">privileged</span>{{end}}</dd></div>
-<div><dt>Rule</dt><dd>{{.ID}}</dd></div>
+<div><dt>Rule</dt><dd>{{.ID}}{{if .Privileged}} <span class="tag">privileged</span>{{end}}</dd></div>
 <div><dt>Approval</dt><dd>{{if eq .Approval "manual"}}Manual · {{with .ApproverGroup}}{{.Name}}{{end}}{{else}}Automatic{{end}}</dd></div>
 <div><dt>Account</dt><dd data-mirror="account" data-of="request">{{with checked $.Accounts.Items}}{{(index . 0).Name}} {{(index . 0).ID}}{{else}}-{{end}}</dd></div>
 <div><dt>Duration</dt><dd data-mirror="duration" data-of="request" data-empty="{{short .Duration.DefaultSeconds}} (default)">{{with $.Form.Duration}}{{.}}{{else}}{{short $.Rule.Duration.DefaultSeconds}} (default){{end}}</dd></div>
