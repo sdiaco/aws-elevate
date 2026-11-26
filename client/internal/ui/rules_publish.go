@@ -183,6 +183,31 @@ func (a *App) reviewOn(w http.ResponseWriter, r *http.Request, b base, c change,
 	a.show(w, http.StatusOK, "review", "Review changes", "/rules", v, alerts...)
 }
 
+// formFields maps a rule field, as the service names it in a check error, to the form
+// field that edits it and its label.
+var formFields = map[string]struct{ ID, Label string }{
+	"id":                      {"id", "Name"},
+	"permissionSet":           {"ps", "Permission set"},
+	"accounts":                {"accounts", "Accounts"},
+	"group":                   {"group", "Who can request"},
+	"approval":                {"approval", "Approval"},
+	"approverGroup":           {"approver", "Who approves"},
+	"duration":                {"default", "Duration"},
+	"duration.defaultSeconds": {"default", "Proposed duration"},
+	"duration.maxSeconds":     {"max", "Maximum duration"},
+	"privileged":              {"privileged", "Privileged"},
+}
+
+// formField finds the form field of a service field; a nested one such as
+// accounts[1].id or permissionSet.arn belongs to the field it starts with.
+func formField(field string) (id, label string, ok bool) {
+	f, ok := formFields[field]
+	if !ok {
+		f, ok = formFields[strings.FieldsFunc(field, func(r rune) bool { return r == '.' || r == '[' })[0]]
+	}
+	return f.ID, f.Label, ok
+}
+
 func checkAlerts(errs []api.CheckError) []Alert {
 	out := make([]Alert, len(errs))
 	for i, e := range errs {
@@ -190,7 +215,26 @@ func checkAlerts(errs []api.CheckError) []Alert {
 		if e.RuleID != nil {
 			where = "Rule " + *e.RuleID
 		}
-		out[i] = Alert{Kind: "error", Text: where + ": " + e.Message}
+		alert := Alert{Kind: "error", Text: where + ": " + e.Message}
+		if e.Field != nil && *e.Field != "" {
+			if id, label, ok := formField(*e.Field); ok {
+				alert.Text = where + " · " + label + ": " + e.Message
+				alert.Field, alert.FieldText = id, e.Message
+			}
+		}
+		out[i] = alert
+	}
+	return out
+}
+
+// fieldErrors are the messages to show under the form fields: the service's, with the
+// first one winning when a field has several.
+func fieldErrors(alerts []Alert) map[string]string {
+	out := map[string]string{}
+	for _, a := range alerts {
+		if _, seen := out[a.Field]; a.Field != "" && !seen {
+			out[a.Field] = a.FieldText
+		}
 	}
 	return out
 }

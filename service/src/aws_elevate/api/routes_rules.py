@@ -4,14 +4,13 @@ Only api reads the permission sets: ElevateRequester cannot read Identity Center
 rule limits depend on the permission set content, so the check before publishing lives
 here, in one place, for both UI and CLI."""
 
-import re
 from datetime import UTC, datetime
 
 from ..adapters.sso_read import PsNotFound
 from ..core.ids import reserved_source
 from ..core.models import Identity, Rule, SourcePs
 from ..core.policy import build_inline, check_limits, summarize
-from ..core.rules import PS_ARN, InvalidRules, parse, requestable, rule_to_dict
+from ..core.rules import PS_ARN, InvalidRules, Problem, parse, requestable, rule_to_dict
 from .errors import ApiError, forbidden
 
 # Codes of the entries of POST /rules/check, as in contract/vocabulary.json checkCodes.
@@ -19,7 +18,6 @@ CHECK_CODES = ("invalid", "ps_not_found", "limits", "reserved")
 # Only the length of the expiry statement matters for the limits, and every timestamp
 # has the same length.
 _SAMPLE_EXPIRY = datetime(2000, 1, 1, tzinfo=UTC)
-_RULE_INDEX = re.compile(r"rules\[(\d+)\]")
 
 
 def _ref(entry: dict) -> dict:
@@ -34,18 +32,25 @@ def _boundary(boundary: dict | None) -> dict | None:
     return {"customerManagedPolicy": _ref(boundary["CustomerManagedPolicyReference"])}
 
 
-def _rule_id_of(error: str, doc: dict) -> str | None:
-    """Id of the rule a parser error is about, when the rule has a readable id."""
-    match = _RULE_INDEX.match(error)
-    if not match:
+def _rule_id_of(index: int | None, doc: dict) -> str | None:
+    """Id of the rule at index, when that rule has a readable id."""
+    if index is None:
         return None
-    item = doc["rules"][int(match.group(1))]
+    item = doc["rules"][index]
     rule_id = item.get("id") if isinstance(item, dict) else None
     return rule_id if isinstance(rule_id, str) else None
 
 
-def _entry(rule_id: str | None, code: str, message: str) -> dict:
-    return {"ruleId": rule_id, "code": code, "message": message}
+def _parse_entry(problem: Problem, doc: dict) -> dict:
+    rule_id = _rule_id_of(problem.index, doc)
+    if rule_id is None:
+        # Without a readable id only the position says which rule it is.
+        return _entry(None, "invalid", str(problem), None)
+    return _entry(rule_id, "invalid", problem.message, problem.field)
+
+
+def _entry(rule_id: str | None, code: str, message: str, field: str | None) -> dict:
+    return {"ruleId": rule_id, "field": field, "code": code, "message": message}
 
 
 def _rule_errors(rule: Rule, source: SourcePs | None) -> list[dict]:
@@ -54,19 +59,19 @@ def _rule_errors(rule: Rule, source: SourcePs | None) -> list[dict]:
             f"permission set {rule.permission_set.name} ({rule.permission_set.arn}) "
             "does not exist in Identity Center"
         )
-        return [_entry(rule.id, "ps_not_found", message)]
+        return [_entry(rule.id, "ps_not_found", message, "permissionSet")]
     if reserved_source(source.name):
         message = (
             f"permission set {source.name} is reserved to aws-elevate (JIT-* copies and "
             "Elevate* service sets): choose another one"
         )
-        return [_entry(rule.id, "reserved", message)]
+        return [_entry(rule.id, "reserved", message, "permissionSet")]
     # Same check the engine runs at activation.
     limits = check_limits(
         build_inline(source.inline, _SAMPLE_EXPIRY),
         len(source.managed) + len(source.customer_managed),
     )
-    return [_entry(rule.id, "limits", f"{source.name}: {m}") for m in limits]
+    return [_entry(rule.id, "limits", f"{source.name}: {m}", "permissionSet") for m in limits]
 
 
 def _content(source: SourcePs) -> dict:
@@ -88,6 +93,7 @@ def _reserved_account_errors(rule: Rule, reserved: frozenset[str]) -> list[dict]
             "reserved",
             f"account {a.id} ({a.name}) is reserved to aws-elevate (management or service "
             "account): manage it with Identity Center assignments",
+            "accounts",
         )
         for a in rule.accounts
         if a.id in reserved
@@ -183,7 +189,7 @@ class RuleRoutes:
         try:
             rules = parse(doc)
         except InvalidRules as err:
-            errors = [_entry(_rule_id_of(e, doc), "invalid", e) for e in err.errors]
+            errors = [_parse_entry(p, doc) for p in err.problems]
             return {"valid": False, "errors": errors}
         errors = []
         sources: dict[str, SourcePs | None] = {}

@@ -42,12 +42,12 @@ def call_when_ready(org, creds, method: str, path: str, body=None) -> tuple[int,
         time.sleep(2)
 
 
-def request_body(org, rule_id: str, seconds: int = 300) -> dict:
+def request_body(org, rule_id: str, seconds: int = 300, reason: str = "aws-elevate e2e") -> dict:
     return {
         "ruleId": rule_id,
         "account": harness.env("TARGET_ACCOUNT"),
         "durationSeconds": seconds,
-        "reason": "aws-elevate e2e",
+        "reason": reason,
     }
 
 
@@ -116,10 +116,19 @@ def test_manual_request_approved_by_another_user_then_revoked(org, requester):
 
 
 def test_manual_request_refused_to_its_requester_then_cancelled(org, requester, admin):
-    status, body = org.call(requester, "POST", "grants", request_body(org, MANUAL_RULE_ID))
+    reason = 'e2e "quoted" reason'
+    request = request_body(org, MANUAL_RULE_ID, reason=reason)
+    status, body = org.call(requester, "POST", "grants", request)
     assert status == 201, body
     grant_id = body["grant"]["id"]
     assert body["grant"]["state"] == "pending"
+    mail = org.mail_for(grant_id)
+    assert mail["Subject"] == (
+        f"aws-elevate: approval needed for {MANUAL_RULE_ID} on {request['account']}"
+    )
+    assert f"Reason: {reason}\n" in mail["Message"]
+    assert "Approve:  aws elevate approve " + grant_id in mail["Message"]
+    assert not any(line.startswith('"') for line in mail["Message"].splitlines())
     # Approver group member, but it is their own request, from either role.
     for creds in (requester, admin):
         status, refused = org.call(creds, "POST", f"grants/{grant_id}/approve")

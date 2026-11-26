@@ -126,7 +126,11 @@ func (a *App) rulesPage(w http.ResponseWriter, r *http.Request) {
 	}
 	a.rulesSettling(l.Reload)
 	if len(l.Rows) > 0 {
-		l.Actions = []Action{{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true}}
+		l.Actions = []Action{
+			{Label: "Edit", Path: "/rules/edit", Count: 1},
+			{Label: "Delete…", Path: "/rules/delete", Danger: true, Post: true},
+		}
+		l.Menu = true
 	}
 	view := listView{List: l, Notice: a.noticeOf(r)}
 	if open := r.URL.Query().Get("open"); open != "" {
@@ -200,7 +204,7 @@ func ruleRow(rule api.Rule, state string, id Cell) Row {
 		{State: state},
 		{Text: rule.Group.Name},
 		{Text: rule.PermissionSet.Name},
-		{Text: accountNames(rule)},
+		accountsCell(rule),
 		{Text: fmt.Sprintf("%s (max %s)", short(rule.Duration.DefaultSeconds), short(rule.Duration.MaxSeconds))},
 		approval,
 	}}
@@ -215,6 +219,17 @@ func approvalText(rule api.Rule) string {
 		return rule.Approval + " by " + rule.ApproverGroup.Name
 	}
 	return rule.Approval
+}
+
+// accountsCell names the accounts of a rule with their ids under the names, small, as
+// the account of a request.
+func accountsCell(rule api.Rule) Cell {
+	names := make([]string, len(rule.Accounts))
+	ids := make([]string, len(rule.Accounts))
+	for i, acc := range rule.Accounts {
+		names[i], ids[i] = acc.Name, acc.ID
+	}
+	return Cell{Text: strings.Join(names, ", "), Sub: strings.Join(ids, ", ")}
 }
 
 func accountNames(rule api.Rule) string {
@@ -279,6 +294,8 @@ type ruleView struct {
 	Groups    []awsx.Named
 	PSMissing bool
 	Review    *firstReview // the first run's last step, once the service accepted the rule
+	// Errors are the service's messages per form field, shown under each field.
+	Errors map[string]string
 }
 
 // ruleCards are the accounts of the rule form as cards, the chosen ones ticked.
@@ -329,7 +346,7 @@ func (a *App) ruleEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) showRule(w http.ResponseWriter, r *http.Request, form ruleForm, refresh bool, alerts ...Alert) {
-	v := ruleView{Form: form}
+	v := ruleView{Form: form, Errors: fieldErrors(alerts)}
 	if err := a.readChoices(r.Context(), &v, refresh); err != nil {
 		a.fail(w, "Rules", "/rules", err)
 		return

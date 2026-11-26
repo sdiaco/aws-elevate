@@ -5,6 +5,7 @@ The [README](../README.md) covers the usual path. This page has everything else:
 - [The client](#the-client)
 - [Install options](#install-options)
 - [Change a setting later](#change-a-setting-later)
+- [Notifications](#notifications)
 - [Updates](#updates)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -59,7 +60,7 @@ Flags take group **names**; the stack takes their ids and `install` looks them u
 |---|---|---|---|
 | `--max-open-grants <n>` | `MaxOpenGrantsPerUser` | 5 | Grants not yet closed that one user may have |
 | `--config-versions-listed <n>` | `ConfigVersionsListed` | 50 | Newest rules versions shown in the history |
-| `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Accounts allowed to receive the Elevate events |
+| `--event-consumer-accounts <id,id>` | `EventConsumerAccounts` | none | Accounts allowed to receive the Elevate events: see [Events](events.md) |
 
 ### Audit and data protection
 
@@ -78,6 +79,40 @@ In the Launch Stack page the same parameters are grouped the same way: **Who use
 ## Change a setting later
 
 In the CloudFormation console of the delegated administrator account: open the `elevate` stack → **Update** → **Use existing template** → change the parameter → confirm. The next release keeps the values you set.
+
+---
+
+## Notifications
+
+Elevate sends two kinds of e-mail through two SNS topics in the delegated administrator account. The `<stack>-notify` function composes and publishes them; its role may only publish to these two topics and write its own logs.
+
+The subject of each e-mail:
+
+- approvals: `aws-elevate: approval needed for <rule> on <account>`
+- alerts: `aws-elevate: cleanup of grant <id> is failing`
+
+| Topic | What it sends | Who receives it after the install |
+|---|---|---|
+| `<stack>-alerts` | A grant whose cleanup keeps failing after retries: the access may still work | The `--email` address, once its owner confirms the e-mail from AWS |
+| `<stack>-approvals` | Every request that needs manual approval, with the rule, the account, the reason, the approver group and the commands to answer | Nobody until you subscribe someone |
+
+E-mails reach whoever is subscribed to the topic, not the members of the Identity Center group: SNS does not know the groups. One approvals topic receives the requests of every rule, so everyone subscribed sees every request, including who asked and why. Only members of the approver group can approve, whoever reads the e-mail. Without subscribers, requests waiting for approval show in `aws elevate status` and in the interface.
+
+To subscribe an address, with an administrator profile of the delegated administrator account (Elevate's own roles cannot) and the default stack name `elevate`:
+
+```bash
+aws sns subscribe --profile elevate-admin --region <region> \
+  --topic-arn arn:aws:sns:<region>:<account>:elevate-approvals \
+  --protocol email --notification-endpoint approvers@example.com
+```
+
+Or in the SNS console of that account and region: **Topics** → `elevate-approvals` → **Create subscription** → protocol **Email**. Each address must confirm the e-mail AWS sends before anything reaches it. A mailing list of the approvers is easier to keep up to date than one subscription per person.
+
+`aws elevate admin doctor` checks that the alerts topic has a confirmed subscriber and shows how many the approvals topic has.
+
+The e-mails are plain text. SNS adds the unsubscribe footer. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
+
+Costs: the first 1,000 e-mails a month are free, then about $2 per 100,000 (see [SNS pricing](https://aws.amazon.com/sns/pricing/)).
 
 ---
 
@@ -133,4 +168,6 @@ For every user, on their own computer. It removes the grant profiles and setting
 | `install` asks for the home region | Use the region where Identity Center is enabled |
 | `aws elevate ui` prints *Could not open a browser* | Open the URL it prints. To fix it, set `BROWSER` to your browser |
 | No **New request** after the first rule | Rules take about 30 seconds to apply; the interface updates by itself |
+| `ElevateRequester`, `ElevateAdmin` or `ElevateAuditor` in the AWS access portal | Expected: they are the roles the client uses to call Elevate. Opening the console with them shows almost nothing |
+| No e-mail for requests waiting for approval | Nobody is subscribed to the approvals topic: see [Notifications](#notifications) |
 | `uninstall infra` says you need the administrator role | Use an administrator profile of the delegated administrator account |

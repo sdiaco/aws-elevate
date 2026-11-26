@@ -42,7 +42,7 @@ Dependencies point inward. Inner layers never import outer ones.
 |---|---|---|
 | Core (pure logic) | `service/src/aws_elevate/core/` | Standard library only. **Never `boto3`** |
 | Adapters (one AWS service each) | `service/src/aws_elevate/adapters/` | Core, `boto3` |
-| Entry points | `api/`, `engine/`, `precheck/` | Core, adapters |
+| Entry points | `api/`, `engine/`, `notify/`, `precheck/` | Core, adapters |
 | Client transport | `client/internal/api`, `awsx`, `release` | Standard library, AWS SDK |
 | Client presentation | `client/internal/cli`, `ui` | Client transport |
 

@@ -28,7 +28,7 @@ make check                        # lint and tests, as run before every push
 
 | Folder | What is in it |
 |---|---|
-| `service/` | Python Lambda functions: `api`, `engine`, `precheck` |
+| `service/` | Python Lambda functions: `api`, `engine`, `notify`, `precheck` |
 | `client/` | Go command line and local interface |
 | `contract/` | API payloads, rules and events: the format both sides test against |
 | `infra/` | Hand-written CloudFormation |

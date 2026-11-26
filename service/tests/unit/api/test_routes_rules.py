@@ -295,7 +295,22 @@ def test_document_level_error_has_no_rule_id(make, fx):
     routes, _ = make()
     body = routes.check(fx.ADMIN, {"doc": {"schemaVersion": 2, "rules": []}})
     assert body["errors"] == [
-        {"ruleId": None, "code": "invalid", "message": "schemaVersion must be 1"}
+        {"ruleId": None, "field": None, "code": "invalid", "message": "schemaVersion must be 1"}
+    ]
+
+
+def test_parser_error_names_the_field_without_the_document_path(make, fx):
+    doc = copy.deepcopy(VALID_DOC)
+    doc["rules"][1]["accounts"] = []
+    routes, _ = make()
+    body = routes.check(fx.ADMIN, {"doc": doc})
+    assert body["errors"] == [
+        {
+            "ruleId": "db-admin-prod",
+            "field": "accounts",
+            "code": "invalid",
+            "message": "choose at least one account",
+        }
     ]
 
 
@@ -308,6 +323,7 @@ def test_permission_set_that_does_not_exist(make, fx):
         ("db-admin-prod", "ps_not_found"),
     ]
     assert "ssm-write" in body["errors"][0]["message"]
+    assert {e["field"] for e in body["errors"]} == {"permissionSet"}
 
 
 def test_inline_over_the_limit_once_the_expiry_is_added(make, fx):

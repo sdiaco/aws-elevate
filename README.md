@@ -77,7 +77,7 @@ aws-elevate install --profile elevate-admin
 
 The command asks for the region, the three groups (by name), an e-mail for alerts and, optionally, the name of your organization. It shows a summary, asks you to confirm, creates the stack in about 3 minutes and configures your client.
 
-Then **confirm the e-mail subscription** you receive, so alerts reach you.
+Then **confirm the e-mail subscription** you receive, so alerts reach you. To also get an e-mail for each request waiting for approval, see [Notifications](docs/installation.md#notifications).
 
 That is all: go to [First use](#first-use).
 
@@ -90,8 +90,8 @@ Sign in to the delegated administrator account and open the link of your Identit
 
 | Region | |
 |---|---|
-| Europe (Ireland) `eu-west-1` | [Launch Stack](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.1.0/elevate.yaml&stackName=elevate) |
-| US East (N. Virginia) `us-east-1` | [Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.1.0/elevate.yaml&stackName=elevate) |
+| Europe (Ireland) `eu-west-1` | [Launch Stack](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?templateURL=https://aws-elevate-releases-eu-west-1.s3.eu-west-1.amazonaws.com/v0.1.1/elevate.yaml&stackName=elevate) |
+| US East (N. Virginia) `us-east-1` | [Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://aws-elevate-releases-us-east-1.s3.us-east-1.amazonaws.com/v0.1.1/elevate.yaml&stackName=elevate) |
 
 Fill in the first two groups of parameters and leave the rest as they are:
 

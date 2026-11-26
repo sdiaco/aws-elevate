@@ -56,6 +56,10 @@ func (f *fakeService) CheckRules(_ context.Context, doc []byte) (*api.CheckResul
 		id := "broken"
 		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "limits", Message: "ssm-write: inline policy too long"}}}, nil
 	}
+	if strings.Contains(string(doc), `"accounts":[]`) {
+		id, field := "no-accounts", "accounts"
+		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Field: &field, Code: "invalid", Message: "choose at least one account"}}}, nil
+	}
 	if strings.Contains(string(doc), `"ElevateAdmin"`) {
 		id := "uses-reserved"
 		return &api.CheckResult{Errors: []api.CheckError{{RuleID: &id, Code: "reserved", Message: "permission set ElevateAdmin is reserved to aws-elevate"}}}, nil
@@ -90,13 +94,20 @@ func TestRulesViewIsForAdminsWithAWSAccess(t *testing.T) {
 func TestRulesListMarksAPermissionSetNotFound(t *testing.T) {
 	h, _ := rulesHarness()
 	out := h.get(t, "/rules")
+	// Admins choose rules by permission set too, so the list keeps that column.
+	contains(t, out, "<th>Permission set</th>", "<span>old-ps</span>")
 	contains(t, h.get(t, "/rules/edit?id=ssm-prod"), "old-ps is no longer in Identity Center")
-	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, "old-ps", `<span class="st st-ps_missing">PS not found</span>`,
+	contains(t, out, "Rules", `href="/rules?open=ssm-prod" data-panel="/rules/panel?id=ssm-prod"`, `<span class="st st-ps_missing">PS not found</span>`,
 		`<span class="st st-active">Active</span>`, "<th>Status</th>", "privileged",
-		"prod (222222222222)", "1h (max 4h)", "manual by leads", "auto",
+		`<span>prod</span><span class="cell-sub">222222222222</span>`, "1h (max 4h)", "manual by leads", "auto",
 		`href="/rules/edit"`, "New rule", `href="/rules/import"`,
 		// The list is a GET form; deleting changes the rules and is only accepted as POST.
 		`formaction="/rules/delete" formmethod="post"`)
+	// Edit and Delete sit in one Actions menu; Edit opens the editor of exactly one rule.
+	contains(t, out,
+		`<button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>`,
+		`role="menuitem" formaction="/rules/edit" disabled data-action="" data-count="1">Edit<`,
+		`role="menuitem" formaction="/rules/delete" formmethod="post" disabled data-action="">Delete…<`)
 	if strings.Count(out, "PS not found") != 1 {
 		t.Errorf("only ssm-prod lost its permission set:\n%s", out)
 	}
@@ -267,6 +278,18 @@ func TestARefusedPermissionSetIsExplainedOnlyByTheService(t *testing.T) {
 	out := h.do(t, "POST", "/rules/edit", form).Body.String()
 	contains(t, out, "permission set ElevateAdmin is reserved to aws-elevate")
 	lacks(t, out, "no longer in Identity Center")
+}
+
+func TestARefusedFieldIsNamedAndMarkedInTheForm(t *testing.T) {
+	h, _ := rulesHarness()
+	form := postedRule("no-accounts")
+	form.Del("account")
+	out := h.do(t, "POST", "/rules/edit", form).Body.String()
+	contains(t, out,
+		"Rule no-accounts · Accounts: choose at least one account",
+		`<p class="field-error" id="accounts-error">`,
+	)
+	lacks(t, out, "rules[0]")
 }
 
 func TestConflictReviewsAgainAgainstTheNewVersion(t *testing.T) {

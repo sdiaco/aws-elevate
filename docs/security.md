@@ -11,6 +11,7 @@ Elevate helps implement privileged-access controls required by **NIS2**, **DORA*
 - [Guardrails](#guardrails)
 - [A copy you cannot change](#a-copy-you-cannot-change)
 - [Personal data](#personal-data)
+- [Who keeps standing access](#who-keeps-standing-access)
 - [Break-glass](#break-glass)
 
 ---
@@ -42,7 +43,7 @@ Elevate helps implement privileged-access controls required by **NIS2**, **DORA*
 |---|---|---|
 | Grant history: who asked, permission set, account, reason, who approved, start, end, how it closed | DynamoDB table in the Elevate account | 13 months after the grant closes by default, 1 to 120 (`--retention-months`) |
 | Rules versions | AppConfig in the Elevate account | until you uninstall |
-| Logs of `api` and `engine` | CloudWatch Logs | 90 days |
+| Logs of `api`, `engine` and `notify` | CloudWatch Logs | 90 days |
 | Logs of the precheck | CloudWatch Logs | 30 days |
 | Workflow history (includes user name and reason) | Step Functions | 90 days |
 
@@ -113,7 +114,7 @@ The key policy must keep the statement that enables IAM policies in the account,
 
 The Elevate service roles get only `kms:Decrypt` on the key, through DynamoDB, from the template itself.
 
-**What the key covers:** the grant history and the three log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`). **What it does not cover:** the rules (AppConfig), the workflow history, the events and the alert e-mails; these stay on keys owned by AWS.
+**What the key covers:** the grant history and the four log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`, `-notify`). **What it does not cover:** the rules (AppConfig), the workflow history, the events and the alert e-mails; these stay on keys owned by AWS.
 
 ---
 
@@ -143,7 +144,7 @@ If a deployer ARN is wrong, the management account is never affected by service 
 
 ## A copy you cannot change
 
-Elevate publishes an event for every step of a grant on the `elevate-events` bus. Give another account, for example an archive account, in `--event-consumer-accounts`, and create a rule there that stores the events. That copy is outside the Elevate account and cannot be changed from it.
+Elevate publishes an event for every step of a grant on the `elevate-events` bus. Give another account, for example an archive account, in `--event-consumer-accounts`, and create a rule there that stores the events. That copy is outside the Elevate account and cannot be changed from it. The event format and the steps are in [Events](events.md).
 
 ---
 
@@ -152,6 +153,24 @@ Elevate publishes an event for every step of a grant on the `elevate-events` bus
 - **The reason is free text.** The form tells users not to put personal data in it.
 - **Refused calls are logged** with the ARN of the caller, which identifies a person. They are kept with the logs, 90 days at most.
 - **Deletion requests.** You do not need to delete the grants of a person on request: the access register is kept to meet a legal obligation and to establish and defend legal claims, as GDPR article 17(3) allows. It is deleted by itself at the end of the retention.
+
+---
+
+## Who keeps standing access
+
+Elevate removes standing access from everyday work, but not from the account it runs in. Installing, updating and uninstalling the stack create and delete IAM roles, Lambda functions and permission sets: that needs an administrator role in the Identity Center delegated administrator account, and Elevate cannot grant it to itself.
+
+| Access | Who | Used for |
+|---|---|---|
+| Administrator role in the delegated administrator account | 1–2 people who operate the stack | `aws-elevate install`, stack updates, `aws-elevate uninstall infra`, the first level of break-glass |
+| `ElevateAdmin` (created by the stack) | Elevate administrators | Rules, revocations, updates page: Elevate only, no access to the account |
+| Grants | Everyone else | Everything else, for the time asked |
+
+Keep the first row small and rare:
+
+- give it through a dedicated group (for example `elevate-operators`) assigned to that account only;
+- or, stricter, through a separate user kept for stack operations and emergencies, so that the everyday user has no standing access;
+- alert on its use, for example with an EventBridge rule on its sign-in in CloudTrail.
 
 ---
 

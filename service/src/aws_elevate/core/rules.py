@@ -5,6 +5,7 @@ infra/rules.schema.json holds the same constraints for AppConfig, except the one
 draft-04 schema cannot express (default <= max, unique ids, unique accounts)."""
 
 import re
+from dataclasses import dataclass
 
 from .models import Account, Approval, Grant, Group, Identity, PermissionSetRef, Rule
 
@@ -13,6 +14,7 @@ MIN_SECONDS = 300
 MAX_SECONDS = 12 * 3600
 PS_ARN = re.compile(r"^arn:aws[a-z-]*:sso:::permissionSet/ssoins-[0-9a-f]+/ps-[0-9a-f]+$")
 _ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
+_DOC_FIELDS = ("schemaVersion", "rules")
 _RULE_FIELDS = (
     "id",
     "group",
@@ -25,10 +27,29 @@ _RULE_FIELDS = (
 )
 
 
+@dataclass(frozen=True)
+class Problem:
+    """One reason a rules document is refused. index and field say where (the rule
+    position, a field of that rule such as "accounts" or "duration.maxSeconds"); the
+    message is in plain words, so the UI can show it next to the form field."""
+
+    index: int | None
+    field: str | None
+    message: str
+
+    def __str__(self) -> str:
+        if self.index is None:
+            where = self.field
+        else:
+            where = f"rules[{self.index}]" + (f".{self.field}" if self.field else "")
+        return f"{where}: {self.message}" if where else self.message
+
+
 class InvalidRules(Exception):
-    def __init__(self, errors: list[str]):
-        super().__init__("; ".join(errors))
-        self.errors = errors
+    def __init__(self, problems: list[Problem]):
+        self.problems = problems
+        self.errors = [str(p) for p in problems]
+        super().__init__("; ".join(self.errors))
 
 
 class InvalidRequest(Exception):
@@ -38,44 +59,45 @@ class InvalidRequest(Exception):
 def parse(doc) -> list[Rule]:
     """All rules of a document, or InvalidRules listing every problem found."""
     if not isinstance(doc, dict):
-        raise InvalidRules(["the document must be a JSON object"])
-    errors = [f"unknown field {k}" for k in doc if k not in ("schemaVersion", "rules")]
+        raise InvalidRules([Problem(None, None, "the document must be a JSON object")])
+    problems = [Problem(None, None, f"unknown field {k}") for k in doc if k not in _DOC_FIELDS]
     if doc.get("schemaVersion") != SCHEMA_VERSION:
-        errors.append(f"schemaVersion must be {SCHEMA_VERSION}")
+        problems.append(Problem(None, None, f"schemaVersion must be {SCHEMA_VERSION}"))
     items = doc.get("rules")
     if not isinstance(items, list):
-        raise InvalidRules([*errors, "rules must be a list"])
+        raise InvalidRules([*problems, Problem(None, None, "rules must be a list")])
     seen: dict[str, int] = {}
     for i, item in enumerate(items):
-        where = f"rules[{i}]"
-        rule_errors = _rule_errors(item, where)
-        errors += rule_errors
-        if rule_errors:
+        rule_problems = [Problem(i, f, m) for f, m in _rule_errors(item)]
+        problems += rule_problems
+        if rule_problems:
             continue
-        first = seen.setdefault(item["id"], i)
-        if first != i:
-            errors.append(f"{where}.id: {item['id']} is already used by rules[{first}]")
-    if errors:
-        raise InvalidRules(errors)
+        if seen.setdefault(item["id"], i) != i:
+            problems.append(Problem(i, "id", f"another rule is already named {item['id']}"))
+    if problems:
+        raise InvalidRules(problems)
     return [rule_from_dict(item) for item in items]
 
 
-def _rule_errors(item, where: str) -> list[str]:
+# Each check below returns (field, message) pairs; field None means the whole rule.
+def _rule_errors(item) -> list[tuple[str | None, str]]:
     if not isinstance(item, dict):
-        return [f"{where}: must be an object"]
+        return [(None, "must be an object")]
     missing = [f for f in _RULE_FIELDS if f not in item]
     if missing:
-        return [f"{where}: missing field {', '.join(missing)}"]
-    errors = [f"{where}: unknown field {k}" for k in item if k not in _RULE_FIELDS]
+        return [(None, f"missing field {', '.join(missing)}")]
+    errors = [(None, f"unknown field {k}") for k in item if k not in _RULE_FIELDS]
     if not _text(item["id"]):
-        errors.append(f"{where}.id: must be a non-empty string")
-    errors += _ref_errors(item["group"], f"{where}.group", ("id", "name"))
-    errors += _ref_errors(item["permissionSet"], f"{where}.permissionSet", ("arn", "name"))
+        errors.append(("id", "enter a name"))
+    errors += _ref_errors(item["group"], "group", ("id", "name"), "choose who can request")
+    errors += _ref_errors(
+        item["permissionSet"], "permissionSet", ("arn", "name"), "choose a permission set"
+    )
     if not errors and not PS_ARN.match(item["permissionSet"]["arn"]):
-        errors.append(f"{where}.permissionSet.arn: not a permission set ARN")
-    errors += _account_errors(item["accounts"], f"{where}.accounts")
-    errors += _duration_errors(item["duration"], f"{where}.duration")
-    errors += _approval_errors(item, where)
+        errors.append(("permissionSet.arn", "is not a permission set ARN"))
+    errors += _account_errors(item["accounts"])
+    errors += _duration_errors(item["duration"])
+    errors += _approval_errors(item)
     return errors
 
 
@@ -83,24 +105,25 @@ def _text(value) -> bool:
     return isinstance(value, str) and value != ""
 
 
-def _ref_errors(value, where: str, keys: tuple[str, ...]) -> list[str]:
+def _ref_errors(value, field: str, keys: tuple[str, ...], empty: str) -> list[tuple]:
     if not isinstance(value, dict) or set(value) != set(keys):
-        return [f"{where}: must be an object with exactly {', '.join(keys)}"]
-    return [f"{where}.{k}: must be a non-empty string" for k in keys if not _text(value[k])]
+        return [(field, f"must be an object with exactly {', '.join(keys)}")]
+    return [(field, empty)] if not all(_text(value[k]) for k in keys) else []
 
 
-def _account_errors(value, where: str) -> list[str]:
+def _account_errors(value) -> list[tuple]:
     if not isinstance(value, list) or not value:
-        return [f"{where}: must be a non-empty list"]
+        return [("accounts", "choose at least one account")]
     errors, seen = [], set()
     for i, account in enumerate(value):
-        ref = _ref_errors(account, f"{where}[{i}]", ("id", "name"))
+        where = f"accounts[{i}]"
+        ref = _ref_errors(account, where, ("id", "name"), "needs an id and a name")
         if ref:
             errors += ref
         elif not _ACCOUNT_ID.match(account["id"]):
-            errors.append(f"{where}[{i}].id: must be 12 digits")
+            errors.append((f"{where}.id", f"{account['id']} is not an account id (12 digits)"))
         elif account["id"] in seen:
-            errors.append(f"{where}[{i}].id: {account['id']} is listed twice")
+            errors.append((f"{where}.id", f"account {account['id']} is listed twice"))
         else:
             seen.add(account["id"])
     return errors
@@ -110,33 +133,37 @@ def _seconds(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _duration_errors(value, where: str) -> list[str]:
+def _duration_errors(value) -> list[tuple]:
     keys = ("defaultSeconds", "maxSeconds")
     if not isinstance(value, dict) or set(value) != set(keys):
-        return [f"{where}: must be an object with exactly {', '.join(keys)}"]
+        return [("duration", f"must be an object with exactly {', '.join(keys)}")]
+    span = (
+        f"must be from {MIN_SECONDS // 60} minutes to {MAX_SECONDS // 3600} hours "
+        f"({MIN_SECONDS} to {MAX_SECONDS} seconds)"
+    )
     errors = [
-        f"{where}.{k}: must be a whole number of seconds between {MIN_SECONDS} and {MAX_SECONDS}"
+        (f"duration.{k}", span)
         for k in keys
         if not _seconds(value[k]) or not MIN_SECONDS <= value[k] <= MAX_SECONDS
     ]
     if not errors and value["defaultSeconds"] > value["maxSeconds"]:
-        errors.append(f"{where}.defaultSeconds: must not exceed maxSeconds")
+        errors.append(("duration.defaultSeconds", "must not be longer than the maximum duration"))
     return errors
 
 
-def _approval_errors(item: dict, where: str) -> list[str]:
+def _approval_errors(item: dict) -> list[tuple]:
     approval, approver = item["approval"], item["approverGroup"]
     if approval not in [a.value for a in Approval]:
-        return [f"{where}.approval: must be auto or manual"]
+        return [("approval", "must be auto or manual")]
     errors = []
     if approval == Approval.MANUAL:
-        errors += _ref_errors(approver, f"{where}.approverGroup", ("id", "name"))
+        errors += _ref_errors(approver, "approverGroup", ("id", "name"), "choose who approves")
     elif approver is not None:
-        errors.append(f"{where}.approverGroup: must be null when approval is auto")
+        errors.append(("approverGroup", "must be empty when approval is automatic"))
     if not isinstance(item["privileged"], bool):
-        errors.append(f"{where}.privileged: must be true or false")
+        errors.append(("privileged", "must be true or false"))
     elif item["privileged"] and approval != Approval.MANUAL:
-        errors.append(f"{where}.privileged: a privileged rule needs manual approval")
+        errors.append(("privileged", "a privileged rule needs manual approval"))
     return errors
 
 

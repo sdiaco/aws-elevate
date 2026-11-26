@@ -4,7 +4,7 @@
 {{define "list"}}<form class="list" data-list method="get"{{if .Reload}} data-reload{{end}}>
 <div class="list-head"><h1>{{.Title}} <span class="counter">({{len .Rows}}{{if .Next}}+{{end}})</span></h1>
 {{if or .Actions .Tools}}<div class="actions">{{if .Menu}}<div class="menu-wrap"><button type="button" class="btn" data-menu aria-haspopup="menu" aria-expanded="false">Actions</button>
-<div class="menu" role="menu" hidden>{{range .Actions}}<button class="menu-item" role="menuitem" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}</div></div>
+<div class="menu" role="menu" hidden>{{range .Actions}}<button class="menu-item" role="menuitem" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}</div></div>
 {{- else}}{{range .Actions}}<button class="btn{{if not .Danger}} primary{{end}}" formaction="{{.Path}}"{{if .Post}} formmethod="post"{{end}} disabled data-action="{{.Name}}"{{if .Confirm}} data-confirm{{end}}{{with .Count}} data-count="{{.}}"{{end}}>{{.Label}}<span data-selected-count></span></button>{{end}}{{end}}{{range .Tools}}<a class="btn{{if .Primary}} primary{{end}}" href="{{.Path}}">{{.Label}}</a>{{end}}</div>{{end}}
 </div>
 {{with .Hint}}<p class="muted">{{.}}</p>

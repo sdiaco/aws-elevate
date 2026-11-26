@@ -88,6 +88,15 @@ func TestARequesterSeesOnlyTheirRequestsWithoutFilters(t *testing.T) {
 	}
 }
 
+func TestRequestsAndHistoryNameTheRuleNotThePermissionSet(t *testing.T) {
+	past := newHarness("requester")
+	past.svc.lists["mine"] = []api.Grant{grant("old2345678", "closed", me)}
+	for _, out := range []string{requestsHarness("requester").get(t, "/requests"), past.get(t, "/history")} {
+		contains(t, out, "<th>Rule</th>", "<span>ssm-prod</span>")
+		lacks(t, out, "<th>Permission set</th>", "ssm-write")
+	}
+}
+
 func TestAnApproverFiltersAllMineAndToApprove(t *testing.T) {
 	h := requestsHarness("requester", "approver")
 	out := h.get(t, "/requests")
@@ -343,8 +352,9 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 	h := twoRules(newHarness("requester"))
 	out := h.get(t, "/requests/new")
 	contains(t, out, `<form method="get" action="/requests/new"`, `type="radio" name="rule" value="ssm-prod"`,
-		"ssm-write", "Manual · leads", "4h")
-	lacks(t, out, `<textarea`)
+		`<label for="rule-ssm-prod">ssm-prod</label>`, "Manual · leads", "4h")
+	// Requesters choose a rule by its name; the permission set behind it is not shown.
+	lacks(t, out, `<textarea`, "<th>Permission set</th>", "ssm-write")
 	// Admins and auditors see every rule elsewhere; here only what can be asked.
 	if h.svc.calls[0] != "requestable rules" {
 		t.Errorf("calls %v", h.svc.calls)
@@ -367,7 +377,9 @@ func TestNewRequestListsTheRulesAndShowsTheFormOfTheChosenOne(t *testing.T) {
 		`<textarea name="reason"`,
 		`data-load="/requests/permissions?rule=ssm-prod"`,
 		`href="/requests"`,
+		`<div><dt>Rule</dt><dd>ssm-prod</dd></div>`,
 	)
+	lacks(t, out, "<dt>Permission set</dt>", "ssm-write")
 	for _, c := range h.svc.calls {
 		if strings.HasPrefix(c, "permissions") {
 			t.Errorf("permissions read before opening: %v", h.svc.calls)
