@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from .models import APPROVAL_TIMEOUT_SECONDS
 
-# SNS refuses a subject of 100 characters or more.
+# SNS refuses a subject of 100 characters or more or with non-ASCII characters.
 SUBJECT_MAX = 99
 
 
@@ -22,7 +22,8 @@ def _one_line(text: str) -> str:
 
 
 def _subject(text: str) -> str:
-    return _one_line(text)[:SUBJECT_MAX]
+    ascii_text = "".join(c if c.isascii() else "?" for c in _one_line(text))
+    return ascii_text[:SUBJECT_MAX]
 
 
 def _approval_needed(event: dict) -> Email | None:
