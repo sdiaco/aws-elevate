@@ -867,6 +867,7 @@ def cleanup_permission_sets(session: boto3.Session, failures: list) -> None:
 
 def stack_down(session: boto3.Session) -> None:
     failures: list[str] = []
+    delete_mail_queue(session.client("sqs"), failures)
     cleanup_permission_sets(session, failures)
     lam, iam = session.client("lambda"), session.client("iam")
     _try("seeder", lambda: lam.delete_function(FunctionName=SEEDER), failures)
@@ -875,7 +876,6 @@ def stack_down(session: boto3.Session) -> None:
         lambda: iam.delete_role_policy(RoleName=f"{STACK}-engine", PolicyName="e2e-deny"),
         failures,
     )
-    delete_mail_queue(session.client("sqs"), failures)
     cfn = session.client("cloudformation")
     if _stack_exists(cfn):
         try:
