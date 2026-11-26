@@ -515,8 +515,36 @@ Resources:
 
   # ---------------------------------------------------------------------------
   # E-mails: the rules invoke notify, which composes the text and publishes it
-  # with its own role (same account, so the topics need no policy).
+  # with its own role.
   # ---------------------------------------------------------------------------
+  # Replaces the SNS default policy, which lets every principal of the account
+  # subscribe to or delete the topic.
+  AlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OnlyNotifyPublishes
+            Effect: Allow
+            Principal: {AWS: !GetAtt NotifyRole.Arn}
+            Action: sns:Publish
+            Resource: !Ref AlertsTopic
+
+  ApprovalsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref ApprovalsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OnlyNotifyPublishes
+            Effect: Allow
+            Principal: {AWS: !GetAtt NotifyRole.Arn}
+            Action: sns:Publish
+            Resource: !Ref ApprovalsTopic
+
   NotifyRole:
     Type: AWS::IAM::Role
     Properties:

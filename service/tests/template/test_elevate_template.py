@@ -12,7 +12,6 @@ from cfnlint.decode import decode
 from aws_elevate.statemachine import definition
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "infra" / "elevate.yaml"
-CONTRACT = TEMPLATE_PATH.parents[1] / "contract"
 TEMPLATE, _errors = decode(str(TEMPLATE_PATH))
 RESOURCES = TEMPLATE["Resources"]
 
@@ -340,8 +339,20 @@ def test_topics_are_kept():
     assert "Subscription" not in approvals
 
 
-def test_topics_have_no_policy_because_the_notify_role_publishes_in_this_account():
-    assert not [r for r in RESOURCES.values() if r["Type"] == "AWS::SNS::TopicPolicy"]
+@pytest.mark.parametrize("topic", ["AlertsTopic", "ApprovalsTopic"])
+def test_only_notify_can_touch_a_topic(topic):
+    # The SNS default policy lets every principal of the account subscribe or delete.
+    policies = [
+        r["Properties"]
+        for r in RESOURCES.values()
+        if r["Type"] == "AWS::SNS::TopicPolicy" and r["Properties"]["Topics"] == [{"Ref": topic}]
+    ]
+    assert len(policies) == 1
+    (stmt,) = policies[0]["PolicyDocument"]["Statement"]
+    assert stmt["Effect"] == "Allow"
+    assert stmt["Principal"] == {"AWS": {"Fn::GetAtt": ["NotifyRole", "Arn"]}}
+    assert stmt["Action"] == "sns:Publish"
+    assert stmt["Resource"] == {"Ref": topic}  # one topic per statement: SNS refuses a list
 
 
 # ---------- api role: reads untrusted input, never writes to sso ----------
