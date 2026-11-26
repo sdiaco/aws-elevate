@@ -130,6 +130,23 @@ class Org:
             },
         ).get("Item")
 
+    # ---------- e-mails, read from the queue subscribed to the topics ----------
+
+    def mail_for(self, grant_id: str, timeout_s: float = 60) -> dict:
+        """Subject and Message of the e-mail that mentions the grant. Deletes every
+        message it reads, so a later call starts clean."""
+        sqs = self.svc.client("sqs")
+        url = sqs.get_queue_url(QueueName=harness.MAIL_QUEUE)["QueueUrl"]
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            resp = sqs.receive_message(QueueUrl=url, MaxNumberOfMessages=10, WaitTimeSeconds=10)
+            for msg in resp.get("Messages", []):
+                sqs.delete_message(QueueUrl=url, ReceiptHandle=msg["ReceiptHandle"])
+                envelope = json.loads(msg["Body"])
+                if grant_id in envelope["Message"]:
+                    return {"Subject": envelope.get("Subject"), "Message": envelope["Message"]}
+        raise AssertionError(f"no e-mail for grant {grant_id} within {timeout_s:.0f}s")
+
     # ---------- grants ----------
 
     def new_grant(self, duration_seconds: int) -> Grant:
