@@ -153,7 +153,13 @@ def test_precheck_role_is_read_only():
 
 
 def test_every_role_is_tested():
-    assert set(roles()) == {"EngineRole", "StateMachineRole", "PrecheckRole", "ApiRole"}
+    assert set(roles()) == {
+        "EngineRole",
+        "StateMachineRole",
+        "PrecheckRole",
+        "ApiRole",
+        "NotifyRole",
+    }
 
 
 # ---------- table ----------
@@ -258,6 +264,7 @@ def test_everything_waits_for_the_precheck(name):
         ("EngineFunction", "aws_elevate.engine.handler.handler"),
         ("PrecheckFunction", "aws_elevate.precheck.handler.handler"),
         ("ApiFunction", "aws_elevate.api.handler.handler"),
+        ("NotifyFunction", "aws_elevate.notify.handler.handler"),
     ],
 )
 def test_lambda_runtime_and_handler(name, handler):
@@ -273,66 +280,68 @@ def test_state_machine_definition_is_the_python_one():
     assert set(props["DefinitionSubstitutions"]) == {"EngineArn", "BusName"}
 
 
-def test_alert_and_approval_rules():
-    patterns = {
-        n: RESOURCES[n]["Properties"]["EventPattern"]
-        for n in ("GrantErrorRule", "ConfigRejectedRule", "ManualRequestRule")
+def test_notify_role_only_logs_and_publishes_to_the_two_topics():
+    stmts = statements("NotifyRole")
+    actions = {a for s in stmts for a in as_list(s["Action"])}
+    assert actions == {"logs:CreateLogStream", "logs:PutLogEvents", "sns:Publish"}
+    assert all(s["Effect"] == "Allow" for s in stmts)
+    (publish,) = [s for s in stmts if "sns:Publish" in as_list(s["Action"])]
+    assert as_list(publish["Resource"]) == [{"Ref": "AlertsTopic"}, {"Ref": "ApprovalsTopic"}]
+    (logs,) = [s for s in stmts if "logs:PutLogEvents" in as_list(s["Action"])]
+    assert logs["Resource"] == {"Fn::GetAtt": ["NotifyLogs", "Arn"]}
+
+
+def test_notify_function_gets_the_two_topics():
+    env = RESOURCES["NotifyFunction"]["Properties"]["Environment"]["Variables"]
+    assert env == {
+        "ALERTS_TOPIC_ARN": {"Ref": "AlertsTopic"},
+        "APPROVALS_TOPIC_ARN": {"Ref": "ApprovalsTopic"},
     }
-    assert patterns["GrantErrorRule"]["detail-type"] == ["elevate.grant.error"]
-    assert patterns["ConfigRejectedRule"]["detail-type"] == ["elevate.config.rejected"]
-    assert patterns["ManualRequestRule"]["detail"] == {"approval": ["manual"]}
+
+
+NOTIFY_ARN = {"Fn::GetAtt": ["NotifyFunction", "Arn"]}
+
+
+def test_notification_rules_target_the_notify_function():
+    rules = {n: RESOURCES[n]["Properties"] for n in ("GrantErrorRule", "ManualRequestRule")}
+    assert rules["GrantErrorRule"]["EventPattern"]["detail-type"] == ["elevate.grant.error"]
+    assert rules["ManualRequestRule"]["EventPattern"]["detail"] == {"approval": ["manual"]}
+    for name, props in rules.items():
+        (target,) = props["Targets"]
+        assert target["Arn"] == NOTIFY_ARN, name
+        assert "InputTransformer" not in target and "Input" not in target, name
+
+
+def test_no_email_for_rejected_rules():
+    assert "ConfigRejectedRule" not in RESOURCES
+
+
+def test_only_the_two_rules_may_invoke_notify():
+    permissions = [
+        r["Properties"] for r in RESOURCES.values() if r["Type"] == "AWS::Lambda::Permission"
+    ]
+    notify = [
+        p for p in permissions if p["FunctionName"] in ({"Ref": "NotifyFunction"}, NOTIFY_ARN)
+    ]
+    assert len(notify) == 2
+    assert all(p["Action"] == "lambda:InvokeFunction" for p in notify)
+    assert all(p["Principal"] == "events.amazonaws.com" for p in notify)
+    assert sorted(text(p["SourceArn"]) for p in notify) == sorted(
+        text({"Fn::GetAtt": [rule, "Arn"]}) for rule in ("GrantErrorRule", "ManualRequestRule")
+    )
+
+
+def test_topics_are_kept():
+    alerts = RESOURCES["AlertsTopic"]["Properties"]
+    assert alerts["TopicName"] == {"Fn::Sub": "${AWS::StackName}-alerts"}
+    assert alerts["Subscription"] == [{"Protocol": "email", "Endpoint": {"Ref": "AlertEmail"}}]
     approvals = RESOURCES["ApprovalsTopic"]["Properties"]
+    assert approvals["TopicName"] == {"Fn::Sub": "${AWS::StackName}-approvals"}
     assert "Subscription" not in approvals
 
 
-NOTIFICATION_RULES = {
-    "GrantErrorRule": "elevate.grant.error",
-    "ConfigRejectedRule": "elevate.config.rejected",
-    "ManualRequestRule": "elevate.request.created",
-}
-
-
-def _event_path(event: dict, path: str):
-    value = event
-    for key in path.removeprefix("$.").split("."):
-        value = value[key]
-    return value
-
-
-@pytest.mark.parametrize("name", NOTIFICATION_RULES)
-def test_notification_text_is_one_quoted_string_per_line(name):
-    # EventBridge documents multi-line text output as one double-quoted string per line.
-    transformer = RESOURCES[name]["Properties"]["Targets"][0]["InputTransformer"]
-    lines = transformer["InputTemplate"].split("\n")
-    assert len(lines) > 3, name
-    for line in lines:
-        assert re.fullmatch(r'"([^"\\]|\\")*"', line), f"{name}: {line}"
-    used = set(re.findall(r"<([a-z]+)>", transformer["InputTemplate"]))
-    assert used == set(transformer["InputPathsMap"]), name
-    example = json.loads((CONTRACT / "events" / f"{NOTIFICATION_RULES[name]}.json").read_text())
-    for path in transformer["InputPathsMap"].values():
-        if path == "$.time":  # set by EventBridge on every event, not part of the contract
-            continue
-        _event_path(example, path)  # every field the e-mail reads is in the event contract
-
-
-def test_approval_email_names_the_rule_and_how_to_answer():
-    target = RESOURCES["ManualRequestRule"]["Properties"]["Targets"][0]
-    template = target["InputTransformer"]["InputTemplate"]
-    assert "<rule>" in template and "sourcePs" not in str(RESOURCES["ManualRequestRule"])
-    assert "aws elevate approve <grant>" in template
-    assert 'aws elevate approve <grant> --reject --reason \\"why\\"' in template
-
-
-def test_sns_topic_policy_statements_name_one_topic_each():
-    # SNS refuses a statement covering several topics (seen deploying the e2e stack).
-    for name, resource in RESOURCES.items():
-        if resource["Type"] != "AWS::SNS::TopicPolicy":
-            continue
-        props = resource["Properties"]
-        assert len(props["Topics"]) == 1, name
-        for stmt in props["PolicyDocument"]["Statement"]:
-            assert not isinstance(stmt["Resource"], list), name
+def test_topics_have_no_policy_because_the_notify_role_publishes_in_this_account():
+    assert not [r for r in RESOURCES.values() if r["Type"] == "AWS::SNS::TopicPolicy"]
 
 
 # ---------- api role: reads untrusted input, never writes to sso ----------
@@ -764,7 +773,7 @@ def test_console_groups_in_order():
 # ---------- customer KMS key ----------
 
 KMS_ARN_PATTERN = TEMPLATE["Parameters"]["KmsKeyArn"]["AllowedPattern"]
-LOG_GROUPS = ["PrecheckLogs", "EngineLogs", "ApiLogs"]
+LOG_GROUPS = ["PrecheckLogs", "EngineLogs", "ApiLogs", "NotifyLogs"]
 
 
 @pytest.mark.parametrize(
@@ -794,7 +803,7 @@ def test_kms_key_parameter_is_optional_and_in_the_data_protection_group():
     }
 
 
-def test_customer_key_encrypts_the_table_and_the_three_log_groups():
+def test_customer_key_encrypts_the_table_and_the_four_log_groups():
     sse = RESOURCES["GrantsTable"]["Properties"]["SSESpecification"]
     assert sse == {
         "Fn::If": [
