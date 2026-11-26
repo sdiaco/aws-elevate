@@ -84,11 +84,16 @@ In the CloudFormation console of the delegated administrator account: open the `
 
 ## Notifications
 
-Elevate sends e-mails through two SNS topics in the delegated administrator account:
+Elevate sends two kinds of e-mail through two SNS topics in the delegated administrator account. The `<stack>-notify` function composes and publishes them; its role may only publish to these two topics and write its own logs.
+
+The subject of each e-mail:
+
+- approvals: `aws-elevate: approval needed for <rule> on <account>`
+- alerts: `aws-elevate: cleanup of grant <id> is failing`
 
 | Topic | What it sends | Who receives it after the install |
 |---|---|---|
-| `<stack>-alerts` | A grant that could not be closed after retries, and a rules version that was ignored because it is not valid | The `--email` address, once its owner confirms the e-mail from AWS |
+| `<stack>-alerts` | A grant whose cleanup keeps failing after retries: the access may still work | The `--email` address, once its owner confirms the e-mail from AWS |
 | `<stack>-approvals` | Every request that needs manual approval, with the rule, the account, the reason, the approver group and the commands to answer | Nobody until you subscribe someone |
 
 E-mails reach whoever is subscribed to the topic, not the members of the Identity Center group: SNS does not know the groups. One approvals topic receives the requests of every rule, so everyone subscribed sees every request, including who asked and why. Only members of the approver group can approve, whoever reads the e-mail. Without subscribers, requests waiting for approval show in `aws elevate status` and in the interface.
@@ -105,7 +110,7 @@ Or in the SNS console of that account and region: **Topics** → `elevate-approv
 
 `aws elevate admin doctor` checks that the alerts topic has a confirmed subscriber and shows how many the approvals topic has.
 
-The e-mails are plain text with the subject and the unsubscribe footer that SNS adds. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
+The e-mails are plain text. SNS adds the unsubscribe footer. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
 
 Costs: the first 1,000 e-mails a month are free, then about $2 per 100,000 (see [SNS pricing](https://aws.amazon.com/sns/pricing/)).
 

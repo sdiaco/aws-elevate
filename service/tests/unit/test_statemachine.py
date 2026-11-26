@@ -247,6 +247,13 @@ def test_api_never_reaches_sso_admin(module):
     assert "aws_elevate.adapters.sso_admin" not in reachable(module, graph())
 
 
+@pytest.mark.parametrize("module", sorted(m for m in graph() if m.startswith("aws_elevate.notify")))
+def test_notify_never_reaches_identity_center_or_the_table(module):
+    reached = reachable(module, graph())
+    assert "aws_elevate.adapters.sso_admin" not in reached
+    assert "aws_elevate.adapters.grants_table" not in reached
+
+
 def test_core_never_imports_boto3():
     for path in (SRC / "core").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text())):

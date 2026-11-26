@@ -43,7 +43,7 @@ Elevate helps implement privileged-access controls required by **NIS2**, **DORA*
 |---|---|---|
 | Grant history: who asked, permission set, account, reason, who approved, start, end, how it closed | DynamoDB table in the Elevate account | 13 months after the grant closes by default, 1 to 120 (`--retention-months`) |
 | Rules versions | AppConfig in the Elevate account | until you uninstall |
-| Logs of `api` and `engine` | CloudWatch Logs | 90 days |
+| Logs of `api`, `engine` and `notify` | CloudWatch Logs | 90 days |
 | Logs of the precheck | CloudWatch Logs | 30 days |
 | Workflow history (includes user name and reason) | Step Functions | 90 days |
 
@@ -114,7 +114,7 @@ The key policy must keep the statement that enables IAM policies in the account,
 
 The Elevate service roles get only `kms:Decrypt` on the key, through DynamoDB, from the template itself.
 
-**What the key covers:** the grant history and the three log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`). **What it does not cover:** the rules (AppConfig), the workflow history, the events and the alert e-mails; these stay on keys owned by AWS.
+**What the key covers:** the grant history and the four log groups (`/aws/lambda/<stack>-precheck`, `-engine`, `-api`, `-notify`). **What it does not cover:** the rules (AppConfig), the workflow history, the events and the alert e-mails; these stay on keys owned by AWS.
 
 ---
 

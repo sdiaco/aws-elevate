@@ -513,6 +513,12 @@ Resources:
     Properties:
       TopicName: !Sub ${AWS::StackName}-approvals
 
+  # ---------------------------------------------------------------------------
+  # E-mails: the rules invoke notify, which composes the text and publishes it
+  # with its own role.
+  # ---------------------------------------------------------------------------
+  # Replaces the SNS default policy, which lets every principal of the account
+  # subscribe to or delete the topic.
   AlertsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Properties:
@@ -520,14 +526,11 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: AlertRulesOfThisStack
+          - Sid: OnlyNotifyPublishes
             Effect: Allow
-            Principal: {Service: events.amazonaws.com}
+            Principal: {AWS: !GetAtt NotifyRole.Arn}
             Action: sns:Publish
             Resource: !Ref AlertsTopic
-            Condition:
-              ArnEquals:
-                aws:SourceArn: [!GetAtt GrantErrorRule.Arn, !GetAtt ConfigRejectedRule.Arn]
 
   ApprovalsTopicPolicy:
     Type: AWS::SNS::TopicPolicy
@@ -536,14 +539,65 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: ApprovalRuleOfThisStack
+          - Sid: OnlyNotifyPublishes
             Effect: Allow
-            Principal: {Service: events.amazonaws.com}
+            Principal: {AWS: !GetAtt NotifyRole.Arn}
             Action: sns:Publish
             Resource: !Ref ApprovalsTopic
-            Condition:
-              ArnEquals:
-                aws:SourceArn: !GetAtt ManualRequestRule.Arn
+
+  NotifyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-notify
+      Path: /elevate/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: notify
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: PublishToTheTwoTopics
+                Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  - !Ref AlertsTopic
+                  - !Ref ApprovalsTopic
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt NotifyLogs.Arn
+
+  NotifyLogs:
+    Type: AWS::Logs::LogGroup
+    DependsOn: Precheck
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-notify
+      RetentionInDays: 90
+      KmsKeyId: !If [HasKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
+
+  NotifyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-notify
+      Runtime: python3.12
+      Handler: aws_elevate.notify.handler.handler
+      Role: !GetAtt NotifyRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        S3Bucket: !If [OfficialCode, !FindInMap [ReleaseBuckets, !Ref "AWS::Region", Bucket], !Ref CodeBucket]
+        S3Key: !Ref CodeKey
+      LoggingConfig:
+        LogGroup: !Ref NotifyLogs
+      Environment:
+        Variables:
+          ALERTS_TOPIC_ARN: !Ref AlertsTopic
+          APPROVALS_TOPIC_ARN: !Ref ApprovalsTopic
 
   GrantErrorRule:
     Type: AWS::Events::Rule
@@ -554,48 +608,16 @@ Resources:
         source: [elevate]
         detail-type: [elevate.grant.error]
       Targets:
-        - Id: alerts
-          Arn: !Ref AlertsTopic
-          InputTransformer:
-            InputPathsMap:
-              grant: $.detail.grantId
-              code: $.detail.errorCode
-              error: $.detail.error
-              user: $.detail.requester.userName
-              account: $.detail.account
-              time: $.time
-            # One double-quoted string per line: how EventBridge documents multi-line text.
-            InputTemplate: |-
-              "aws-elevate: a grant needs attention"
-              ""
-              "Grant <grant> of <user> on account <account> could not be closed."
-              "Error: <code>: <error>"
-              "Time: <time>"
-              ""
-              "Open Problems in: aws elevate ui"
+        - Id: notify
+          Arn: !GetAtt NotifyFunction.Arn
 
-  ConfigRejectedRule:
-    Type: AWS::Events::Rule
+  GrantErrorRuleInvokesNotify:
+    Type: AWS::Lambda::Permission
     Properties:
-      Name: !Sub ${AWS::StackName}-config-rejected
-      EventBusName: !Ref EventBus
-      EventPattern:
-        source: [elevate]
-        detail-type: [elevate.config.rejected]
-      Targets:
-        - Id: alerts
-          Arn: !Ref AlertsTopic
-          InputTransformer:
-            InputPathsMap:
-              version: $.detail.configVersion
-              time: $.time
-            InputTemplate: |-
-              "aws-elevate: rules version <version> was ignored"
-              ""
-              "It is not valid. The previous valid version stays in force."
-              "Time: <time>"
-              ""
-              "See the errors in: aws elevate ui"
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref NotifyFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GrantErrorRule.Arn
 
   ManualRequestRule:
     Type: AWS::Events::Rule
@@ -608,26 +630,16 @@ Resources:
         detail:
           approval: [manual]
       Targets:
-        - Id: approvals
-          Arn: !Ref ApprovalsTopic
-          InputTransformer:
-            InputPathsMap:
-              grant: $.detail.grantId
-              user: $.detail.requester.userName
-              rule: $.detail.rule
-              account: $.detail.account
-              group: $.detail.approverGroup.name
-              reason: $.detail.reason
-            InputTemplate: |-
-              "aws-elevate: approval needed"
-              ""
-              "<user> asks for rule <rule> on account <account>."
-              "Reason: <reason>"
-              "Approvers: group <group>"
-              ""
-              "Approve:  aws elevate approve <grant>"
-              "Reject:   aws elevate approve <grant> --reject --reason \"why\""
-              "Or open:  aws elevate ui"
+        - Id: notify
+          Arn: !GetAtt NotifyFunction.Arn
+
+  ManualRequestRuleInvokesNotify:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref NotifyFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ManualRequestRule.Arn
 
   # ---------------------------------------------------------------------------
   # Grant lifecycle. Definition generated from

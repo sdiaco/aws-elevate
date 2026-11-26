@@ -82,6 +82,7 @@ RULE_PREFIX = "e2e-"  # every e2e rule id: cleanup finds the JIT-* of api grants
 RULE_ID = "e2e-probe"  # auto, the test user's requester group
 MANUAL_RULE_ID = "e2e-manual"  # manual, approved by the admin group the test user is in
 OTHER_RULE_ID = "e2e-other"  # a group the test user is not in
+MAIL_QUEUE = f"{STACK}-mail"  # receives what the two topics would e-mail
 ADMIN_GROUP = "elevate-e2e-admins"
 APPROVER_USER = "elevate-e2e-approver"
 REQUESTER_GROUP = "elevate-e2e-requesters"
@@ -347,6 +348,7 @@ def stack_up(session: boto3.Session) -> dict:
     cfn = session.client("cloudformation")
     if not _stack_exists(cfn):
         install(session)
+        ensure_mail_queue(session)
         return stack_outputs(session)
     bucket, key = upload(session)
     groups = ensure_groups(session)
@@ -360,7 +362,56 @@ def stack_up(session: boto3.Session) -> dict:
         PITR_ON,
     ]
     _update(cfn, params, template_url(session))
+    ensure_mail_queue(session)
     return stack_outputs(session)
+
+
+def _topic_arn(cfn, logical_id: str) -> str:
+    return cfn.describe_stack_resource(StackName=STACK, LogicalResourceId=logical_id)[
+        "StackResourceDetail"
+    ]["PhysicalResourceId"]
+
+
+def ensure_mail_queue(session: boto3.Session) -> str:
+    """A queue subscribed to both topics, so a test reads the e-mails as SNS delivers
+    them. Raw delivery stays off: the message keeps the envelope with the Subject."""
+    cfn, sqs, sns = (session.client(n) for n in ("cloudformation", "sqs", "sns"))
+    topics = [_topic_arn(cfn, name) for name in ("AlertsTopic", "ApprovalsTopic")]
+    account = session.client("sts").get_caller_identity()["Account"]
+    queue_arn = f"arn:aws:sqs:{session.region_name}:{account}:{MAIL_QUEUE}"
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Service": "sns.amazonaws.com"},
+                "Action": "sqs:SendMessage",
+                "Resource": queue_arn,
+                "Condition": {"ArnEquals": {"aws:SourceArn": topics}},
+            }
+        ],
+    }
+    url = sqs.create_queue(QueueName=MAIL_QUEUE, Attributes={"Policy": json.dumps(policy)})[
+        "QueueUrl"
+    ]
+    for topic in topics:
+        sns.subscribe(TopicArn=topic, Protocol="sqs", Endpoint=queue_arn)
+    return url
+
+
+def delete_mail_queue(sqs, failures: list) -> None:
+    try:
+        url = sqs.get_queue_url(QueueName=MAIL_QUEUE)["QueueUrl"]
+    except ClientError as err:
+        if err.response["Error"]["Code"] in (
+            "AWS.SimpleQueueService.NonExistentQueue",
+            "QueueDoesNotExist",
+        ):
+            return
+        failures.append(f"mail queue: {err}")
+        log(f"FAILED mail queue: {err}")
+        return
+    _try("mail queue", lambda: sqs.delete_queue(QueueUrl=url), failures)
 
 
 def _update(cfn, params: list[dict], url: str) -> None:
@@ -816,6 +867,7 @@ def cleanup_permission_sets(session: boto3.Session, failures: list) -> None:
 
 def stack_down(session: boto3.Session) -> None:
     failures: list[str] = []
+    delete_mail_queue(session.client("sqs"), failures)
     cleanup_permission_sets(session, failures)
     lam, iam = session.client("lambda"), session.client("iam")
     _try("seeder", lambda: lam.delete_function(FunctionName=SEEDER), failures)
