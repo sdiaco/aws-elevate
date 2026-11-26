@@ -84,11 +84,17 @@ In the CloudFormation console of the delegated administrator account: open the `
 
 ## Notifications
 
-Elevate sends e-mails through two SNS topics in the delegated administrator account:
+Elevate sends two kinds of e-mail through two SNS topics in the delegated administrator account. The `<stack>-notify` function composes and publishes them; its role may only publish to these two topics.
+
+The subject of each e-mail:
+
+- approvals: `aws-elevate: approval needed for <rule> on <account>`
+- alerts: `aws-elevate: cleanup of grant <id> is failing`
+
 
 | Topic | What it sends | Who receives it after the install |
 |---|---|---|
-| `<stack>-alerts` | A grant that could not be closed after retries, and a rules version that was ignored because it is not valid | The `--email` address, once its owner confirms the e-mail from AWS |
+| `<stack>-alerts` | A grant whose cleanup keeps failing after retries: the access may still work | The `--email` address, once its owner confirms the e-mail from AWS |
 | `<stack>-approvals` | Every request that needs manual approval, with the rule, the account, the reason, the approver group and the commands to answer | Nobody until you subscribe someone |
 
 E-mails reach whoever is subscribed to the topic, not the members of the Identity Center group: SNS does not know the groups. One approvals topic receives the requests of every rule, so everyone subscribed sees every request, including who asked and why. Only members of the approver group can approve, whoever reads the e-mail. Without subscribers, requests waiting for approval show in `aws elevate status` and in the interface.

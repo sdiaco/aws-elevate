@@ -55,6 +55,8 @@ All events except `elevate.config.rejected` carry the same snapshot of the grant
 `elevate.grant.error` adds `errorCode` (`revoke_failed`). The same event sends an e-mail to
 the alerts topic; the grant appears under **Problems** in `aws elevate ui`.
 
+`elevate.config.rejected` sends no e-mail. To be notified, add a rule on that event.
+
 The values come from [`contract/vocabulary.json`](../contract/vocabulary.json). The reasons
 are free text typed by users: treat them as untrusted input.
 
