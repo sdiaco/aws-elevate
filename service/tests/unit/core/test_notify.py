@@ -65,6 +65,15 @@ def test_grant_error_email_is_the_approved_text():
     )
 
 
+def test_grant_error_email_without_an_error_text_prints_only_the_code():
+    for missing in (None, ""):
+        detail = {**example("elevate.grant.error"), "error": missing}
+        body = compose(event("elevate.grant.error", detail)).body
+        assert "Error: revoke_failed\n" in body
+    detail = {k: v for k, v in example("elevate.grant.error").items() if k != "error"}
+    assert "Error: revoke_failed\n" in compose(event("elevate.grant.error", detail)).body
+
+
 def test_config_rejected_and_other_events_send_nothing():
     for name in ("elevate.config.rejected", "elevate.grant.closed"):
         assert compose(event(name, example(name))) is None

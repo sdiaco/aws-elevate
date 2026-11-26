@@ -58,12 +58,15 @@ def _approval_needed(event: dict) -> Email | None:
 def _cleanup_failing(event: dict) -> Email:
     d = event["detail"]
     grant = _one_line(d["grantId"])
+    error = _one_line(d["errorCode"])
+    if d.get("error"):
+        error += f": {_one_line(d['error'])}"
     body = (
         f"Elevate could not remove the access of {_one_line(d['requester']['userName'])} "
         f"to account {_one_line(d['account'])} (rule {_one_line(d['rule'])}). "
         "The access may still work: act now.\n"
         "\n"
-        f"Error: {_one_line(d['errorCode'])}: {_one_line(d['error'])}\n"
+        f"Error: {error}\n"
         f"Time: {_one_line(event['time'])}\n"
         "\n"
         "See it under Problems in: aws elevate ui\n"
