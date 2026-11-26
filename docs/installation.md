@@ -84,13 +84,12 @@ In the CloudFormation console of the delegated administrator account: open the `
 
 ## Notifications
 
-Elevate sends two kinds of e-mail through two SNS topics in the delegated administrator account. The `<stack>-notify` function composes and publishes them; its role may only publish to these two topics.
+Elevate sends two kinds of e-mail through two SNS topics in the delegated administrator account. The `<stack>-notify` function composes and publishes them; its role may only publish to these two topics and write its own logs.
 
 The subject of each e-mail:
 
 - approvals: `aws-elevate: approval needed for <rule> on <account>`
 - alerts: `aws-elevate: cleanup of grant <id> is failing`
-
 
 | Topic | What it sends | Who receives it after the install |
 |---|---|---|
@@ -111,7 +110,7 @@ Or in the SNS console of that account and region: **Topics** → `elevate-approv
 
 `aws elevate admin doctor` checks that the alerts topic has a confirmed subscriber and shows how many the approvals topic has.
 
-The e-mails are plain text with the subject and the unsubscribe footer that SNS adds. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
+The e-mails are plain text. SNS adds the unsubscribe footer. For per-group routing, chat or ticketing, use the [events](events.md) instead: a rule can match `elevate.request.created` on `approverGroup.name` and send it anywhere EventBridge can.
 
 Costs: the first 1,000 e-mails a month are free, then about $2 per 100,000 (see [SNS pricing](https://aws.amazon.com/sns/pricing/)).
 
