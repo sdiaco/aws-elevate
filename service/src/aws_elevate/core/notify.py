@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from .models import APPROVAL_TIMEOUT_SECONDS
 
-# SNS refuses a subject of 100 characters or more or with non-ASCII characters.
+# SNS subjects are UTF-8 with no line breaks or control characters and fewer than 100
+# characters: https://docs.aws.amazon.com/sns/latest/api/API_Publish.html
 SUBJECT_MAX = 99
 
 
@@ -22,8 +23,7 @@ def _one_line(text: str) -> str:
 
 
 def _subject(text: str) -> str:
-    ascii_text = "".join(c if c.isascii() else "?" for c in _one_line(text))
-    return ascii_text[:SUBJECT_MAX]
+    return _one_line(text)[:SUBJECT_MAX]
 
 
 def _approval_needed(event: dict) -> Email | None:

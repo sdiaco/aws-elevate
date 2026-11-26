@@ -87,15 +87,9 @@ def test_subject_fits_sns():
     assert "\n" not in email.subject
 
 
-def test_subject_is_ascii():
-    detail = {
-        **example("elevate.request.created"),
-        "rule": "règle-prod",
-        "requester": {"userId": "u-1", "userName": "józef@example.com"},
-    }
+def test_subject_keeps_unicode():
+    detail = {**example("elevate.request.created"), "rule": "règle-prod"}
 
     email = compose(event("elevate.request.created", detail))
 
-    assert email.subject == "aws-elevate: approval needed for r?gle-prod on 222222222222"
-    assert email.subject.isascii()
-    assert "règle-prod" in email.body
+    assert email.subject == "aws-elevate: approval needed for règle-prod on 222222222222"
